@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "id": "b.omacal",
+  "name": "Omacal",
+  "version": "1.0.0",
+  "author": "Brian Blakely",
+  "description": "Omarchy-native day/time label with a mini calendar popup",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml",
+    "panel": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Omacal",
+    "description": "Shows the current time with a configurable format; click to see a mini calendar",
+    "category": "Time",
+    "allowMultiple": false,
+    "defaults": {
+      "mondayFirstDayofWeek": false,
+      "titleFormat": "dd MMMM 'W'ww yyyy",
+      "horizontalClockFormat": "dddd HH:mm",
+      "verticalClockFormat": "HH\n—\nmm"
+    },
+    "schema": [
+      {
+        "key": "mondayFirstDayofWeek",
+        "type": "boolean",
+        "label": "Start week on Monday",
+        "description": "Start calendar weeks on Monday instead of the locale default."
+      },
+      {
+        "key": "titleFormat",
+        "type": "string",
+        "label": "Calendar title format"
+      },
+      {
+        "key": "horizontalClockFormat",
+        "type": "string",
+        "label": "Horizontal clock format"
+      },
+      {
+        "key": "verticalClockFormat",
+        "type": "string",
+        "label": "Vertical clock format (left/right bars)"
+      }
+    ]
+  }
+}
