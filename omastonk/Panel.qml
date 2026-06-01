@@ -12,7 +12,7 @@ Panel {
   property var host: null
   property string draftSymbol: ""
   property bool editing: true
-  property int intervalIndex: 0
+  property int intervalIndex: 6
   property var chartPoints: []
   property string chartStatus: "idle"
   property string chartOutput: ""
@@ -20,18 +20,20 @@ Panel {
 
   readonly property color foreground: Color.popups.text
   readonly property color dim: Qt.darker(foreground, 1.65)
-  readonly property color chartColor: host ? host.quoteColor : Color.bar.text
+  readonly property bool intervalDown: chartPoints.length > 1 && chartPoints[chartPoints.length - 1] < chartPoints[0]
+  readonly property color chartColor: intervalDown ? Color.bar.active : Color.bar.text
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property string symbol: host ? host.symbol : normalizeSymbol(setting("symbol", ""))
   readonly property var intervalOptions: [
-    { label: "1D", range: "1d", interval: "5m" },
-    { label: "5D", range: "5d", interval: "15m" },
-    { label: "1M", range: "1mo", interval: "1d" },
-    { label: "6M", range: "6mo", interval: "1d" },
-    { label: "YTD", range: "ytd", interval: "1d" },
+    { label: "5Y", range: "5y", interval: "1wk" },
     { label: "1Y", range: "1y", interval: "1d" },
-    { label: "5Y", range: "5y", interval: "1wk" }
+    { label: "YTD", range: "ytd", interval: "1d" },
+    { label: "6M", range: "6mo", interval: "1d" },
+    { label: "1M", range: "1mo", interval: "1d" },
+    { label: "5D", range: "5d", interval: "15m" },
+    { label: "1D", range: "1d", interval: "5m" }
   ]
+  readonly property int chartPanelSize: Math.ceil(Math.max(Style.space(1), intervalSizer.implicitWidth))
   readonly property var selectedInterval: intervalOptions[Math.max(0, Math.min(intervalIndex, intervalOptions.length - 1))]
   readonly property string selectedIntervalLabel: selectedInterval ? selectedInterval.label : "1D"
   readonly property string chartStatusText: chartStatus === "loading" ? "Loading" : (chartStatus === "error" ? "No data" : "")
@@ -149,6 +151,7 @@ Panel {
     if (editing || symbol === "" || chartProc.running) return
     if (!force && chartStatus === "ready" && requestedChartKey === chartKey()) return
 
+    chartPoints = []
     chartOutput = ""
     requestedChartKey = chartKey()
     chartStatus = "loading"
@@ -217,6 +220,24 @@ Panel {
     }
   }
 
+  Row {
+    id: intervalSizer
+    visible: false
+    spacing: Style.space(6)
+
+    Repeater {
+      model: root.intervalOptions
+
+      Button {
+        required property var modelData
+        text: modelData.label
+        selected: true
+        horizontalPadding: Style.space(8)
+        verticalPadding: Style.space(5)
+      }
+    }
+  }
+
   KeyboardPanel {
     id: symbolPanel
     anchorItem: root.anchorItem
@@ -224,16 +245,16 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: root.editing ? symbolField : keyCatcher
-    contentWidth: symbolPanel.fittedContentWidth(root.editing ? Style.space(280) : Style.space(420))
-    contentHeight: symbolPanel.fittedContentHeight(root.editing ? editorColumn.implicitHeight : chartColumn.implicitHeight)
+    contentWidth: symbolPanel.fittedContentWidth(root.editing ? Style.space(280) : root.chartPanelSize)
+    contentHeight: root.editing ? symbolPanel.fittedContentHeight(editorColumn.implicitHeight) : contentWidth
 
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
       blocked: root.editing
       onMoveRequested: function(dx, dy) {
-        if (dx < 0) root.moveInterval(1)
-        else if (dx > 0) root.moveInterval(-1)
+        if (dx < 0) root.moveInterval(-1)
+        else if (dx > 0) root.moveInterval(1)
       }
       onCloseRequested: root.close()
 
@@ -241,14 +262,18 @@ Panel {
         id: chartColumn
         visible: !root.editing
         width: parent.width
+        height: parent.height
         spacing: Style.space(10)
 
         Row {
+          id: headerRow
           width: parent.width
+          height: editButton.implicitHeight
           spacing: Style.space(8)
 
           Text {
             width: Math.max(1, parent.width - editButton.implicitWidth - priceLabel.implicitWidth - Style.space(18))
+            height: parent.height
             text: root.symbol
             color: root.chartColor
             font.family: root.fontFamily
@@ -260,6 +285,7 @@ Panel {
 
           Text {
             id: priceLabel
+            height: parent.height
             text: host ? host.priceText : ""
             color: root.chartColor
             font.family: root.fontFamily
@@ -277,7 +303,7 @@ Panel {
 
         Rectangle {
           width: parent.width
-          height: Style.space(152)
+          height: Math.max(Style.space(96), parent.height - headerRow.height - intervalRow.implicitHeight - chartColumn.spacing * 2)
           color: "transparent"
           border.color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.12)
           border.width: Math.max(1, Style.spacing.hairline)
@@ -323,7 +349,7 @@ Panel {
 
               ctx.strokeStyle = root.chartColor
               ctx.fillStyle = Qt.rgba(root.chartColor.r, root.chartColor.g, root.chartColor.b, 0.16)
-              ctx.lineWidth = 2
+              ctx.lineWidth = 1.15
               ctx.lineJoin = "round"
               ctx.lineCap = "round"
               ctx.beginPath()
@@ -353,7 +379,8 @@ Panel {
           }
         }
 
-        Flow {
+        Row {
+          id: intervalRow
           width: parent.width
           spacing: Style.space(6)
 
