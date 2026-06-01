@@ -68,3 +68,37 @@ omarchy plugin add b.omastonk --from b --enable --yes
 omarchy plugin update b.omastonk
 ```
 
+## Omanews
+
+Omanews is a headline ticker for the Omarchy bar. It fetches top headlines with `curl` from Google News RSS every ten minutes and keeps the headlines in memory. Left-click advances to the next headline, right-click goes to the previous headline, and middle-click opens an X search for the current headline.
+
+Omanews registers the `b.omanews` IPC target for keyboard bindings. Available methods include `headline`, `next`, `nextHeadline`, `previous`, `previousHeadline`, `searchX`, `openX`, and `refresh`.
+
+## Install Omanews
+
+```bash
+omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b
+omarchy plugin available
+omarchy plugin add b.omanews --from b --review --enable
+```
+
+For unattended installs:
+
+```bash
+omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b --yes
+omarchy plugin add b.omanews --from b --enable --yes
+```
+
+## Update Omanews
+
+```bash
+omarchy plugin update b.omanews
+```
+
+## Omanews Shortcuts
+
+```lua
+o.bind("SUPER + F10", "Next headline", "omarchy-shell b.omanews next")
+o.bind("SUPER + ALT + F10", "Previous headline", "omarchy-shell b.omanews previous")
+o.bind("SUPER + CTRL + F10", "Search headline on X", "omarchy-shell b.omanews searchX")
+```
