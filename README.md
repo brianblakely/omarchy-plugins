@@ -1,5 +1,9 @@
 # Omarchy Plugins
 
+* [Omacal](#omacal)
+* [Omastonk](#omastonk)
+* [Omanews](#omanews)
+
 ## Omacal
 
 Omacal is a drop-in replacement for the default Omarchy clock that adds mini calendar functionality. The calendar supports keyboard controls (including vim bindings) for browsing month and year.
