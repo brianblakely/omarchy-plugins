@@ -33,7 +33,7 @@ Panel {
     { label: "5D", range: "5d", interval: "15m" },
     { label: "1D", range: "1d", interval: "5m" }
   ]
-  readonly property int chartPanelWidth: Math.ceil(intervalSizer.implicitWidth + Style.space(8))
+  readonly property int chartPanelWidth: Math.ceil(intervalSizer.implicitWidth + Style.space(10))
   readonly property var selectedInterval: intervalOptions[Math.max(0, Math.min(intervalIndex, intervalOptions.length - 1))]
   readonly property string selectedIntervalLabel: selectedInterval ? selectedInterval.label : "1D"
   readonly property string chartStatusText: chartStatus === "loading" ? "Loading" : (chartStatus === "error" ? "No data" : "")
