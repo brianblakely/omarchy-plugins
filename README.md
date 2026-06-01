@@ -30,6 +30,7 @@ omarchy plugin update b.omacal
 ## Shortcuts
 
 ```lua
+hl.unbind("SUPER + CTRL + ALT + T")
 o.bind("SUPER + CTRL + ALT + T", "Flash mini calendar", "omarchy-shell b.omacal flash")
 o.bind("SUPER + F9", "Toggle mini calendar", "omarchy-shell b.omacal toggle")
 o.bind("SUPER + ALT + F9", "Open mini calendar", "omarchy-shell b.omacal open")
