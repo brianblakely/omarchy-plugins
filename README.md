@@ -6,7 +6,7 @@ Omacal is a drop-in replacement for the default Omarchy clock that adds mini cal
 
 ![Omacal screenshot](images/omacal.png)
 
-## Install
+### Install
 
 ```bash
 omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b
@@ -21,13 +21,13 @@ omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --
 omarchy plugin add b.omacal --from b --enable --yes
 ```
 
-## Update
+### Update
 
 ```bash
 omarchy plugin update b.omacal
 ```
 
-## Shortcuts
+### Shortcuts
 
 ```lua
 hl.unbind("SUPER + CTRL + ALT + T")
@@ -47,7 +47,7 @@ After a symbol is set, Omastonk fetches quote data with `curl` from Yahoo Financ
 
 ![Omastonk screenshot](images/omastonk.png)
 
-## Install Omastonk
+### Install
 
 ```bash
 omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b
@@ -62,7 +62,7 @@ omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --
 omarchy plugin add b.omastonk --from b --enable --yes
 ```
 
-## Update Omastonk
+### Update
 
 ```bash
 omarchy plugin update b.omastonk
@@ -72,9 +72,7 @@ omarchy plugin update b.omastonk
 
 Omanews is a headline ticker for the Omarchy bar. It fetches top headlines with `curl` from Google News RSS every ten minutes and keeps the headlines in memory. Left-click advances to the next headline, right-click goes to the previous headline, and middle-click opens an X search for the current headline.
 
-Omanews registers the `b.omanews` IPC target for keyboard bindings. Available methods include `headline`, `next`, `nextHeadline`, `previous`, `previousHeadline`, `searchX`, `openX`, and `refresh`.
-
-## Install Omanews
+### Install
 
 ```bash
 omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b
@@ -89,16 +87,16 @@ omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --
 omarchy plugin add b.omanews --from b --enable --yes
 ```
 
-## Update Omanews
+### Update
 
 ```bash
 omarchy plugin update b.omanews
 ```
 
-## Omanews Shortcuts
+### Shortcuts
 
 ```lua
 o.bind("SUPER + F10", "Next headline", "omarchy-shell b.omanews next")
 o.bind("SUPER + ALT + F10", "Previous headline", "omarchy-shell b.omanews previous")
-o.bind("SUPER + CTRL + F10", "Search headline on X", "omarchy-shell b.omanews searchX")
+o.bind("SUPER + CTRL + F10", "Search headline on X", "omarchy-shell b.omanews search")
 ```

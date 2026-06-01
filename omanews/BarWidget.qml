@@ -165,11 +165,11 @@ BarWidget {
       return root.showPreviousHeadline()
     }
 
-    function searchX(): string {
+    function search(): string {
       return root.searchCurrentHeadlineOnX()
     }
 
-    function openX(): string {
+    function open(): string {
       return root.searchCurrentHeadlineOnX()
     }
 
