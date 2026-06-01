@@ -12,8 +12,10 @@ BarWidget {
   property string quoteStatus: "idle"
   property string quoteOutput: ""
   property string requestedSymbol: ""
+  property string transientInstanceId: ""
 
   readonly property string symbol: normalizeSymbol(setting("symbol", ""))
+  readonly property string instanceId: String(setting("instanceId", "")) || transientInstanceId
   readonly property bool quoteReady: quoteStatus === "ready" && isFinite(quotePrice)
   readonly property bool priceDown: quoteReady && quoteChange < 0
   readonly property string trendGlyph: quoteReady ? (priceDown ? "\u25BC" : "\u25B2") : ""
@@ -37,6 +39,11 @@ BarWidget {
     var absolute = Math.abs(number)
     var decimals = absolute >= 1 ? 2 : 4
     return number.toFixed(decimals)
+  }
+
+  function generateInstanceId() {
+    return "omastonk-" + Date.now().toString(36)
+      + "-" + Math.floor(Math.random() * 0x100000000).toString(36)
   }
 
   function quoteUrl() {
@@ -119,6 +126,34 @@ BarWidget {
     return -1
   }
 
+  function entryId(entry) {
+    return typeof entry === "string" ? entry : String(entry && entry.id ? entry.id : "")
+  }
+
+  function entryInstanceId(entry) {
+    return entry && typeof entry === "object" ? String(entry.instanceId || "") : ""
+  }
+
+  function locationByInstanceId(layout, value) {
+    var id = String(value || "")
+    if (id === "" || !layout) return null
+
+    var sections = ["left", "center", "right"]
+    for (var s = 0; s < sections.length; s++) {
+      var section = sections[s]
+      var entries = layout[section]
+      if (!Array.isArray(entries)) continue
+
+      for (var i = 0; i < entries.length; i++) {
+        var entry = entries[i]
+        if (entryId(entry) === root.moduleName && entryInstanceId(entry) === id)
+          return { section: section, index: i }
+      }
+    }
+
+    return null
+  }
+
   function currentLayoutLocation() {
     var host = slotHost()
     if (!host || !bar || !bar.layoutConfig) return null
@@ -141,28 +176,31 @@ BarWidget {
   function saveInstanceSettings(next) {
     root.settings = next
 
-    var location = currentLayoutLocation()
-    if (location && bar && bar.shell && typeof bar.shell.mutateShellConfig === "function") {
-      bar.shell.mutateShellConfig(function(config) {
-        if (!config.bar) config.bar = {}
-        if (!config.bar.layout) config.bar.layout = { left: [], center: [], right: [] }
+    if (!bar || !bar.shell || typeof bar.shell.mutateShellConfig !== "function") return
 
-        var entries = config.bar.layout[location.section]
-        if (!Array.isArray(entries) || location.index < 0 || location.index >= entries.length) return
+    var fallbackLocation = currentLayoutLocation()
+    var nextInstanceId = String(next.instanceId || "")
 
-        var current = entries[location.index]
-        var currentId = typeof current === "string" ? current : String(current && current.id ? current.id : "")
-        if (currentId !== root.moduleName) return
+    bar.shell.mutateShellConfig(function(config) {
+      if (!config.bar) config.bar = {}
+      if (!config.bar.layout) config.bar.layout = { left: [], center: [], right: [] }
 
-        var updated = { id: currentId }
-        for (var key in next) {
-          if (key !== "id") updated[key] = next[key]
-        }
-        entries[location.index] = updated
-      })
-      return
-    }
+      var location = locationByInstanceId(config.bar.layout, nextInstanceId) || fallbackLocation
+      if (!location) return
 
+      var entries = config.bar.layout[location.section]
+      if (!Array.isArray(entries) || location.index < 0 || location.index >= entries.length) return
+
+      var current = entries[location.index]
+      var currentId = entryId(current)
+      if (currentId !== root.moduleName) return
+
+      var updated = { id: currentId }
+      for (var key in next) {
+        if (key !== "id") updated[key] = next[key]
+      }
+      entries[location.index] = updated
+    })
   }
 
   function setSymbol(value) {
@@ -173,6 +211,7 @@ BarWidget {
     for (var key in settings) {
       if (key !== "id") next[key] = settings[key]
     }
+    next.instanceId = instanceId || generateInstanceId()
     next.symbol = nextSymbol
     saveInstanceSettings(next)
   }
@@ -201,6 +240,7 @@ BarWidget {
   }
 
   Component.onCompleted: {
+    transientInstanceId = generateInstanceId()
     resetQuote()
     if (symbol !== "") Qt.callLater(refresh)
   }
