@@ -18,6 +18,7 @@ BarWidget {
   readonly property string instanceId: String(setting("instanceId", "")) || transientInstanceId
   readonly property bool quoteReady: quoteStatus === "ready" && isFinite(quotePrice)
   readonly property bool priceDown: quoteReady && quoteChange < 0
+  readonly property color quoteColor: priceDown ? Color.bar.active : Color.bar.text
   readonly property string trendGlyph: quoteReady ? (priceDown ? "\u25BC" : "\u25B2") : ""
   readonly property string priceText: quoteReady ? formatPrice(quotePrice) : (quoteStatus === "loading" ? "..." : "?")
   readonly property string labelText: symbol === "" ? "$" : symbol + " " + priceText + (trendGlyph === "" ? "" : " " + trendGlyph)
