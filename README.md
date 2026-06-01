@@ -70,7 +70,7 @@ omarchy plugin update b.omastonk
 
 ## Omanews
 
-Omanews is a headline ticker for the Omarchy bar. It fetches top headlines with `curl` from Google News RSS every ten minutes and keeps the headlines in memory. Left-click advances to the next headline, right-click goes to the previous headline, and middle-click opens an X search for the current headline.
+Omanews is a headline ticker for the Omarchy bar. It displays top headlines from Google News; additional headlines every 10 minutes. Left-click advances to the next headline, right-click goes to the previous headline, and middle-click opens an X search for the current headline.
 
 ![Omanews screenshot](images/omanews.png)
 
