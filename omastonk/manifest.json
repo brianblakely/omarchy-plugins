@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "b.omastonk",
+  "name": "Omastonk",
+  "version": "1.0.0",
+  "author": "Brian Blakely",
+  "description": "Omarchy bar widget for a selected market symbol.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Omastonk",
+    "description": "Shows a selected symbol, current price, and today's direction.",
+    "category": "Info",
+    "allowMultiple": true,
+    "defaults": {
+      "symbol": ""
+    },
+    "schema": [
+      {
+        "key": "symbol",
+        "type": "string",
+        "label": "Symbol",
+        "description": "Market symbol to display, such as AAPL, SPY, BTC-USD, or ^GSPC.",
+        "defaultValue": ""
+      }
+    ]
+  }
+}

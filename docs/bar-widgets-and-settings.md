@@ -222,6 +222,8 @@ BarWidget {
 
 `updateEntryInline` rewrites the inline entry in `shell.json`, preserving `id` and replacing the other keys with the supplied settings object.
 
+For `allowMultiple: true` widgets that save settings from their own UI, do not rely on `updateEntryInline` when the setting must change only the clicked instance. In the target shell, `updateEntryInline(moduleName, settings)` matches entries by widget id, so duplicate instances share that id. If a widget must persist an instance-local value, locate its current bar slot section/index and use `bar.shell.mutateShellConfig(...)` to replace only that `bar.layout.<section>[index]` entry while preserving its `id`.
+
 For non-bar plugins, the documented storage model also uses top-level `plugins[]` entries in `shell.json` with settings inline on the entry. However, settings injection is clearly implemented for bar widget slots in the target commit. For third-party portability, prefer the bar-widget settings pattern unless upstream loader behavior has been verified.
 
 ## Valid Category Values
