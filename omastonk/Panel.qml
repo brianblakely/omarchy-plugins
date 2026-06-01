@@ -33,7 +33,7 @@ Panel {
     { label: "5D", range: "5d", interval: "15m" },
     { label: "1D", range: "1d", interval: "5m" }
   ]
-  readonly property int chartPanelSize: Math.ceil(Math.max(Style.space(1), intervalSizer.implicitWidth))
+  readonly property int chartPanelWidth: Math.ceil(Math.max(Style.space(320), intervalSizer.implicitWidth + Style.space(4)))
   readonly property var selectedInterval: intervalOptions[Math.max(0, Math.min(intervalIndex, intervalOptions.length - 1))]
   readonly property string selectedIntervalLabel: selectedInterval ? selectedInterval.label : "1D"
   readonly property string chartStatusText: chartStatus === "loading" ? "Loading" : (chartStatus === "error" ? "No data" : "")
@@ -222,7 +222,9 @@ Panel {
 
   Row {
     id: intervalSizer
-    visible: false
+    opacity: 0
+    height: 0
+    enabled: false
     spacing: Style.space(6)
 
     Repeater {
@@ -245,8 +247,8 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: root.editing ? symbolField : keyCatcher
-    contentWidth: symbolPanel.fittedContentWidth(root.editing ? Style.space(280) : root.chartPanelSize)
-    contentHeight: root.editing ? symbolPanel.fittedContentHeight(editorColumn.implicitHeight) : contentWidth
+    contentWidth: symbolPanel.fittedContentWidth(root.editing ? Style.space(280) : root.chartPanelWidth)
+    contentHeight: symbolPanel.fittedContentHeight(root.editing ? editorColumn.implicitHeight : chartColumn.implicitHeight)
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -262,7 +264,6 @@ Panel {
         id: chartColumn
         visible: !root.editing
         width: parent.width
-        height: parent.height
         spacing: Style.space(10)
 
         Row {
@@ -272,7 +273,8 @@ Panel {
           spacing: Style.space(8)
 
           Text {
-            width: Math.max(1, parent.width - editButton.implicitWidth - priceLabel.implicitWidth - Style.space(18))
+            id: symbolTitle
+            width: Math.min(implicitWidth, Math.max(1, parent.width - editButton.implicitWidth - priceLabel.implicitWidth - parent.spacing * 3))
             height: parent.height
             text: root.symbol
             color: root.chartColor
@@ -281,6 +283,18 @@ Panel {
             font.bold: true
             elide: Text.ElideRight
             verticalAlignment: Text.AlignVCenter
+          }
+
+          Button {
+            id: editButton
+            text: "Edit"
+            foreground: root.dim
+            onClicked: root.editSymbol()
+          }
+
+          Item {
+            width: Math.max(0, parent.width - symbolTitle.width - editButton.implicitWidth - priceLabel.implicitWidth - parent.spacing * 3)
+            height: parent.height
           }
 
           Text {
@@ -292,18 +306,11 @@ Panel {
             font.pixelSize: Style.font.body
             verticalAlignment: Text.AlignVCenter
           }
-
-          Button {
-            id: editButton
-            text: "Edit"
-            foreground: root.dim
-            onClicked: root.editSymbol()
-          }
         }
 
         Rectangle {
           width: parent.width
-          height: Math.max(Style.space(96), parent.height - headerRow.height - intervalRow.implicitHeight - chartColumn.spacing * 2)
+          height: Style.space(152)
           color: "transparent"
           border.color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.12)
           border.width: Math.max(1, Style.spacing.hairline)
@@ -349,7 +356,7 @@ Panel {
 
               ctx.strokeStyle = root.chartColor
               ctx.fillStyle = Qt.rgba(root.chartColor.r, root.chartColor.g, root.chartColor.b, 0.16)
-              ctx.lineWidth = 1.15
+              ctx.lineWidth = 0.5
               ctx.lineJoin = "round"
               ctx.lineCap = "round"
               ctx.beginPath()
