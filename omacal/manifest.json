@@ -9,8 +9,7 @@
     "bar-widget"
   ],
   "entryPoints": {
-    "barWidget": "BarWidget.qml",
-    "panel": "Panel.qml"
+    "barWidget": "BarWidget.qml"
   },
   "barWidget": {
     "displayName": "Omacal",
@@ -21,14 +20,15 @@
       "mondayFirstDayofWeek": false,
       "titleFormat": "dd MMMM 'W'ww yyyy",
       "horizontalClockFormat": "dddd HH:mm",
-      "verticalClockFormat": "HH\n—\nmm"
+      "verticalClockFormat": "HH\n—\nmm",
+      "flashDurationSeconds": 2
     },
     "schema": [
       {
         "key": "mondayFirstDayofWeek",
         "type": "boolean",
         "label": "Start week on Monday",
-        "description": "Start calendar weeks on Monday instead of the locale default."
+        "description": "Start calendar weeks on Monday instead of the locale default"
       },
       {
         "key": "titleFormat",
@@ -44,6 +44,16 @@
         "key": "verticalClockFormat",
         "type": "string",
         "label": "Vertical clock format (left/right bars)"
+      },
+      {
+        "key": "flashDurationSeconds",
+        "type": "integer",
+        "label": "Flash duration",
+        "description": "How long the flash shortcut keeps the calendar panel open, in seconds",
+        "min": 1,
+        "max": 60,
+        "step": 1,
+        "defaultValue": 2
       }
     ]
   }

@@ -16,7 +16,7 @@ Panel {
   property date calendarDate: clock.date
 
   readonly property string dateFormat: setting("titleFormat", "dd MMMM 'W'ww yyyy")
-  readonly property bool mondayFirstDayOfWeek: setting("mondayFirstDayOfWeek", false) === true
+  readonly property bool mondayFirstDayOfWeek: setting("mondayFirstDayofWeek", false)
   readonly property int calendarColumns: 7
   readonly property int calendarRows: 6
   readonly property var monthStart: new Date(calendarDate.getFullYear(), calendarDate.getMonth(), 1)
@@ -28,6 +28,7 @@ Panel {
   readonly property color popupMuted: Qt.darker(popupForeground, 1.8)
   readonly property string popupFontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property string moonPhaseMarker: moonPhaseGlyph(displayDate)
+  readonly property int flashDurationSeconds: normalizedFlashDuration(setting("flashDurationSeconds", 2))
 
   function refresh() {
     displayDate = new Date()
@@ -35,18 +36,31 @@ Panel {
   }
 
   function open() {
+    flashTimer.stop()
     refresh()
     resetCalendarDate()
     root.controller.show()
   }
 
   function close() {
+    flashTimer.stop()
     root.controller.hide()
   }
 
   function toggle() {
     if (root.opened) root.close()
     else root.open()
+  }
+
+  function flash() {
+    root.open()
+    flashTimer.restart()
+  }
+
+  function normalizedFlashDuration(value) {
+    var duration = Number(value)
+    if (!isFinite(duration) || duration <= 0) return 2
+    return Math.max(1, Math.min(60, Math.round(duration)))
   }
 
   function resetCalendarDate() {
@@ -202,13 +216,21 @@ Panel {
   }
 
   IpcHandler {
-    target: "b.omacal"
-    function refresh() { root.refresh() }
-    function open() { root.open() }
-    function close() { root.close() }
-    function show() { root.open() }
-    function hide() { root.close() }
-    function toggle() { root.toggle() }
+    target: root.ipcTarget
+    function refresh(): void { root.refresh() }
+    function open(): void { root.open() }
+    function close(): void { root.close() }
+    function show(): void { root.open() }
+    function hide(): void { root.close() }
+    function toggle(): void { root.toggle() }
+    function flash(): void { root.flash() }
+  }
+
+  Timer {
+    id: flashTimer
+    interval: root.flashDurationSeconds * 1000
+    repeat: false
+    onTriggered: root.close()
   }
 
   KeyboardPanel {
