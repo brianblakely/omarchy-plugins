@@ -230,6 +230,10 @@ BarWidget {
     if (panelLoader.item && panelLoader.item.toggle) panelLoader.item.toggle()
   }
 
+  function openEditor() {
+    if (panelLoader.item && panelLoader.item.openEditor) panelLoader.item.openEditor()
+  }
+
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
@@ -297,6 +301,9 @@ BarWidget {
     horizontalMargin: 8.5
     verticalPadding: 6
     tooltipText: root.symbol === "" ? "Set symbol" : ""
-    onPressed: root.togglePanel()
+    onPressed: function(button) {
+      if (button === Qt.RightButton) root.openEditor()
+      else root.togglePanel()
+    }
   }
 }

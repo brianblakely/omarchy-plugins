@@ -95,6 +95,13 @@ Panel {
     Qt.callLater(focusSymbolField)
   }
 
+  function openEditor() {
+    draftSymbol = symbol
+    editing = true
+    root.controller.show()
+    Qt.callLater(focusSymbolField)
+  }
+
   function cancelEdit() {
     if (symbol === "") {
       root.close()
@@ -269,12 +276,12 @@ Panel {
         Row {
           id: headerRow
           width: parent.width
-          height: editButton.implicitHeight
+          height: Math.max(symbolTitle.implicitHeight, priceLabel.implicitHeight)
           spacing: Style.space(8)
 
           Text {
             id: symbolTitle
-            width: Math.min(implicitWidth, Math.max(1, parent.width - editButton.implicitWidth - priceLabel.implicitWidth - parent.spacing * 3))
+            width: Math.min(implicitWidth, Math.max(1, parent.width - priceLabel.implicitWidth - parent.spacing))
             height: parent.height
             text: root.symbol
             color: root.chartColor
@@ -285,15 +292,8 @@ Panel {
             verticalAlignment: Text.AlignVCenter
           }
 
-          Button {
-            id: editButton
-            text: "Edit"
-            foreground: root.dim
-            onClicked: root.editSymbol()
-          }
-
           Item {
-            width: Math.max(0, parent.width - symbolTitle.width - editButton.implicitWidth - priceLabel.implicitWidth - parent.spacing * 3)
+            width: Math.max(0, parent.width - symbolTitle.width - priceLabel.implicitWidth - parent.spacing * 2)
             height: parent.height
           }
 
@@ -440,12 +440,6 @@ Panel {
         Row {
           width: parent.width
           spacing: Style.space(8)
-
-          Button {
-            text: "Clear"
-            foreground: root.dim
-            onClicked: root.clear()
-          }
 
           Button {
             text: "Save"

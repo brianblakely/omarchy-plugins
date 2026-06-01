@@ -30,7 +30,7 @@ omarchy plugin update b.omacal
 ## Shortcuts
 
 ```lua
-foo
+hl.unbind("SUPER + CTRL + ALT + T")
 o.bind("SUPER + CTRL + ALT + T", "Flash mini calendar", "omarchy-shell b.omacal flash")
 o.bind("SUPER + F9", "Toggle mini calendar", "omarchy-shell b.omacal toggle")
 o.bind("SUPER + ALT + F9", "Open mini calendar", "omarchy-shell b.omacal open")
@@ -43,7 +43,9 @@ Right-clicking the clock will allow you to change timezone, exactly like the def
 
 Omastonk is a bar widget for a selected market symbol. It starts with no selected symbol; click the widget to enter one. Each widget instance stores its symbol inline on that bar entry in `~/.config/omarchy/shell.json`, so multiple Omastonk instances can track different symbols.
 
-After a symbol is set, Omastonk fetches quote data with `curl` from Yahoo Finance and refreshes once per minute.
+After a symbol is set, Omastonk fetches quote data with `curl` from Yahoo Finance and refreshes once per minute. The chart panel supports keyboard controls (including vim bindings) for switching intervals. Right-click the bar widget to change symbol.
+
+![Omastonk screenshot](images/omastonk.png)
 
 ## Install Omastonk
 
@@ -66,8 +68,3 @@ omarchy plugin add b.omastonk --from b --enable --yes
 omarchy plugin update b.omastonk
 ```
 
-## Validate Omastonk From Source
-
-```bash
-omarchy plugin validate ./omastonk
-```
