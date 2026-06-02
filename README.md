@@ -1,8 +1,8 @@
 # Omarchy Plugins
 
-* [Omacal](#omacal)
-* [Omastonk](#omastonk)
-* [Omanews](#omanews)
+* [Omacal](#omacal) - Drop-in clock replacement with mini calendar
+* [Omastonk](#omastonk) - Stock tickers in the Omarchy bar, with charts
+* [Omanews](#omanews) - Headlines in the Omarchy bar, with instant access to commentary
 
 ## Omacal
 
