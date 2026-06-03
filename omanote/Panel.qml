@@ -26,7 +26,7 @@ Panel {
 
   readonly property bool dirty: noteText !== savedText
   readonly property string runtimeDir: Quickshell.env("XDG_RUNTIME_DIR") || ""
-  readonly property int desiredPanelSize: Style.space(280)
+  readonly property int desiredPanelSize: Style.space(210)
   readonly property color foreground: Color.popups.text
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
