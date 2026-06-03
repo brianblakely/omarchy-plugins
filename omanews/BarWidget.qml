@@ -24,7 +24,7 @@ BarWidget {
   readonly property string displayText: currentHeadline !== "" ? currentHeadline : statusText
   readonly property string tooltip: currentHeadline !== "" ? currentHeadline : (feedStatus === "error" ? "Headlines unavailable" : "")
   readonly property real tickerGap: Style.space(5)
-  readonly property string tickerSeparator: "\u2b24"
+  readonly property string tickerSeparator: "\u25cf"
   readonly property real tickerDistance: labelText.implicitWidth + tickerGap + separatorLabel.implicitWidth + tickerGap
   readonly property real naturalHeadlineWidth: Math.min(maxHeadlineWidth, labelText.implicitWidth) + Style.space(17)
   readonly property int tickerDuration: Math.max(1800, Math.round(wordCount(displayText) * 60000 / 200))
@@ -336,7 +336,7 @@ BarWidget {
         text: root.tickerSeparator
         color: Qt.rgba(labelText.color.r, labelText.color.g, labelText.color.b, 0.45)
         font.family: labelText.font.family
-        font.pixelSize: labelText.font.pixelSize
+        font.pixelSize: Math.round(labelText.font.pixelSize * 1.25)
         opacity: labelText.opacity
       }
 
