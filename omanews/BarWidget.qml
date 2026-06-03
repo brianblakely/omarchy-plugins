@@ -22,10 +22,11 @@ BarWidget {
   readonly property string statusText: feedStatus === "loading" ? "News loading" : "News"
   readonly property string displayText: currentHeadline !== "" ? currentHeadline : statusText
   readonly property string tooltip: currentHeadline !== "" ? currentHeadline : (feedStatus === "error" ? "Headlines unavailable" : "")
-  readonly property real tickerGap: Style.space(10)
-  readonly property real tickerDistance: labelText.implicitWidth + tickerGap
+  readonly property real tickerGap: Style.space(5)
+  readonly property string tickerSeparator: "\u2022"
+  readonly property real tickerDistance: labelText.implicitWidth + tickerGap + separatorLabel.implicitWidth + tickerGap
   readonly property real naturalHeadlineWidth: Math.min(maxHeadlineWidth, labelText.implicitWidth) + Style.space(17)
-  readonly property int tickerDuration: Math.max(1800, Math.round(wordCount(displayText) * 60000 / 250))
+  readonly property int tickerDuration: Math.max(1800, Math.round(wordCount(displayText) * 60000 / 200))
   readonly property bool tickerHovered: hoverArea.containsMouse
   readonly property bool tickerAvailable: currentHeadline !== ""
     && !vertical
@@ -297,6 +298,18 @@ BarWidget {
           enabled: !root.bar || root.bar.foregroundAnimationEnabled
           ColorAnimation { duration: 160 }
         }
+      }
+
+      Text {
+        id: separatorLabel
+        anchors.verticalCenter: parent.verticalCenter
+        x: labelText.implicitWidth + root.tickerGap
+        visible: root.tickerRunning
+        text: root.tickerSeparator
+        color: Qt.rgba(labelText.color.r, labelText.color.g, labelText.color.b, 0.45)
+        font.family: labelText.font.family
+        font.pixelSize: labelText.font.pixelSize
+        opacity: labelText.opacity
       }
 
       Text {
