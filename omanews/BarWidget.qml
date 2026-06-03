@@ -12,6 +12,8 @@ BarWidget {
   property int headlineIndex: 0
   property string feedOutput: ""
   property string feedStatus: "idle"
+  property bool headlineHovered: false
+  property bool tickerBlocked: false
 
   readonly property int maxHeadlineWidth: Number(setting("maxWidth", 360))
   readonly property int headlineLimit: Number(setting("limit", 15))
@@ -20,6 +22,14 @@ BarWidget {
   readonly property string statusText: feedStatus === "loading" ? "News loading" : "News"
   readonly property string displayText: currentHeadline !== "" ? currentHeadline : statusText
   readonly property string tooltip: currentHeadline !== "" ? currentHeadline : (feedStatus === "error" ? "Headlines unavailable" : "")
+  readonly property real tickerGap: Style.space(10)
+  readonly property real tickerDistance: labelText.implicitWidth + tickerGap
+  readonly property int tickerDuration: Math.max(4000, Math.round(tickerDistance * 35))
+  readonly property bool tickerAvailable: currentHeadline !== ""
+    && !vertical
+    && tickerClip.width > 0
+    && labelText.implicitWidth > tickerClip.width
+  readonly property bool tickerRunning: headlineHovered && tickerAvailable && !tickerBlocked
 
   function validIndex(index) {
     if (headlines.length <= 0) return 0
@@ -140,6 +150,17 @@ BarWidget {
   implicitWidth: root.vertical ? barSize : Math.min(maxHeadlineWidth, labelText.implicitWidth) + Style.space(17)
   implicitHeight: barSize
 
+  onCurrentHeadlineChanged: {
+    tickerBlockTimer.stop()
+    tickerBlocked = headlineHovered
+    tickerRow.x = 0
+    if (tickerBlocked) tickerBlockTimer.restart()
+  }
+
+  onTickerRunningChanged: {
+    if (!tickerRunning) tickerRow.x = 0
+  }
+
   Component.onCompleted: refresh()
 
   IpcHandler {
@@ -200,30 +221,64 @@ BarWidget {
     onTriggered: root.refresh()
   }
 
+  Timer {
+    id: tickerBlockTimer
+    interval: 2000
+    repeat: false
+    onTriggered: root.tickerBlocked = false
+  }
+
   Item {
+    id: tickerClip
     anchors.fill: parent
     anchors.leftMargin: Style.space(8.5)
     anchors.rightMargin: Style.space(8.5)
     clip: true
 
-    Text {
-      id: labelText
+    Item {
+      id: tickerRow
       anchors.verticalCenter: parent.verticalCenter
-      anchors.left: parent.left
-      width: parent.width
-      text: root.displayText
-      color: root.bar ? root.bar.barForeground : Color.foreground
-      font.family: root.bar ? root.bar.fontFamily : Style.font.family
-      font.pixelSize: Style.font.body
-      horizontalAlignment: root.vertical ? Text.AlignHCenter : Text.AlignLeft
-      elide: root.vertical ? Text.ElideNone : Text.ElideRight
-      rotation: root.vertical ? -90 : 0
-      transformOrigin: Item.Center
-      opacity: root.currentHeadline === "" ? 0.65 : 1
+      width: root.tickerRunning ? root.tickerDistance + repeatedLabel.implicitWidth : parent.width
+      height: labelText.implicitHeight
 
-      Behavior on color {
-        enabled: !root.bar || root.bar.foregroundAnimationEnabled
-        ColorAnimation { duration: 160 }
+      Text {
+        id: labelText
+        anchors.verticalCenter: parent.verticalCenter
+        width: root.tickerRunning ? implicitWidth : tickerClip.width
+        text: root.displayText
+        color: root.bar ? root.bar.barForeground : Color.foreground
+        font.family: root.bar ? root.bar.fontFamily : Style.font.family
+        font.pixelSize: Style.font.body
+        horizontalAlignment: root.vertical ? Text.AlignHCenter : Text.AlignLeft
+        elide: root.tickerRunning || root.vertical ? Text.ElideNone : Text.ElideRight
+        rotation: root.vertical ? -90 : 0
+        transformOrigin: Item.Center
+        opacity: root.currentHeadline === "" ? 0.65 : 1
+
+        Behavior on color {
+          enabled: !root.bar || root.bar.foregroundAnimationEnabled
+          ColorAnimation { duration: 160 }
+        }
+      }
+
+      Text {
+        id: repeatedLabel
+        anchors.verticalCenter: parent.verticalCenter
+        x: root.tickerDistance
+        visible: root.tickerRunning
+        text: root.displayText
+        color: labelText.color
+        font.family: labelText.font.family
+        font.pixelSize: labelText.font.pixelSize
+        opacity: labelText.opacity
+      }
+
+      NumberAnimation on x {
+        from: 0
+        to: -root.tickerDistance
+        duration: root.tickerDuration
+        loops: Animation.Infinite
+        running: root.tickerRunning
       }
     }
   }
@@ -240,7 +295,16 @@ BarWidget {
       else root.showNextHeadline()
     }
 
-    onEntered: if (root.bar) root.bar.showTooltip(root, root.tooltip)
-    onExited: if (root.bar) root.bar.hideTooltip(root)
+    onEntered: {
+      root.headlineHovered = true
+      if (root.bar) root.bar.showTooltip(root, root.tooltip)
+    }
+
+    onExited: {
+      root.headlineHovered = false
+      root.tickerBlocked = false
+      tickerBlockTimer.stop()
+      if (root.bar) root.bar.hideTooltip(root)
+    }
   }
 }
