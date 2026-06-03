@@ -77,7 +77,7 @@ omarchy plugin update b.omastonk
 
 ## Omanote
 
-Omanote displays a note icon in the Omarchy bar. Click it to open a square multiline scratch note panel.
+Omanote displays a note icon in the Omarchy bar. Click it or activate a binding to open a scratch note panel.
 
 The note is stored securely with the desktop Secret Service through `secret-tool`, using the attributes `omarchy-plugin=b.omanote` and `field=note`. During automatic saves, Omanote writes the note to a short-lived file in `$XDG_RUNTIME_DIR`, pipes that file into `secret-tool store`, and deletes the runtime file immediately after the keyring store command exits. No note text is stored in `~/.config/omarchy/shell.json`.
 
