@@ -24,6 +24,8 @@ Panel {
   readonly property color chartColor: intervalDown ? Color.bar.active : Color.bar.text
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property string symbol: host ? host.symbol : normalizeSymbol(setting("symbol", ""))
+  readonly property real intervalPriceChange: chartPoints.length > 1 ? chartPoints[chartPoints.length - 1] - chartPoints[0] : NaN
+  readonly property real intervalPercentChange: chartPoints.length > 1 && chartPoints[0] !== 0 ? intervalPriceChange / chartPoints[0] * 100 : NaN
   readonly property var intervalOptions: [
     { label: "5Y", range: "5y", interval: "1wk" },
     { label: "1Y", range: "1y", interval: "1d" },
@@ -33,10 +35,13 @@ Panel {
     { label: "5D", range: "5d", interval: "15m" },
     { label: "1D", range: "1d", interval: "5m" }
   ]
-  readonly property int chartPanelWidth: Math.ceil(intervalSizer.implicitWidth + Style.space(28))
+  readonly property int chartPanelWidth: Math.ceil(Math.max(intervalSizer.implicitWidth, changeSizer.implicitWidth + Style.space(88)) + Style.space(28))
   readonly property var selectedInterval: intervalOptions[Math.max(0, Math.min(intervalIndex, intervalOptions.length - 1))]
   readonly property string selectedIntervalLabel: selectedInterval ? selectedInterval.label : "1D"
   readonly property string chartStatusText: chartStatus === "loading" ? "Loading" : (chartStatus === "error" ? "No data" : "")
+  readonly property string intervalChangeText: chartStatus === "ready" && isFinite(intervalPriceChange)
+    ? formatSignedPrice(intervalPriceChange) + " (" + formatSignedPercent(intervalPercentChange) + ")"
+    : (chartStatus === "loading" ? "..." : "?")
 
   function normalizeSymbol(value) {
     return String(value || "").trim().toUpperCase().replace(/\s+/g, "")
@@ -46,6 +51,31 @@ Panel {
     if (value === undefined || value === null || value === "") return NaN
     var number = Number(value)
     return isFinite(number) ? number : NaN
+  }
+
+  function formatPrice(value) {
+    var number = Number(value)
+    if (!isFinite(number)) return "?"
+
+    var absolute = Math.abs(number)
+    var decimals = absolute >= 1 ? 2 : 4
+    return absolute.toFixed(decimals)
+  }
+
+  function signPrefix(value) {
+    return Number(value) < 0 ? "-" : "+"
+  }
+
+  function formatSignedPrice(value) {
+    var number = Number(value)
+    if (!isFinite(number)) return "?"
+    return signPrefix(number) + formatPrice(number)
+  }
+
+  function formatSignedPercent(value) {
+    var number = Number(value)
+    if (!isFinite(number)) return "?"
+    return signPrefix(number) + Math.abs(number).toFixed(2) + "%"
   }
 
   function clampIntervalIndex(value) {
@@ -247,6 +277,16 @@ Panel {
     }
   }
 
+  Text {
+    id: changeSizer
+    opacity: 0
+    height: 0
+    enabled: false
+    text: root.intervalChangeText
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.body
+  }
+
   KeyboardPanel {
     id: symbolPanel
     anchorItem: root.anchorItem
@@ -300,7 +340,7 @@ Panel {
           Text {
             id: priceLabel
             height: parent.height
-            text: host ? host.priceText : ""
+            text: root.intervalChangeText
             color: root.chartColor
             font.family: root.fontFamily
             font.pixelSize: Style.font.body

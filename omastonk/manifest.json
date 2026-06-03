@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "b.omastonk",
   "name": "Omastonk",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "author": "Brian Blakely",
   "description": "Omarchy bar widget for a selected market symbol.",
   "kinds": [
