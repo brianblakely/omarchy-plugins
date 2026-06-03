@@ -12,7 +12,6 @@ BarWidget {
   property int headlineIndex: 0
   property string feedOutput: ""
   property string feedStatus: "idle"
-  property bool headlineHovered: false
   property bool tickerBlocked: false
 
   readonly property int maxHeadlineWidth: Number(setting("maxWidth", 360))
@@ -24,12 +23,13 @@ BarWidget {
   readonly property string tooltip: currentHeadline !== "" ? currentHeadline : (feedStatus === "error" ? "Headlines unavailable" : "")
   readonly property real tickerGap: Style.space(10)
   readonly property real tickerDistance: labelText.implicitWidth + tickerGap
-  readonly property int tickerDuration: Math.max(2667, Math.round(tickerDistance * 35 / 1.5))
+  readonly property int tickerDuration: Math.max(2400, Math.round(tickerDistance * 20))
+  readonly property bool tickerHovered: hoverArea.containsMouse
   readonly property bool tickerAvailable: currentHeadline !== ""
     && !vertical
     && tickerClip.width > 0
     && labelText.implicitWidth > tickerClip.width
-  readonly property bool tickerRunning: headlineHovered && tickerAvailable && !tickerBlocked
+  readonly property bool tickerRunning: tickerHovered && tickerAvailable && !tickerBlocked
 
   function validIndex(index) {
     if (headlines.length <= 0) return 0
@@ -104,9 +104,12 @@ BarWidget {
       return
     }
 
+    var nextIndex = next.indexOf(previousHeadline)
+    if (nextIndex < 0) nextIndex = 0
+    if (next[nextIndex] !== previousHeadline) blockTickerScroll()
+
     headlines = next
-    var previousIndex = next.indexOf(previousHeadline)
-    headlineIndex = previousIndex >= 0 ? previousIndex : 0
+    headlineIndex = nextIndex
     feedStatus = "ready"
   }
 
@@ -126,7 +129,11 @@ BarWidget {
       return ""
     }
 
-    headlineIndex = validIndex(headlineIndex + 1)
+    var currentIndex = validIndex(headlineIndex)
+    var nextIndex = validIndex(currentIndex + 1)
+    if (nextIndex !== currentIndex) blockTickerScroll()
+
+    headlineIndex = nextIndex
     return currentHeadline
   }
 
@@ -136,7 +143,11 @@ BarWidget {
       return ""
     }
 
-    headlineIndex = validIndex(headlineIndex - 1)
+    var currentIndex = validIndex(headlineIndex)
+    var nextIndex = validIndex(currentIndex - 1)
+    if (nextIndex !== currentIndex) blockTickerScroll()
+
+    headlineIndex = nextIndex
     return currentHeadline
   }
 
@@ -147,18 +158,38 @@ BarWidget {
     return "ok"
   }
 
+  function resetTickerScroll() {
+    tickerRow.x = 0
+  }
+
+  function blockTickerScroll() {
+    tickerBlockTimer.stop()
+    resetTickerScroll()
+
+    if (!tickerHovered) {
+      tickerBlocked = false
+      return
+    }
+
+    tickerBlocked = true
+    tickerBlockTimer.restart()
+  }
+
+  function clearTickerBlock() {
+    tickerBlockTimer.stop()
+    tickerBlocked = false
+    resetTickerScroll()
+  }
+
   implicitWidth: root.vertical ? barSize : Math.min(maxHeadlineWidth, labelText.implicitWidth) + Style.space(17)
   implicitHeight: barSize
 
   onCurrentHeadlineChanged: {
-    tickerBlockTimer.stop()
-    tickerBlocked = headlineHovered
-    tickerRow.x = 0
-    if (tickerBlocked) tickerBlockTimer.restart()
+    blockTickerScroll()
   }
 
   onTickerRunningChanged: {
-    if (!tickerRunning) tickerRow.x = 0
+    if (!tickerRunning) resetTickerScroll()
   }
 
   Component.onCompleted: refresh()
@@ -284,6 +315,7 @@ BarWidget {
   }
 
   MouseArea {
+    id: hoverArea
     anchors.fill: parent
     hoverEnabled: true
     acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
@@ -296,14 +328,11 @@ BarWidget {
     }
 
     onEntered: {
-      root.headlineHovered = true
       if (root.bar) root.bar.showTooltip(root, root.tooltip)
     }
 
     onExited: {
-      root.headlineHovered = false
-      root.tickerBlocked = false
-      tickerBlockTimer.stop()
+      root.clearTickerBlock()
       if (root.bar) root.bar.hideTooltip(root)
     }
   }
