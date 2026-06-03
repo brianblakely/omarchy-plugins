@@ -13,6 +13,7 @@ BarWidget {
   property string feedOutput: ""
   property string feedStatus: "idle"
   property bool tickerBlocked: false
+  property real tickerBlockUntil: 0
   property real hoveredWidth: 0
 
   readonly property int maxHeadlineWidth: Number(setting("maxWidth", 360))
@@ -23,7 +24,7 @@ BarWidget {
   readonly property string displayText: currentHeadline !== "" ? currentHeadline : statusText
   readonly property string tooltip: currentHeadline !== "" ? currentHeadline : (feedStatus === "error" ? "Headlines unavailable" : "")
   readonly property real tickerGap: Style.space(5)
-  readonly property string tickerSeparator: "\u2022"
+  readonly property string tickerSeparator: "\u2b24"
   readonly property real tickerDistance: labelText.implicitWidth + tickerGap + separatorLabel.implicitWidth + tickerGap
   readonly property real naturalHeadlineWidth: Math.min(maxHeadlineWidth, labelText.implicitWidth) + Style.space(17)
   readonly property int tickerDuration: Math.max(1800, Math.round(wordCount(displayText) * 60000 / 200))
@@ -175,14 +176,23 @@ BarWidget {
     resetTickerScroll()
     if (tickerHovered) hoveredWidth = Math.max(hoveredWidth, width, naturalHeadlineWidth)
 
+    tickerBlockUntil = Date.now() + 2000
     tickerBlocked = true
+    tickerBlockTimer.interval = 2000
     tickerBlockTimer.restart()
   }
 
   function clearTickerBlock() {
+    tickerHoverExitTimer.stop()
     tickerBlockTimer.stop()
+    tickerBlockUntil = 0
     tickerBlocked = false
+    if (!tickerHovered) hoveredWidth = 0
     resetTickerScroll()
+  }
+
+  function clearTickerBlockIfStillExited() {
+    if (!tickerHovered) clearTickerBlock()
   }
 
   implicitWidth: root.vertical ? barSize : Math.max(naturalHeadlineWidth, hoveredWidth)
@@ -264,7 +274,25 @@ BarWidget {
     id: tickerBlockTimer
     interval: 2000
     repeat: false
-    onTriggered: root.tickerBlocked = false
+    onTriggered: {
+      var remaining = root.tickerBlockUntil - Date.now()
+      if (remaining > 0) {
+        interval = Math.max(1, Math.ceil(remaining))
+        restart()
+        return
+      }
+
+      root.tickerBlockUntil = 0
+      root.tickerBlocked = false
+      interval = 2000
+    }
+  }
+
+  Timer {
+    id: tickerHoverExitTimer
+    interval: 80
+    repeat: false
+    onTriggered: root.clearTickerBlockIfStillExited()
   }
 
   Item {
@@ -348,13 +376,13 @@ BarWidget {
     }
 
     onEntered: {
+      tickerHoverExitTimer.stop()
       root.hoveredWidth = Math.max(root.hoveredWidth, root.width, root.naturalHeadlineWidth)
       if (root.bar) root.bar.showTooltip(root, root.tooltip)
     }
 
     onExited: {
-      root.clearTickerBlock()
-      root.hoveredWidth = 0
+      tickerHoverExitTimer.restart()
       if (root.bar) root.bar.hideTooltip(root)
     }
   }
