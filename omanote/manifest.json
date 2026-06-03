@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "b.omanote",
+  "name": "Omanote",
+  "version": "0.0.1",
+  "author": "Brian Blakely",
+  "description": "Omarchy-native secure scratch note for the bar",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Omanote",
+    "description": "Shows a note icon and opens a secure multiline scratch note",
+    "category": "Info",
+    "allowMultiple": false
+  }
+}

@@ -2,6 +2,7 @@
 
 * [Omacal](#omacal) - Drop-in clock replacement with mini calendar
 * [Omastonk](#omastonk) - Stock tickers in the Omarchy bar, with charts
+* [Omanote](#omanote) - Secure scratch note in the Omarchy bar
 * [Omanews](#omanews) - Headlines in the Omarchy bar, with instant access to commentary
 
 ## Omacal
@@ -70,6 +71,43 @@ omarchy plugin add b.omastonk --from b --enable --yes
 
 ```bash
 omarchy plugin update b.omastonk
+```
+
+## Omanote
+
+Omanote displays a note icon in the Omarchy bar. Click it to open a square multiline scratch note panel.
+
+The note is persisted with the desktop Secret Service through `secret-tool`, using the attributes `omarchy-plugin=b.omanote` and `field=note`. During saves, Omanote writes the note to a short-lived file in `$XDG_RUNTIME_DIR`, pipes that file into `secret-tool store`, and deletes the runtime file immediately after the keyring store command exits. No note text is stored in `~/.config/omarchy/shell.json`.
+
+Omanote runs `bash` and `secret-tool`. It does not use the network and does not install keybindings automatically.
+
+### Install
+
+```bash
+omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b
+omarchy plugin available
+omarchy plugin add b.omanote --from b --review --enable
+```
+
+For unattended installs:
+
+```bash
+omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b --yes
+omarchy plugin add b.omanote --from b --enable --yes
+```
+
+### Update
+
+```bash
+omarchy plugin update b.omanote
+```
+
+### Shortcuts
+
+```lua
+o.bind("SUPER + F8", "Toggle Omanote", "omarchy-shell b.omanote toggle")
+o.bind("SUPER + ALT + F8", "Open Omanote", "omarchy-shell b.omanote open")
+o.bind("SUPER + CTRL + F8", "Close Omanote", "omarchy-shell b.omanote close")
 ```
 
 ## Omanews
