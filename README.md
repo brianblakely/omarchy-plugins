@@ -47,7 +47,7 @@ Right-clicking the clock will allow you to change timezone, exactly like the def
 
 Omastonk is a bar widget for a selected market symbol. It starts with no selected symbol; click the widget to enter one. Each widget instance stores its symbol inline on that bar entry in `~/.config/omarchy/shell.json`, so multiple Omastonk instances can track different symbols.
 
-After a symbol is set, Omastonk fetches quote data with `curl` from Yahoo Finance and refreshes once per minute. The chart panel supports keyboard controls (including vim bindings) for switching intervals. Right-click the bar widget to change symbol.
+After a symbol is set, click the bar widget to display the chart panel, which supports keyboard controls (including vim bindings) for switching intervals. Right-click the bar widget to change symbol.
 
 ![Omastonk screenshot](images/omastonk.png)
 
