@@ -4,7 +4,7 @@
 * [Omastonk](#omastonk) - Stock tickers in the Omarchy bar, with charts
 * [Omanote](#omanote) - Secure scratch note in the Omarchy bar
 * [Omanews](#omanews) - Headlines in the Omarchy bar, with instant access to commentary
-* [Peek](#peek) - Toggle Hyprland floating windows into non-interactive transparent overlays
+* [Peek](#peek) - Peek behind floating Hyprland windows
 
 ## Omacal
 
@@ -152,9 +152,10 @@ o.bind("SUPER + CTRL + F10", "Search headline on X", "omarchy-shell b.omanews se
 
 ## Peek
 
-Peek is a headless service for Hyprland floating windows. When enabled, it installs a named dynamic Hyprland 0.55 Lua window rule for floating windows that sets exact low opacity, disables blur, prevents focus, and prevents follow-mouse focus. The rule set mirrors the behavior from [basecamp/omarchy#5899](https://github.com/basecamp/omarchy/pull/5899), adapted for a third-party service plugin.
+Fade out floating windows and interact with content below. [Bind a shortcut](#shortcuts-3) to use Peek.
 
-Peek starts disabled so installing or enabling the plugin does not immediately make existing floating windows hard to use. Control it through Omarchy shell IPC or bind a shortcut yourself. Peek runs `bash` and `hyprctl eval`; it does not write Hyprland config, install keybindings, or use the network.
+![Peek disabled screenshot](images/peek1.png)
+![Peek enabled screenshot](images/peek2.png)
 
 ### Install
 
@@ -175,15 +176,6 @@ omarchy plugin add b.peek --from b --enable --yes
 
 ```bash
 omarchy plugin update b.peek
-```
-
-### IPC
-
-```bash
-omarchy-shell b.peek enable
-omarchy-shell b.peek disable
-omarchy-shell b.peek toggle
-omarchy-shell b.peek status
 ```
 
 ### Shortcuts
