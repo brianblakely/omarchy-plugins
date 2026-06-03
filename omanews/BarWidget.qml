@@ -13,6 +13,7 @@ BarWidget {
   property string feedOutput: ""
   property string feedStatus: "idle"
   property bool tickerBlocked: false
+  property real hoveredWidth: 0
 
   readonly property int maxHeadlineWidth: Number(setting("maxWidth", 360))
   readonly property int headlineLimit: Number(setting("limit", 15))
@@ -23,7 +24,8 @@ BarWidget {
   readonly property string tooltip: currentHeadline !== "" ? currentHeadline : (feedStatus === "error" ? "Headlines unavailable" : "")
   readonly property real tickerGap: Style.space(10)
   readonly property real tickerDistance: labelText.implicitWidth + tickerGap
-  readonly property int tickerDuration: Math.max(2400, Math.round(tickerDistance * 20))
+  readonly property real naturalHeadlineWidth: Math.min(maxHeadlineWidth, labelText.implicitWidth) + Style.space(17)
+  readonly property int tickerDuration: Math.max(1800, Math.round(wordCount(displayText) * 60000 / 250))
   readonly property bool tickerHovered: hoverArea.containsMouse
   readonly property bool tickerAvailable: currentHeadline !== ""
     && !vertical
@@ -37,6 +39,11 @@ BarWidget {
     if (!isFinite(n)) n = 0
     n = Math.round(n) % headlines.length
     return n < 0 ? n + headlines.length : n
+  }
+
+  function wordCount(value) {
+    var text = String(value || "").trim()
+    return text === "" ? 0 : text.split(/\s+/).length
   }
 
   function decodeEntity(entity) {
@@ -165,11 +172,7 @@ BarWidget {
   function blockTickerScroll() {
     tickerBlockTimer.stop()
     resetTickerScroll()
-
-    if (!tickerHovered) {
-      tickerBlocked = false
-      return
-    }
+    if (tickerHovered) hoveredWidth = Math.max(hoveredWidth, width, naturalHeadlineWidth)
 
     tickerBlocked = true
     tickerBlockTimer.restart()
@@ -181,8 +184,12 @@ BarWidget {
     resetTickerScroll()
   }
 
-  implicitWidth: root.vertical ? barSize : Math.min(maxHeadlineWidth, labelText.implicitWidth) + Style.space(17)
+  implicitWidth: root.vertical ? barSize : Math.max(naturalHeadlineWidth, hoveredWidth)
   implicitHeight: barSize
+
+  onNaturalHeadlineWidthChanged: {
+    if (tickerHovered) hoveredWidth = Math.max(hoveredWidth, naturalHeadlineWidth)
+  }
 
   onCurrentHeadlineChanged: {
     blockTickerScroll()
@@ -328,11 +335,13 @@ BarWidget {
     }
 
     onEntered: {
+      root.hoveredWidth = Math.max(root.hoveredWidth, root.width, root.naturalHeadlineWidth)
       if (root.bar) root.bar.showTooltip(root, root.tooltip)
     }
 
     onExited: {
       root.clearTickerBlock()
+      root.hoveredWidth = 0
       if (root.bar) root.bar.hideTooltip(root)
     }
   }
