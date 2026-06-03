@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "b.peek",
+  "name": "Peek",
+  "version": "0.0.1",
+  "author": "Brian Blakely",
+  "description": "Hyprland floating-window peek service",
+  "kinds": [
+    "service"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml"
+  }
+}

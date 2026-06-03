@@ -4,6 +4,7 @@
 * [Omastonk](#omastonk) - Stock tickers in the Omarchy bar, with charts
 * [Omanote](#omanote) - Secure scratch note in the Omarchy bar
 * [Omanews](#omanews) - Headlines in the Omarchy bar, with instant access to commentary
+* [Peek](#peek) - Toggle Hyprland floating windows into non-interactive transparent overlays
 
 ## Omacal
 
@@ -147,4 +148,48 @@ omarchy plugin update b.omanews
 o.bind("SUPER + F10", "Next headline", "omarchy-shell b.omanews next")
 o.bind("SUPER + ALT + F10", "Previous headline", "omarchy-shell b.omanews previous")
 o.bind("SUPER + CTRL + F10", "Search headline on X", "omarchy-shell b.omanews search")
+```
+
+## Peek
+
+Peek is a headless service for Hyprland floating windows. When enabled, it installs a named dynamic Hyprland window rule for floating windows that sets exact low opacity, disables blur, prevents focus, and prevents follow-mouse focus. The rule set mirrors the behavior from [basecamp/omarchy#5899](https://github.com/basecamp/omarchy/pull/5899), adapted for a third-party service plugin.
+
+Peek starts disabled so installing or enabling the plugin does not immediately make existing floating windows hard to use. Control it through Omarchy shell IPC or bind a shortcut yourself. Peek runs `bash` and `hyprctl`; it does not write Hyprland config, install keybindings, or use the network.
+
+### Install
+
+```bash
+omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b
+omarchy plugin available
+omarchy plugin add b.peek --from b --review --enable
+```
+
+For unattended installs:
+
+```bash
+omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b --yes
+omarchy plugin add b.peek --from b --enable --yes
+```
+
+### Update
+
+```bash
+omarchy plugin update b.peek
+```
+
+### IPC
+
+```bash
+omarchy-shell b.peek enable
+omarchy-shell b.peek disable
+omarchy-shell b.peek toggle
+omarchy-shell b.peek status
+```
+
+### Shortcuts
+
+```lua
+o.bind("SUPER + GRAVE", "Toggle floating window peek", "omarchy-shell b.peek toggle")
+o.bind("SUPER + ALT + GRAVE", "Enable floating window peek", "omarchy-shell b.peek enable")
+o.bind("SUPER + CTRL + GRAVE", "Disable floating window peek", "omarchy-shell b.peek disable")
 ```
