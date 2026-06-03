@@ -49,9 +49,8 @@ BarWidget {
     anchors.fill: parent
     bar: root.bar
     text: "\uf249"
-    fontSize: Style.font.icon
     active: panelLoader.item && panelLoader.item.opened
-    horizontalMargin: 8.5
+    horizontalMargin: 5
     verticalPadding: 6
     tooltipText: "Omanote"
     onPressed: root.toggle()

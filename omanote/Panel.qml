@@ -26,19 +26,14 @@ Panel {
 
   readonly property bool dirty: noteText !== savedText
   readonly property string runtimeDir: Quickshell.env("XDG_RUNTIME_DIR") || ""
-  readonly property int desiredPanelSize: Style.space(360)
+  readonly property int desiredPanelSize: Style.space(280)
   readonly property color foreground: Color.popups.text
-  readonly property color dim: Qt.darker(foreground, 1.65)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
-  readonly property string statusText: storageStatus === "loading" ? "Loading"
-    : storageStatus === "saving" ? "Saving"
-    : storageStatus === "error" ? "Storage unavailable"
-    : dirty ? "Unsaved" : "Saved"
 
   function fittedPanelSize(panel) {
     var maxWidth = panel.availableCardWidth > 0 ? panel.availableCardWidth : desiredPanelSize
     var maxHeight = panel.availableCardHeight > 0 ? panel.availableCardHeight : desiredPanelSize
-    return Math.round(Math.max(Style.space(220), Math.min(desiredPanelSize, maxWidth, maxHeight)))
+    return Math.round(Math.max(Style.space(180), Math.min(desiredPanelSize, maxWidth, maxHeight)))
   }
 
   function loadScript() {
@@ -203,7 +198,7 @@ Panel {
 
   Timer {
     id: saveTimer
-    interval: 650
+    interval: 850
     repeat: false
     onTriggered: root.saveNow()
   }
@@ -259,36 +254,25 @@ Panel {
 
       QQC.ScrollView {
         id: editorScroll
-        anchors {
-          top: parent.top
-          left: parent.left
-          right: parent.right
-          bottom: footer.top
-          bottomMargin: Style.space(10)
-        }
+        anchors.fill: parent
         clip: true
         contentWidth: availableWidth
         contentHeight: Math.max(availableHeight, noteArea.implicitHeight)
         QQC.ScrollBar.vertical: QQC.ScrollBar {
-          policy: QQC.ScrollBar.AsNeeded
+          policy: QQC.ScrollBar.AlwaysOff
         }
         QQC.ScrollBar.horizontal: QQC.ScrollBar {
           policy: QQC.ScrollBar.AlwaysOff
         }
 
-        background: Rectangle {
-          color: Style.normalFillFor(root.foreground, Color.accent)
-          border.color: Style.normalBorderFor(root.foreground, Color.accent)
-          border.width: Math.max(1, Style.normalBorderWidth)
-          radius: Math.min(Style.cornerRadius, Style.space(6))
-        }
+        background: null
 
         QQC.TextArea {
           id: noteArea
           width: editorScroll.availableWidth
           height: Math.max(editorScroll.availableHeight, implicitHeight)
           text: root.noteText
-          placeholderText: root.storageStatus === "error" ? "Keyring unavailable" : ""
+          placeholderText: ""
           wrapMode: TextEdit.Wrap
           selectByMouse: true
           persistentSelection: true
@@ -306,43 +290,6 @@ Panel {
           enabled: root.storageStatus !== "loading"
           onTextChanged: if (text !== root.noteText) root.updateText(text)
           Keys.onEscapePressed: root.close()
-        }
-      }
-
-      Row {
-        id: footer
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        height: Math.max(statusLabel.implicitHeight, saveButton.implicitHeight)
-        spacing: Style.space(8)
-
-        Text {
-          id: statusLabel
-          width: Math.max(1, parent.width - saveButton.implicitWidth - parent.spacing)
-          anchors.verticalCenter: parent.verticalCenter
-          text: root.statusText
-          color: root.storageStatus === "error" ? Color.urgent : root.dim
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-          elide: Text.ElideRight
-          verticalAlignment: Text.AlignVCenter
-        }
-
-        Button {
-          id: saveButton
-          anchors.verticalCenter: parent.verticalCenter
-          text: "Save"
-          foreground: root.foreground
-          accent: Color.accent
-          selected: root.dirty
-          horizontalPadding: Style.space(8)
-          verticalPadding: Style.space(4)
-          onClicked: {
-            saveTimer.stop()
-            root.saveNow()
-            root.focusEditor()
-          }
         }
       }
     }
