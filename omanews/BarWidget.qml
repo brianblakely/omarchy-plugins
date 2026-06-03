@@ -24,7 +24,7 @@ BarWidget {
   readonly property string tooltip: currentHeadline !== "" ? currentHeadline : (feedStatus === "error" ? "Headlines unavailable" : "")
   readonly property real tickerGap: Style.space(10)
   readonly property real tickerDistance: labelText.implicitWidth + tickerGap
-  readonly property int tickerDuration: Math.max(4000, Math.round(tickerDistance * 35))
+  readonly property int tickerDuration: Math.max(2667, Math.round(tickerDistance * 35 / 1.5))
   readonly property bool tickerAvailable: currentHeadline !== ""
     && !vertical
     && tickerClip.width > 0
