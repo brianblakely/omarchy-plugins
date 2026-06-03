@@ -242,7 +242,7 @@ Panel {
   KeyboardPanel {
     id: notePanel
     anchorItem: root.anchorItem
-    owner: root
+    owner: root.host || root
     bar: root.bar
     open: root.opened
     focusTarget: noteArea
@@ -279,13 +279,12 @@ Panel {
           color: root.foreground
           selectionColor: Style.selectionFillFor(root.foreground, Color.accent)
           selectedTextColor: root.foreground
-          placeholderTextColor: root.dim
           font.family: root.fontFamily
           font.pixelSize: Style.font.body
-          leftPadding: Style.space(10)
-          rightPadding: Style.space(10)
-          topPadding: Style.space(10)
-          bottomPadding: Style.space(10)
+          leftPadding: 0
+          rightPadding: 0
+          topPadding: 0
+          bottomPadding: 0
           background: null
           enabled: root.storageStatus !== "loading"
           onTextChanged: if (text !== root.noteText) root.updateText(text)

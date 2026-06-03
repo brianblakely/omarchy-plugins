@@ -49,7 +49,6 @@ BarWidget {
     anchors.fill: parent
     bar: root.bar
     text: "\uf249"
-    active: panelLoader.item && panelLoader.item.opened
     horizontalMargin: 5
     verticalPadding: 6
     tooltipText: "Omanote"
