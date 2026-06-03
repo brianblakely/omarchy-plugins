@@ -152,9 +152,9 @@ o.bind("SUPER + CTRL + F10", "Search headline on X", "omarchy-shell b.omanews se
 
 ## Peek
 
-Peek is a headless service for Hyprland floating windows. When enabled, it installs a named dynamic Hyprland window rule for floating windows that sets exact low opacity, disables blur, prevents focus, and prevents follow-mouse focus. The rule set mirrors the behavior from [basecamp/omarchy#5899](https://github.com/basecamp/omarchy/pull/5899), adapted for a third-party service plugin.
+Peek is a headless service for Hyprland floating windows. When enabled, it installs a named dynamic Hyprland 0.55 Lua window rule for floating windows that sets exact low opacity, disables blur, prevents focus, and prevents follow-mouse focus. The rule set mirrors the behavior from [basecamp/omarchy#5899](https://github.com/basecamp/omarchy/pull/5899), adapted for a third-party service plugin.
 
-Peek starts disabled so installing or enabling the plugin does not immediately make existing floating windows hard to use. Control it through Omarchy shell IPC or bind a shortcut yourself. Peek runs `bash` and `hyprctl`; it does not write Hyprland config, install keybindings, or use the network.
+Peek starts disabled so installing or enabling the plugin does not immediately make existing floating windows hard to use. Control it through Omarchy shell IPC or bind a shortcut yourself. Peek runs `bash` and `hyprctl eval`; it does not write Hyprland config, install keybindings, or use the network.
 
 ### Install
 

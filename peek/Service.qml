@@ -11,13 +11,7 @@ Item {
   property var manifest: null
 
   readonly property string ruleName: "b-peek-floating-windows"
-  readonly property var ruleKeywords: [
-    "windowrule[" + ruleName + "]:match:float true",
-    "windowrule[" + ruleName + "]:opacity 0.1 override",
-    "windowrule[" + ruleName + "]:no_blur on",
-    "windowrule[" + ruleName + "]:no_focus on",
-    "windowrule[" + ruleName + "]:no_follow_mouse on"
-  ]
+  readonly property string ruleHandleName: "__b_peek_floating_windows_rule"
 
   property bool enabled: false
   property bool desiredEnabled: false
@@ -37,16 +31,38 @@ Item {
     return "'" + String(value).replace(/'/g, "'\\''") + "'"
   }
 
-  function keywordCommand(keyword) {
-    return "hyprctl keyword " + shellQuote(keyword)
+  function luaQuote(value) {
+    return "'" + String(value)
+      .replace(/\\/g, "\\\\")
+      .replace(/'/g, "\\'")
+      .replace(/\n/g, "\\n")
+      + "'"
+  }
+
+  function ruleLua(targetEnabled) {
+    var lines = [
+      "do",
+      "  local key = " + luaQuote(ruleHandleName),
+      "  local rule = rawget(_G, key)",
+      "  if rule == nil then",
+      "    rule = hl.window_rule({",
+      "      name = " + luaQuote(ruleName) + ",",
+      "      match = { float = true },",
+      "      opacity = '0.1 override',",
+      "      no_blur = true,",
+      "      no_focus = true,",
+      "      no_follow_mouse = true,",
+      "    })",
+      "    rawset(_G, key, rule)",
+      "  end",
+      "  rule:set_enabled(" + (targetEnabled ? "true" : "false") + ")",
+      "end"
+    ]
+    return lines.join("\n")
   }
 
   function scriptFor(targetEnabled) {
-    var lines = ["set -e"]
-    for (var i = 0; i < ruleKeywords.length; i++)
-      lines.push(keywordCommand(ruleKeywords[i]))
-    lines.push(keywordCommand("windowrule[" + ruleName + "]:enable " + (targetEnabled ? "true" : "false")))
-    return lines.join("\n")
+    return "set -e\nhyprctl eval " + shellQuote(ruleLua(targetEnabled))
   }
 
   function detachedDisable() {
@@ -100,6 +116,7 @@ Item {
       running: actionProcess.running,
       queued: queued,
       ruleName: ruleName,
+      ruleHandleName: ruleHandleName,
       ruleInstalled: ruleInstalled,
       lastError: lastError,
       lastOutput: lastOutput,
