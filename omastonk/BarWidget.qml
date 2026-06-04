@@ -106,22 +106,32 @@ BarWidget {
   function slotHost() {
     var item = root.parent
     while (item) {
-      if ("region" in item && "entry" in item) return item
+      if (slotItem(item)) return item
       item = item.parent
     }
     return null
   }
 
-  function siblingSlotIndex(host, section) {
+  function slotItem(item) {
+    if (!item) return false
+    try {
+      return item.region !== undefined && item.entry !== undefined
+    } catch (e) {
+      return false
+    }
+  }
+
+  function siblingModuleOccurrence(host, section) {
     var itemParent = host ? host.parent : null
     if (!itemParent || !itemParent.children) return -1
 
-    var index = 0
+    var occurrence = 0
     for (var i = 0; i < itemParent.children.length; i++) {
       var child = itemParent.children[i]
-      if (!child || !("entry" in child) || String(child.region || "") !== section) continue
-      if (child === host) return index
-      index++
+      if (!slotItem(child) || String(child.region || "") !== section) continue
+      if (entryId(child.entry) !== root.moduleName) continue
+      if (child === host) return occurrence
+      occurrence++
     }
 
     return -1
@@ -155,23 +165,33 @@ BarWidget {
     return null
   }
 
-  function currentLayoutLocation() {
-    var host = slotHost()
-    if (!host || !bar || !bar.layoutConfig) return null
+  function locationBySlotContext(layout, context) {
+    if (!layout || !context || context.occurrence < 0) return null
 
-    var section = String(host.region || "")
-    var entries = bar.layoutConfig[section]
+    // The rendered bar can reorder normalized entries; map by same-widget
+    // occurrence so the first save updates the raw shell.json entry.
+    var entries = layout[context.section]
     if (!Array.isArray(entries)) return null
 
+    var occurrence = 0
     for (var i = 0; i < entries.length; i++) {
-      if (entries[i] === host.entry) return { section: section, index: i }
+      if (entryId(entries[i]) !== root.moduleName) continue
+      if (occurrence === context.occurrence) return { section: context.section, index: i }
+      occurrence++
     }
 
-    var siblingIndex = siblingSlotIndex(host, section)
-    if (siblingIndex >= 0 && siblingIndex < entries.length)
-      return { section: section, index: siblingIndex }
-
     return null
+  }
+
+  function currentSlotContext() {
+    var host = slotHost()
+    if (!host) return null
+
+    var section = String(host.region || "")
+    return {
+      section: section,
+      occurrence: siblingModuleOccurrence(host, section)
+    }
   }
 
   function saveInstanceSettings(next) {
@@ -179,14 +199,15 @@ BarWidget {
 
     if (!bar || !bar.shell || typeof bar.shell.mutateShellConfig !== "function") return
 
-    var fallbackLocation = currentLayoutLocation()
+    var slotContext = currentSlotContext()
     var nextInstanceId = String(next.instanceId || "")
 
     bar.shell.mutateShellConfig(function(config) {
       if (!config.bar) config.bar = {}
       if (!config.bar.layout) config.bar.layout = { left: [], center: [], right: [] }
 
-      var location = locationByInstanceId(config.bar.layout, nextInstanceId) || fallbackLocation
+      var location = locationByInstanceId(config.bar.layout, nextInstanceId)
+        || locationBySlotContext(config.bar.layout, slotContext)
       if (!location) return
 
       var entries = config.bar.layout[location.section]
