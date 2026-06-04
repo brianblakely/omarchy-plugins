@@ -15,7 +15,7 @@ Panel {
   property date displayDate: clock.date
   property date calendarDate: clock.date
 
-  readonly property string dateFormat: setting("titleFormat", "dd MMMM 'W'ww yyyy")
+  readonly property string dateFormat: setting("titleFormat", "d MMMM 'W'ww yyyy")
   readonly property bool mondayFirstDayOfWeek: setting("mondayFirstDayofWeek", false)
   readonly property int calendarColumns: 7
   readonly property int calendarRows: 6

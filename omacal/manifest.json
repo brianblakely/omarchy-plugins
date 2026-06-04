@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "b.omacal",
   "name": "Omacal",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "author": "Brian Blakely",
   "description": "Omarchy-native day/time label with a mini calendar popup",
   "kinds": [
@@ -18,7 +18,7 @@
     "allowMultiple": false,
     "defaults": {
       "mondayFirstDayofWeek": false,
-      "titleFormat": "dd MMMM 'W'ww yyyy",
+      "titleFormat": "d MMMM 'W'ww yyyy",
       "horizontalClockFormat": "dddd HH:mm",
       "verticalClockFormat": "HH\n—\nmm",
       "flashDurationSeconds": 2
