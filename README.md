@@ -155,12 +155,15 @@ o.bind("SUPER + CTRL + F10", "Search headline on X", "omarchy-shell b.omanews se
 
 OmaLED heavily dims the Omarchy bar when not in use. The bar will un-dim when the mouse cursor touches the bar or [a shortcut is triggered](#shortcuts-3).
 
+**NOTE:** OmaLED will not work when the Omarchy bar's background is transparent (double-click the bar's background to cycle its color).
+
 ### Install
 
 ```bash
 omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b
 omarchy plugin available
 omarchy plugin add b.omaled --from b --review --enable
+omarchy restart shell
 ```
 
 For unattended installs:
