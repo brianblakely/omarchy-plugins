@@ -26,6 +26,11 @@ Item {
   readonly property bool barHidden: shell && shell.bar && ("barHidden" in shell.bar) && shell.bar.barHidden === true
   readonly property bool effectActive: effectEnabled && !barHidden && shadeOpacity > 0 && shadeSize > 0
   readonly property bool paintOverlay: effectActive && !barTransparent
+  readonly property bool dimSuppressed: hoverGraceActive
+  readonly property real overlayOpacity: dimSuppressed ? 0 : shadeOpacity
+
+  property bool cursorOverBar: false
+  property bool hoverGraceActive: false
 
   function normalizePosition(value) {
     var next = String(value || "").trim()
@@ -51,6 +56,68 @@ Item {
       if (isFinite(size) && size > 0) return Math.round(size)
     }
     return fallbackBarSize
+  }
+
+  function screenNumber(screen, name, fallback) {
+    var value = screen && screen[name] !== undefined ? Number(screen[name]) : Number(fallback)
+    return isFinite(value) ? value : Number(fallback || 0)
+  }
+
+  function cursorInsideScreenBar(x, y, screen) {
+    if (!screen) return false
+
+    var sx = screenNumber(screen, "virtualX", 0)
+    var sy = screenNumber(screen, "virtualY", 0)
+    var sw = screenNumber(screen, "width", 0)
+    var sh = screenNumber(screen, "height", 0)
+    var size = Math.max(1, shadeSize)
+
+    if (sw <= 0 || sh <= 0) return false
+
+    if (barPosition === "top")
+      return x >= sx && x < sx + sw && y >= sy && y < sy + size
+    if (barPosition === "bottom")
+      return x >= sx && x < sx + sw && y >= sy + sh - size && y < sy + sh
+    if (barPosition === "left")
+      return x >= sx && x < sx + size && y >= sy && y < sy + sh
+    if (barPosition === "right")
+      return x >= sx + sw - size && x < sx + sw && y >= sy && y < sy + sh
+
+    return false
+  }
+
+  function cursorInsideAnyBar(x, y) {
+    var screens = Quickshell.screens
+    var count = screens && screens.length !== undefined ? screens.length : 0
+
+    for (var i = 0; i < count; i++) {
+      if (cursorInsideScreenBar(x, y, screens[i])) return true
+    }
+
+    return false
+  }
+
+  function pollCursor() {
+    if (!paintOverlay || cursorProc.running) return
+    cursorProc.running = true
+  }
+
+  function applyCursorPosition(raw) {
+    var match = String(raw || "").match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/)
+    if (!match) {
+      cursorOverBar = false
+      return
+    }
+
+    var x = Number(match[1])
+    var y = Number(match[2])
+    var inside = isFinite(x) && isFinite(y) && cursorInsideAnyBar(x, y)
+
+    cursorOverBar = inside
+    if (inside) {
+      hoverGraceActive = true
+      hoverGraceTimer.restart()
+    }
   }
 
   function currentSettings() {
@@ -121,8 +188,43 @@ Item {
       barTransparent: barTransparent,
       barHidden: barHidden,
       mode: paintOverlay ? "overlay" : (effectActive && barTransparent ? "transparent-pass-through" : "off"),
+      cursorOverBar: cursorOverBar,
+      undimmed: dimSuppressed,
       visible: paintOverlay
     })
+  }
+
+  onPaintOverlayChanged: {
+    if (paintOverlay) {
+      pollCursor()
+    } else {
+      cursorOverBar = false
+      hoverGraceActive = false
+      hoverGraceTimer.stop()
+    }
+  }
+
+  Timer {
+    id: hoverGraceTimer
+    interval: 2500
+    onTriggered: root.hoverGraceActive = false
+  }
+
+  Timer {
+    interval: 250
+    running: root.paintOverlay
+    repeat: true
+    triggeredOnStart: true
+    onTriggered: root.pollCursor()
+  }
+
+  Process {
+    id: cursorProc
+    command: ["bash", "-lc", "hyprctl cursorpos 2>/dev/null || true"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.applyCursorPosition(text)
+    }
   }
 
   Variants {
@@ -152,7 +254,7 @@ Item {
       Rectangle {
         anchors.fill: parent
         color: root.shadeColor
-        opacity: root.shadeOpacity
+        opacity: root.overlayOpacity
       }
     }
   }

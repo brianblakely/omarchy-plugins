@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "b.omaled",
   "name": "OmaLED",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "author": "Brian Blakely",
   "description": "Dim the Omarchy bar when not in use",
   "kinds": [
