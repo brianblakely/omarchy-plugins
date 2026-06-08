@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "b.omaled",
+  "name": "OmaLED",
+  "version": "0.0.1",
+  "author": "Brian Blakely",
+  "description": "Dim the Omarchy bar when not in use",
+  "kinds": [
+    "service"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml"
+  }
+}

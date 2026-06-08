@@ -4,6 +4,7 @@
 * [Omastonk](#omastonk) - Stock tickers in the Omarchy bar, with charts
 * [Omanote](#omanote) - Secure scratch note in the Omarchy bar
 * [Omanews](#omanews) - Headlines in the Omarchy bar, with instant access to commentary
+* [OmaLED](#omaled) - Dim the Omarchy bar when not in use
 * [Peek](#peek) - Peek behind floating Hyprland windows
 
 ## Omacal
@@ -150,9 +151,40 @@ o.bind("SUPER + ALT + F10", "Previous headline", "omarchy-shell b.omanews previo
 o.bind("SUPER + CTRL + F10", "Search headline on X", "omarchy-shell b.omanews search")
 ```
 
+## OmaLED
+
+OmaLED heavily dims the Omarchy bar when not in use. The bar will un-dim when the mouse cursor touches the bar or [a shortcut is triggered](#shortcuts-3).
+
+### Install
+
+```bash
+omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b
+omarchy plugin available
+omarchy plugin add b.omaled --from b --review --enable
+```
+
+For unattended installs:
+
+```bash
+omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b --yes
+omarchy plugin add b.omaled --from b --enable --yes
+```
+
+### Update
+
+```bash
+omarchy plugin update b.omaled
+```
+
+### Shortcuts
+
+```lua
+o.bind("SUPER + CTRL + F11", "Toggle OmaLED", "omarchy-shell b.omaled toggle")
+```
+
 ## Peek
 
-Fade out floating windows and interact with content below. [Bind a shortcut](#shortcuts-3) to use Peek.
+Fade out floating windows and interact with content below. [Bind a shortcut](#shortcuts-4) to use Peek.
 
 ![Peek disabled screenshot](images/peek1.png)
 ![Peek enabled screenshot](images/peek2.png)
