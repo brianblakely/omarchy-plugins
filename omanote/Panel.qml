@@ -185,8 +185,6 @@ Panel {
     }
   }
 
-  Component.onCompleted: loadNote()
-
   IpcHandler {
     target: root.ipcTarget
     function open() { root.open() }
