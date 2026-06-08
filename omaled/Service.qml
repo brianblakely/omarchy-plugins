@@ -31,6 +31,10 @@ Item {
 
   property bool cursorOverBar: false
   property bool hoverGraceActive: false
+  property real cursorX: 0
+  property real cursorY: 0
+  property string cursorRaw: ""
+  property var hoverPanels: []
 
   function normalizePosition(value) {
     var next = String(value || "").trim()
@@ -87,14 +91,32 @@ Item {
   }
 
   function cursorInsideAnyBar(x, y) {
-    var screens = Quickshell.screens
-    var count = screens && screens.length !== undefined ? screens.length : 0
+    var panels = hoverPanels || []
+    var count = panels.length || 0
 
     for (var i = 0; i < count; i++) {
-      if (cursorInsideScreenBar(x, y, screens[i])) return true
+      var panel = panels[i]
+      if (panel && cursorInsideScreenBar(x, y, panel.screen)) return true
     }
 
     return false
+  }
+
+  function registerHoverPanel(panel) {
+    if (!panel || hoverPanels.indexOf(panel) !== -1) return
+
+    var next = hoverPanels.slice()
+    next.push(panel)
+    hoverPanels = next
+  }
+
+  function unregisterHoverPanel(panel) {
+    var next = []
+    var panels = hoverPanels || []
+    for (var i = 0; i < panels.length; i++) {
+      if (panels[i] !== panel) next.push(panels[i])
+    }
+    hoverPanels = next
   }
 
   function pollCursor() {
@@ -103,16 +125,19 @@ Item {
   }
 
   function applyCursorPosition(raw) {
-    var match = String(raw || "").match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/)
-    if (!match) {
+    cursorRaw = String(raw || "").trim()
+    var values = cursorRaw.match(/-?\d+(?:\.\d+)?/g)
+    if (!values || values.length < 2) {
       cursorOverBar = false
       return
     }
 
-    var x = Number(match[1])
-    var y = Number(match[2])
+    var x = Number(values[0])
+    var y = Number(values[1])
     var inside = isFinite(x) && isFinite(y) && cursorInsideAnyBar(x, y)
 
+    cursorX = x
+    cursorY = y
     cursorOverBar = inside
     if (inside) {
       hoverGraceActive = true
@@ -189,6 +214,9 @@ Item {
       barHidden: barHidden,
       mode: paintOverlay ? "overlay" : (effectActive && barTransparent ? "transparent-pass-through" : "off"),
       cursorOverBar: cursorOverBar,
+      cursorX: cursorX,
+      cursorY: cursorY,
+      hoverPanelCount: hoverPanels.length || 0,
       undimmed: dimSuppressed,
       visible: paintOverlay
     })
@@ -243,6 +271,9 @@ Item {
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
       mask: Region {}
+
+      Component.onCompleted: root.registerHoverPanel(this)
+      Component.onDestruction: root.unregisterHoverPanel(this)
 
       anchors {
         top: root.barPosition === "top" || root.barVertical
