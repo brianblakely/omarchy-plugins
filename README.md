@@ -157,6 +157,8 @@ OmaLED heavily dims the Omarchy bar when not in use. The bar will un-dim when th
 
 **NOTE:** OmaLED will not work when the Omarchy bar's background is transparent (double-click the bar's background to cycle its color).
 
+![OmaLED screenshot](images/omaled.png)
+
 ### Install
 
 ```bash
