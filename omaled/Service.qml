@@ -14,7 +14,7 @@ Item {
   readonly property string pluginId: manifest && manifest.id ? String(manifest.id) : "b.omaled"
   readonly property var pluginSettings: currentSettings()
   readonly property bool effectEnabled: setting("enabled", true) !== false
-  readonly property real shadeOpacity: clamp(Number(setting("opacity", 0.50)), 0, 1)
+  readonly property real shadeOpacity: clamp(Number(setting("opacity", 0.60)), 0, 1)
   readonly property color shadeColor: colorValue(setting("color", "#000000"), "#000000")
   readonly property string barPosition: normalizePosition(shell && shell.barConfig ? shell.barConfig.position : "top")
   readonly property bool barVertical: barPosition === "left" || barPosition === "right"
