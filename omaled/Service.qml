@@ -20,8 +20,12 @@ Item {
   readonly property bool barVertical: barPosition === "left" || barPosition === "right"
   readonly property int fallbackBarSize: barVertical ? Style.bar.sizeVertical : Style.bar.sizeHorizontal
   readonly property int shadeSize: liveBarSize()
+  readonly property bool barTransparent: shell && shell.bar
+    && ((("requestedTransparent" in shell.bar) && shell.bar.requestedTransparent === true)
+      || (("transparent" in shell.bar) && shell.bar.transparent === true))
   readonly property bool barHidden: shell && shell.bar && ("barHidden" in shell.bar) && shell.bar.barHidden === true
-  readonly property bool overlayVisible: effectEnabled && !barHidden && shadeOpacity > 0 && shadeSize > 0
+  readonly property bool effectActive: effectEnabled && !barHidden && shadeOpacity > 0 && shadeSize > 0
+  readonly property bool paintOverlay: effectActive && !barTransparent
 
   function normalizePosition(value) {
     var next = String(value || "").trim()
@@ -114,8 +118,10 @@ Item {
       color: String(setting("color", "#000000")),
       barPosition: barPosition,
       barSize: shadeSize,
+      barTransparent: barTransparent,
       barHidden: barHidden,
-      visible: overlayVisible
+      mode: paintOverlay ? "overlay" : (effectActive && barTransparent ? "transparent-pass-through" : "off"),
+      visible: paintOverlay
     })
   }
 
@@ -126,7 +132,7 @@ Item {
       required property var modelData
 
       screen: modelData
-      visible: root.overlayVisible
+      visible: root.paintOverlay
       color: "transparent"
       implicitWidth: root.barVertical ? root.shadeSize : 0
       implicitHeight: root.barVertical ? 0 : root.shadeSize
