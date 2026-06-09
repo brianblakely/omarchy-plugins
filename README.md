@@ -173,6 +173,7 @@ For unattended installs:
 ```bash
 omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b --yes
 omarchy plugin add b.omaled --from b --enable --yes
+omarchy restart shell
 ```
 
 ### Update
