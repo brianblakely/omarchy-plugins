@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
@@ -29,6 +30,11 @@ Item {
   property int pointerSelectionH: 1
   property int pointerAnchorX: 0
   property int pointerAnchorY: 0
+  property string pickerAction: ""
+  property string targetKind: ""
+  property bool regionLocked: false
+  property var pickerClients: []
+  property var pickerMonitors: []
 
   readonly property var captureModes: [
     { value: "screen", label: "Screen", icon: "󰍹" },
@@ -40,15 +46,27 @@ Item {
 
   readonly property bool recordingMode: selectedMode === "record-screen" || selectedMode === "record-selection"
   readonly property bool recording: service && service.recording === true
-  readonly property bool regionEditor: selectedMode === "selection"
+  readonly property bool pickerMode: pickerAction !== ""
+  readonly property bool regionEditor: selectedMode === "selection" || pickerMode
   readonly property int minimumSelectionSize: 1
+  readonly property int dragThreshold: Math.max(3, Style.space(3))
 
   function open(payloadJson) {
     var payload = ({})
     try { payload = JSON.parse(payloadJson || "{}") || ({}) } catch (e) { payload = ({}) }
 
-    if (payload.mode) selectedMode = String(payload.mode)
-    else if (service && service.captureMode) selectedMode = service.captureMode
+    if (payload.action) {
+      pickerAction = normalizePickerAction(payload.action)
+      selectedMode = "selection"
+      hasSelection = false
+      targetKind = ""
+      regionLocked = false
+      refreshPickerTargets()
+    } else {
+      pickerAction = ""
+      if (payload.mode) selectedMode = String(payload.mode)
+      else if (service && service.captureMode) selectedMode = service.captureMode
+    }
 
     opened = true
     if (service && typeof service.refreshStatus === "function") service.refreshStatus()
@@ -58,6 +76,10 @@ Item {
 
   function close() {
     opened = false
+    pickerAction = ""
+    targetKind = ""
+    regionLocked = false
+    finishPointer()
   }
 
   function dismiss() {
@@ -96,8 +118,151 @@ Item {
     else if (name === "webcam") service.setRecordWebcam(!service.recordWebcam)
   }
 
+  function normalizePickerAction(action) {
+    var value = String(action || "file").toLowerCase()
+    if (value === "clipboard" || value === "copy") return "clipboard"
+    if (value === "record" || value === "recording") return "record"
+    return "file"
+  }
+
+  function refreshPickerTargets() {
+    if (!pickerMode || pickerTargetsProc.running) return
+    pickerTargetsProc.running = true
+  }
+
   function panelScreenName(panel) {
     return panel && panel.screen && panel.screen.name ? String(panel.screen.name) : ""
+  }
+
+  function activeBarPosition() {
+    if (shell && shell.bar && shell.bar.position) return String(shell.bar.position)
+    if (shell && shell.barConfig && shell.barConfig.position) return String(shell.barConfig.position)
+    return "top"
+  }
+
+  function activeBarHidden() {
+    return shell && shell.bar && shell.bar.barHidden === true
+  }
+
+  function activeBarSize() {
+    if (shell && shell.bar && shell.bar.barSize) return Math.max(1, Math.round(Number(shell.bar.barSize) || 1))
+    var position = activeBarPosition()
+    return (position === "left" || position === "right") ? Style.bar.sizeVertical : Style.bar.sizeHorizontal
+  }
+
+  function isPointInBar(x, y, maxWidth, maxHeight) {
+    if (activeBarHidden()) return false
+
+    var position = activeBarPosition()
+    var size = activeBarSize()
+    if (position === "bottom") return y >= Math.max(0, maxHeight - size)
+    if (position === "left") return x <= size
+    if (position === "right") return x >= Math.max(0, maxWidth - size)
+    return y <= size
+  }
+
+  function monitorForScreen(screenName) {
+    var name = String(screenName || "")
+    var fallback = null
+    for (var i = 0; i < pickerMonitors.length; i++) {
+      var monitor = pickerMonitors[i]
+      if (!monitor) continue
+      if (name !== "" && String(monitor.name || "") === name) return monitor
+      if (monitor.focused === true) fallback = monitor
+    }
+    return fallback
+  }
+
+  function monitorOffset(screenName) {
+    var monitor = monitorForScreen(screenName)
+    return {
+      x: monitor ? Math.round(Number(monitor.x) || 0) : 0,
+      y: monitor ? Math.round(Number(monitor.y) || 0) : 0
+    }
+  }
+
+  function monitorWorkspaceId(screenName) {
+    var monitor = monitorForScreen(screenName)
+    return monitor && monitor.activeWorkspace ? Number(monitor.activeWorkspace.id) : NaN
+  }
+
+  function localToGlobal(x, y, screenName) {
+    var offset = monitorOffset(screenName)
+    return { x: Math.round(x + offset.x), y: Math.round(y + offset.y) }
+  }
+
+  function globalRectToLocal(rect, screenName, maxWidth, maxHeight) {
+    var offset = monitorOffset(screenName)
+    var x = Math.round(Number(rect.x) || 0) - offset.x
+    var y = Math.round(Number(rect.y) || 0) - offset.y
+    var width = Math.round(Number(rect.width) || 0)
+    var height = Math.round(Number(rect.height) || 0)
+    var left = clamp(x, 0, maxWidth)
+    var top = clamp(y, 0, maxHeight)
+    var right = clamp(x + width, 0, maxWidth)
+    var bottom = clamp(y + height, 0, maxHeight)
+    return { x: left, y: top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) }
+  }
+
+  function clientRect(client) {
+    if (!client || !client.at || !client.size) return null
+    return {
+      x: Math.round(Number(client.at[0]) || 0),
+      y: Math.round(Number(client.at[1]) || 0),
+      width: Math.round(Number(client.size[0]) || 0),
+      height: Math.round(Number(client.size[1]) || 0)
+    }
+  }
+
+  function clientAt(x, y, maxWidth, maxHeight, screenName) {
+    var point = localToGlobal(x, y, screenName)
+    var workspaceId = monitorWorkspaceId(screenName)
+
+    for (var i = pickerClients.length - 1; i >= 0; i--) {
+      var client = pickerClients[i]
+      if (!client || client.mapped === false || client.hidden === true || client.minimized === true) continue
+      if (client.workspace && isFinite(workspaceId) && Number(client.workspace.id) !== workspaceId) continue
+
+      var rect = clientRect(client)
+      if (!rect || rect.width <= 0 || rect.height <= 0) continue
+      if (point.x >= rect.x && point.x < rect.x + rect.width && point.y >= rect.y && point.y < rect.y + rect.height)
+        return client
+    }
+
+    return null
+  }
+
+  function setTargetFromClient(client, maxWidth, maxHeight, screenName) {
+    var rect = clientRect(client)
+    if (!rect) return false
+    var local = globalRectToLocal(rect, screenName, maxWidth, maxHeight)
+    setSelection(local.x, local.y, local.width, local.height, maxWidth, maxHeight)
+    selectionScreenName = String(screenName || "")
+    targetKind = "window"
+    regionLocked = false
+    return true
+  }
+
+  function setScreenTarget(maxWidth, maxHeight, screenName) {
+    selectionScreenName = String(screenName || "")
+    setSelection(0, 0, maxWidth, maxHeight, maxWidth, maxHeight)
+    targetKind = "screen"
+    regionLocked = false
+  }
+
+  function updatePickerHover(x, y, maxWidth, maxHeight, screenName) {
+    if (!pickerMode || pointerAction !== "" || regionLocked) return
+
+    if (isPointInBar(x, y, maxWidth, maxHeight)) {
+      setScreenTarget(maxWidth, maxHeight, screenName)
+      return
+    }
+
+    var client = clientAt(x, y, maxWidth, maxHeight, screenName)
+    if (client && setTargetFromClient(client, maxWidth, maxHeight, screenName)) return
+
+    targetKind = ""
+    hasSelection = false
   }
 
   function clamp(value, min, max) {
@@ -178,6 +343,31 @@ Item {
       ensureSelection(maxWidth, maxHeight, screenName)
   }
 
+  function beginPickerPointer(x, y, maxWidth, maxHeight, screenName) {
+    selectionScreenName = String(screenName || "")
+    pointerAction = "pending"
+    pointerStartX = clamp(x, 0, maxWidth)
+    pointerStartY = clamp(y, 0, maxHeight)
+    pointerAnchorX = pointerStartX
+    pointerAnchorY = pointerStartY
+    pointerSelectionX = selectionX
+    pointerSelectionY = selectionY
+    pointerSelectionW = selectionW
+    pointerSelectionH = selectionH
+    regionLocked = false
+
+    if (isPointInBar(pointerStartX, pointerStartY, maxWidth, maxHeight)) {
+      setScreenTarget(maxWidth, maxHeight, screenName)
+      return
+    }
+
+    var client = clientAt(pointerStartX, pointerStartY, maxWidth, maxHeight, screenName)
+    if (client && setTargetFromClient(client, maxWidth, maxHeight, screenName)) return
+
+    targetKind = ""
+    hasSelection = false
+  }
+
   function updatePointer(x, y, maxWidth, maxHeight) {
     if (pointerAction === "") return
 
@@ -185,6 +375,14 @@ Item {
     var py = clamp(y, 0, maxHeight)
     var dx = px - pointerStartX
     var dy = py - pointerStartY
+
+    if (pointerAction === "pending") {
+      if (Math.abs(dx) + Math.abs(dy) < dragThreshold) return
+      pointerAction = "draw"
+      targetKind = "region"
+      regionLocked = true
+      setSelection(pointerStartX, pointerStartY, minimumSelectionSize, minimumSelectionSize, maxWidth, maxHeight)
+    }
 
     if (pointerAction === "draw") {
       setSelectionEdges(Math.min(pointerAnchorX, px), Math.min(pointerAnchorY, py),
@@ -212,6 +410,23 @@ Item {
 
   function finishPointer() {
     pointerAction = ""
+  }
+
+  function finishPickerPointer(maxWidth, maxHeight, screenName) {
+    var action = pointerAction
+    finishPointer()
+
+    if (action === "draw") {
+      if (hasSelection) {
+        targetKind = "region"
+        captureCurrentTarget(screenName)
+      }
+      return
+    }
+
+    if (action === "pending") {
+      if (targetKind === "screen" || targetKind === "window") captureCurrentTarget(screenName)
+    }
   }
 
   function keyDirection(key) {
@@ -257,11 +472,87 @@ Item {
     if (direction === "") return false
 
     ensureSelection(maxWidth, maxHeight, screenName)
+    if (pickerMode) {
+      targetKind = "region"
+      regionLocked = true
+    }
     var shift = (event.modifiers & Qt.ShiftModifier) !== 0
     var ctrl = (event.modifiers & Qt.ControlModifier) !== 0
     if (shift) resizeSelectionByKey(direction, !ctrl, maxWidth, maxHeight)
     else moveSelection(direction, maxWidth, maxHeight)
     return true
+  }
+
+  function captureScreenTarget(screenName) {
+    if (!service) return
+    if (pickerAction === "record") service.record("screen")
+    else service.screenshot("screen", pickerAction === "clipboard" ? "clipboard" : "file")
+  }
+
+  function captureCurrentTarget(screenName) {
+    if (!service || !pickerMode) return
+
+    if (targetKind === "screen") {
+      captureScreenTarget(screenName)
+      return
+    }
+
+    if ((targetKind === "window" || targetKind === "region") && hasSelection) {
+      var geometry = selectionGeometry()
+      if (pickerAction === "record" && typeof service.recordGeometry === "function")
+        service.recordGeometry(geometry, screenName || selectionScreenName || "")
+      else if (typeof service.screenshotGeometry === "function")
+        service.screenshotGeometry(geometry, screenName || selectionScreenName || "", pickerAction === "clipboard" ? "clipboard" : "file")
+    }
+  }
+
+  function captureFocusedWindowOrRegion(screenName, maxWidth, maxHeight) {
+    if (targetKind === "screen" || targetKind === "window" || targetKind === "region") {
+      captureCurrentTarget(screenName)
+      return
+    }
+
+    var workspaceId = monitorWorkspaceId(screenName)
+    for (var i = pickerClients.length - 1; i >= 0; i--) {
+      var client = pickerClients[i]
+      if (!client || client.focused !== true) continue
+      if (client.workspace && isFinite(workspaceId) && Number(client.workspace.id) !== workspaceId) continue
+      if (setTargetFromClient(client, maxWidth, maxHeight, screenName)) {
+        captureCurrentTarget(screenName)
+        return
+      }
+    }
+  }
+
+  Process {
+    id: pickerTargetsProc
+    command: [
+      "bash",
+      "-lc",
+      "printf '{\"monitors\":'; hyprctl monitors -j 2>/dev/null || printf '[]'; printf ',\"clients\":'; hyprctl clients -j 2>/dev/null || printf '[]'; printf '}'"
+    ]
+
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        try {
+          var parsed = JSON.parse(String(text || "{}"))
+          root.pickerMonitors = Array.isArray(parsed.monitors) ? parsed.monitors : []
+          root.pickerClients = Array.isArray(parsed.clients) ? parsed.clients : []
+        } catch (e) {
+          root.pickerMonitors = []
+          root.pickerClients = []
+        }
+      }
+    }
+  }
+
+  Timer {
+    interval: 700
+    running: root.opened && root.pickerMode
+    repeat: true
+    triggeredOnStart: true
+    onTriggered: root.refreshPickerTargets()
   }
 
   PanelWindow {
@@ -277,7 +568,7 @@ Item {
     readonly property string currentScreenName: root.panelScreenName(panel)
 
     onVisibleChanged: {
-      if (visible && root.regionEditor)
+      if (visible && root.regionEditor && !root.pickerMode)
         Qt.callLater(function() { root.ensureSelection(panel.width, panel.height, panel.currentScreenName) })
     }
     onWidthChanged: if (root.regionEditor && root.hasSelection) root.ensureSelection(panel.width, panel.height, panel.currentScreenName)
@@ -286,7 +577,7 @@ Item {
     Connections {
       target: root
       function onSelectedModeChanged() {
-        if (panel.visible && root.regionEditor)
+        if (panel.visible && root.regionEditor && !root.pickerMode)
           Qt.callLater(function() { root.ensureSelection(panel.width, panel.height, panel.currentScreenName) })
       }
     }
@@ -324,6 +615,8 @@ Item {
         onPressed: function(mouse) {
           var point = mapToItem(selectionLayer, mouse.x, mouse.y)
           keyCatcher.forceActiveFocus()
+          if (root.pickerMode) root.targetKind = "region"
+          if (root.pickerMode) root.regionLocked = true
           root.beginPointer(parent.edge, point.x, point.y, selectionLayer.width, selectionLayer.height, panel.currentScreenName)
           mouse.accepted = true
         }
@@ -391,15 +684,21 @@ Item {
         anchors.fill: parent
         cursorShape: Qt.CrossCursor
         acceptedButtons: Qt.LeftButton
+        hoverEnabled: root.pickerMode
         onPressed: function(mouse) {
           keyCatcher.forceActiveFocus()
-          root.beginPointer("draw", mouse.x, mouse.y, selectionLayer.width, selectionLayer.height, panel.currentScreenName)
+          if (root.pickerMode) root.beginPickerPointer(mouse.x, mouse.y, selectionLayer.width, selectionLayer.height, panel.currentScreenName)
+          else root.beginPointer("draw", mouse.x, mouse.y, selectionLayer.width, selectionLayer.height, panel.currentScreenName)
           mouse.accepted = true
         }
         onPositionChanged: function(mouse) {
-          root.updatePointer(mouse.x, mouse.y, selectionLayer.width, selectionLayer.height)
+          if (root.pointerAction !== "") root.updatePointer(mouse.x, mouse.y, selectionLayer.width, selectionLayer.height)
+          else root.updatePickerHover(mouse.x, mouse.y, selectionLayer.width, selectionLayer.height, panel.currentScreenName)
         }
-        onReleased: root.finishPointer()
+        onReleased: {
+          if (root.pickerMode) root.finishPickerPointer(selectionLayer.width, selectionLayer.height, panel.currentScreenName)
+          else root.finishPointer()
+        }
       }
 
       Rectangle {
@@ -420,6 +719,8 @@ Item {
           onPressed: function(mouse) {
             var point = mapToItem(selectionLayer, mouse.x, mouse.y)
             keyCatcher.forceActiveFocus()
+            if (root.pickerMode) root.targetKind = "region"
+            if (root.pickerMode) root.regionLocked = true
             root.beginPointer("move", point.x, point.y, selectionLayer.width, selectionLayer.height, panel.currentScreenName)
             mouse.accepted = true
           }
@@ -488,8 +789,38 @@ Item {
       }
     }
 
+    Item {
+      id: keyCatcher
+      anchors.fill: parent
+      focus: true
+
+      Keys.priority: Keys.BeforeItem
+      Keys.onPressed: function(event) {
+        if (event.key === Qt.Key_Escape) {
+          root.dismiss()
+          event.accepted = true
+        } else if (root.pickerMode && event.key === Qt.Key_Space) {
+          root.captureScreenTarget(panel.currentScreenName)
+          event.accepted = true
+        } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+          if (root.pickerMode) root.captureFocusedWindowOrRegion(panel.currentScreenName, panel.width, panel.height)
+          else {
+            if (root.regionEditor) root.ensureSelection(panel.width, panel.height, panel.currentScreenName)
+            root.runSelected(panel.currentScreenName)
+          }
+          event.accepted = true
+        } else if (root.regionEditor && root.handleSelectionKey(event, panel.width, panel.height, panel.currentScreenName)) {
+          event.accepted = true
+        } else if (!root.pickerMode && event.key >= Qt.Key_1 && event.key <= Qt.Key_5) {
+          root.setMode(root.captureModes[event.key - Qt.Key_1].value)
+          event.accepted = true
+        }
+      }
+    }
+
     BorderSurface {
       id: toolbar
+      visible: !root.pickerMode
       width: Math.min(panel.width - Style.gapsOut * 2, Style.space(930))
       height: content.implicitHeight + Style.spacing.panelPadding * 2 + borderTop + borderBottom
       anchors.horizontalCenter: parent.horizontalCenter
@@ -502,29 +833,6 @@ Item {
       clip: true
 
       MouseArea { anchors.fill: parent; onClicked: {} }
-
-      Item {
-        id: keyCatcher
-        anchors.fill: parent
-        focus: true
-
-        Keys.priority: Keys.BeforeItem
-        Keys.onPressed: function(event) {
-          if (event.key === Qt.Key_Escape) {
-            root.dismiss()
-            event.accepted = true
-          } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-            if (root.regionEditor) root.ensureSelection(panel.width, panel.height, panel.currentScreenName)
-            root.runSelected(panel.currentScreenName)
-            event.accepted = true
-          } else if (root.regionEditor && root.handleSelectionKey(event, panel.width, panel.height, panel.currentScreenName)) {
-            event.accepted = true
-          } else if (event.key >= Qt.Key_1 && event.key <= Qt.Key_5) {
-            root.setMode(root.captureModes[event.key - Qt.Key_1].value)
-            event.accepted = true
-          }
-        }
-      }
 
       Column {
         id: content

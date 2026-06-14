@@ -51,7 +51,9 @@ Right-clicking the clock will allow you to change timezone, exactly like the def
 
 ## Omasnap
 
-Omasnap is a screenshot and recording tool inspired by [macOS](https://support.apple.com/en-us/102646) and [Spectacle](https://apps.kde.org/spectacle/). It saves to `~/Pictures` by default. Keyboard controls can move region selections, hold `SHIFT` to grow the selection, `SHIFT + CTRL` to shrink it.
+Omasnap is a screenshot and recording tool inspired by [macOS](https://support.apple.com/en-us/102646) and [Spectacle](https://apps.kde.org/spectacle/). It saves to `~/Pictures` by default.
+
+`SPACE` captures the screen, `ENTER` captures the focused window, and `arrow keys` or `HJKL` create and adjust a region by 1px. Hold `SHIFT` to grow the addressed side, or `SHIFT + CTRL` to shrink it. Using the mouse, click the Omarchy Bar to capture the entire screen, click a window to capture it, or drag a region.
 
 ### Install
 
@@ -77,12 +79,14 @@ omarchy plugin update b.omasnap
 ### Shortcuts
 
 ```lua
-o.bind("SUPER + SHIFT + 5", "Omasnap", "omarchy-shell b.omasnap show")
-o.bind("SUPER + SHIFT + 3", "Omasnap capture screen", "omarchy-shell b.omasnap captureScreen")
-o.bind("SUPER + SHIFT + 4", "Omasnap capture selection", "omarchy-shell b.omasnap captureSelection")
-o.bind("SUPER + SHIFT + W", "Omasnap capture window", "omarchy-shell b.omasnap captureWindow")
-o.bind("SUPER + SHIFT + R", "Omasnap record selection", "omarchy-shell b.omasnap recordSelection")
-o.bind("SUPER + SHIFT + ESCAPE", "Omasnap stop recording", "omarchy-shell b.omasnap stopRecording")
+hl.unbind("PRINT")
+o.bind("SUPER + SHIFT + F3", "Omasnap capture screen", "omarchy-shell b.omasnap captureScreen")
+o.bind("SUPER + SHIFT + CTRL + F3", "Omasnap capture window", "omarchy-shell b.omasnap captureWindow")
+o.bind("SUPER + SHIFT + F4", "Omasnap capture to file", "omarchy-shell b.omasnap captureToFile")
+o.bind("SUPER + SHIFT + CTRL + F4", "Omasnap capture to clipboard", "omarchy-shell b.omasnap captureToClipboard")
+o.bind("SUPER + SHIFT + F5", "Omasnap", "omarchy-shell b.omasnap show")
+o.bind("SUPER + SHIFT + F6", "Omasnap record", "omarchy-shell b.omasnap record")
+o.bind("SUPER + SHIFT + CTRL + F6", "Omasnap stop recording", "omarchy-shell b.omasnap stopRecording")
 ```
 
 ## Omastonk

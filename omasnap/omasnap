@@ -6,6 +6,7 @@ APP_NAME="Omasnap"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omasnap"
 STATE_FILE="$STATE_DIR/state.json"
 TMP_DIR="${TMPDIR:-/tmp}"
+RECORDING_FILE="/tmp/omarchy-screenrecord-filename"
 
 COMMAND="${1:-help}"
 shift || true
@@ -480,7 +481,102 @@ recording_active() {
   pgrep -f "^gpu-screen-recorder" >/dev/null 2>&1
 }
 
+cleanup_webcam() {
+  pkill -f "WebcamOverlay" 2>/dev/null || true
+}
+
+start_webcam_overlay() {
+  cleanup_webcam
+
+  local webcam_device scale target_width video_size_arg available_formats resolution
+  webcam_device=$(v4l2-ctl --list-devices 2>/dev/null | grep -m1 "^[[:space:]]*/dev/video" | tr -d '\t')
+  if [[ -z $webcam_device ]]; then
+    notify_capture "No webcam devices found" "Recording will start without webcam."
+    return 1
+  fi
+
+  scale=$(hyprctl monitors -j 2>/dev/null | jq -r '.[] | select(.focused == true) | .scale' | head -1)
+  [[ $scale =~ ^[0-9]+([.][0-9]+)?$ ]] || scale=1
+  target_width=$(awk "BEGIN {printf \"%.0f\", 360 * $scale}")
+
+  video_size_arg=""
+  available_formats=$(v4l2-ctl --list-formats-ext -d "$webcam_device" 2>/dev/null)
+  for resolution in 640x360 1280x720 1920x1080; do
+    if grep -q "$resolution" <<<"$available_formats"; then
+      video_size_arg="-video_size $resolution"
+      break
+    fi
+  done
+
+  ffplay -f v4l2 $video_size_arg -framerate 30 "$webcam_device" \
+    -vf "crop=iw/2:ih,scale=${target_width}:-1" \
+    -window_title "WebcamOverlay" \
+    -noborder \
+    -fflags nobuffer -flags low_delay \
+    -probesize 32 -analyzeduration 0 \
+    -loglevel quiet >/dev/null 2>&1 &
+  sleep 1
+}
+
+geometry_to_gsr_region() {
+  local geometry="$1"
+  [[ $geometry =~ ^(-?[0-9]+),(-?[0-9]+)[[:space:]]([0-9]+)x([0-9]+)$ ]] || return 1
+  printf '%sx%s+%s+%s\n' "${BASH_REMATCH[3]}" "${BASH_REMATCH[4]}" "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+}
+
+refresh_recording_indicator() {
+  if command -v omarchy-shell >/dev/null 2>&1; then
+    omarchy-shell -q Indicators refresh >/dev/null 2>&1 || true
+  fi
+}
+
+record_geometry() {
+  require_command gpu-screen-recorder
+
+  local output_dir selection region filename audio_devices
+  output_dir=$(recording_directory)
+  mkdir -p "$output_dir"
+
+  wait_for_timer
+
+  selection=$(pick_geometry)
+  [[ -n $selection ]] || exit 0
+  region=$(geometry_to_gsr_region "$selection") || exit 1
+
+  filename="$output_dir/screenrecording-$(date +'%Y-%m-%d_%H-%M-%S').mp4"
+  audio_devices=""
+
+  truthy "$DESKTOP_AUDIO" && audio_devices+="default_output"
+  if truthy "$MICROPHONE_AUDIO"; then
+    [[ -n $audio_devices ]] && audio_devices+="|"
+    audio_devices+="default_input"
+  fi
+
+  local args=(-w "$region" -k auto -f 60 -fm cfr -fallback-cpu-encoding yes -o "$filename")
+  [[ -n $audio_devices ]] && args+=(-a "$audio_devices" -ac aac)
+
+  truthy "$WEBCAM" && start_webcam_overlay
+
+  gpu-screen-recorder "${args[@]}" >/dev/null 2>&1 &
+  local pid=$!
+
+  while kill -0 "$pid" 2>/dev/null && [[ ! -f $filename ]]; do
+    sleep 0.2
+  done
+
+  if kill -0 "$pid" 2>/dev/null; then
+    printf '%s\n' "$filename" >"$RECORDING_FILE"
+    write_state "" "" "$filename"
+    refresh_recording_indicator
+  fi
+}
+
 record_screen() {
+  if [[ -n $GEOMETRY ]]; then
+    record_geometry
+    return
+  fi
+
   require_command omarchy-capture-screenrecording
 
   local output_dir

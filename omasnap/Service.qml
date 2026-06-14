@@ -118,6 +118,14 @@ Item {
     return "unknown"
   }
 
+  function showTargetPicker(action) {
+    if (shell && typeof shell.summon === "function") {
+      var payload = JSON.stringify({ action: String(action || "file") })
+      return shell.summon(pluginId, payload) ? "ok" : "unknown"
+    }
+    return "unknown"
+  }
+
   function screenshot(mode, outputOverride) {
     saveSettings({ captureMode: String(mode || captureMode || "selection") })
     hide()
@@ -136,6 +144,18 @@ Item {
     return runDetached(args.concat(commonArgs(outputOverride || "")))
   }
 
+  function recordGeometry(geometry, screenName) {
+    var selectedGeometry = String(geometry || "").replace(/^\s+|\s+$/g, "")
+    if (selectedGeometry === "") return "missing-geometry"
+
+    saveSettings({ captureMode: "record-selection" })
+    hide()
+
+    var args = ["record", "selection", "--geometry=" + selectedGeometry]
+    if (screenName) args.push("--screen-name=" + String(screenName))
+    return runDetached(args.concat(recordingArgs()))
+  }
+
   function record(mode) {
     var target = String(mode || "selection")
     saveSettings({ captureMode: target === "screen" ? "record-screen" : "record-selection" })
@@ -151,6 +171,18 @@ Item {
   function toggleRecording() {
     hide()
     return runDetached(["toggle-recording", "selection"].concat(recordingArgs()))
+  }
+
+  function captureToFile() {
+    return showTargetPicker("file")
+  }
+
+  function captureToClipboard() {
+    return showTargetPicker("clipboard")
+  }
+
+  function recordPicker() {
+    return showTargetPicker("record")
   }
 
   function openLast() {
@@ -339,7 +371,10 @@ Item {
     function debug(): string { root.refreshStatus(); return root.statusJson() }
 
     function screenshot(mode: string): string { return root.screenshot(mode || "selection") }
-    function record(mode: string): string { return root.record(mode || "selection") }
+    function record(mode: string): string { return String(mode || "") === "" ? root.recordPicker() : root.record(mode) }
+
+    function captureToFile(): string { return root.captureToFile() }
+    function captureToClipboard(): string { return root.captureToClipboard() }
 
     function captureScreen(): string { return root.screenshot("screen") }
     function captureDisplay(): string { return root.screenshot("display") }
