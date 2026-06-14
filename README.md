@@ -51,7 +51,7 @@ Right-clicking the clock will allow you to change timezone, exactly like the def
 
 ## Omasnap
 
-Omasnap is a screenshot and recording tool inspired by [macOS](https://support.apple.com/en-us/102646) and [Spectacle](https://apps.kde.org/spectacle/). It saves to `~/Pictures` by default.
+Omasnap is a screenshot and recording tool inspired by [macOS](https://support.apple.com/en-us/102646) and [Spectacle](https://apps.kde.org/spectacle/). It saves to `~/Pictures` by default. Keyboard controls can move region selections, hold `SHIFT` to grow the selection, `SHIFT + CTRL` to shrink it.
 
 ### Install
 

@@ -124,6 +124,18 @@ Item {
     return runDetached(["screenshot", String(mode || captureMode || "selection")].concat(commonArgs(outputOverride || "")))
   }
 
+  function screenshotGeometry(geometry, screenName, outputOverride) {
+    var selectedGeometry = String(geometry || "").replace(/^\s+|\s+$/g, "")
+    if (selectedGeometry === "") return "missing-geometry"
+
+    saveSettings({ captureMode: "selection" })
+    hide()
+
+    var args = ["screenshot", "selection", "--geometry=" + selectedGeometry]
+    if (screenName) args.push("--screen-name=" + String(screenName))
+    return runDetached(args.concat(commonArgs(outputOverride || "")))
+  }
+
   function record(mode) {
     var target = String(mode || "selection")
     saveSettings({ captureMode: target === "screen" ? "record-screen" : "record-selection" })
