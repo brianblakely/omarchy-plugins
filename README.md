@@ -1,6 +1,7 @@
 # Omarchy Plugins
 
 * [Omacal](#omacal) - Drop-in clock replacement with mini calendar
+* [Omasnap](#omasnap) - Screenshot and screen recording overlay
 * [Omastonk](#omastonk) - Stock tickers in the Omarchy bar, with charts
 * [Omanote](#omanote) - Secure scratch note in the Omarchy bar
 * [Omanews](#omanews) - Headlines in the Omarchy bar, with instant access to commentary
@@ -47,6 +48,42 @@ o.bind("SUPER + CTRL + F9", "Close mini calendar", "omarchy-shell b.omacal close
 ```
 
 Right-clicking the clock will allow you to change timezone, exactly like the default Omarchy clock.
+
+## Omasnap
+
+Omasnap is a screenshot and recording tool inspired by [macOS](https://support.apple.com/en-us/102646) and [Spectacle](https://apps.kde.org/spectacle/). It saves to `~/Pictures` by default.
+
+### Install
+
+```bash
+omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b
+omarchy plugin available
+omarchy plugin add b.omasnap --from b --review --enable
+```
+
+For unattended installs:
+
+```bash
+omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b --yes
+omarchy plugin add b.omasnap --from b --enable --yes
+```
+
+### Update
+
+```bash
+omarchy plugin update b.omasnap
+```
+
+### Shortcuts
+
+```lua
+o.bind("SUPER + SHIFT + 5", "Omasnap", "omarchy-shell b.omasnap show")
+o.bind("SUPER + SHIFT + 3", "Omasnap capture screen", "omarchy-shell b.omasnap captureScreen")
+o.bind("SUPER + SHIFT + 4", "Omasnap capture selection", "omarchy-shell b.omasnap captureSelection")
+o.bind("SUPER + SHIFT + W", "Omasnap capture window", "omarchy-shell b.omasnap captureWindow")
+o.bind("SUPER + SHIFT + R", "Omasnap record selection", "omarchy-shell b.omasnap recordSelection")
+o.bind("SUPER + SHIFT + ESCAPE", "Omasnap stop recording", "omarchy-shell b.omasnap stopRecording")
+```
 
 ## Omastonk
 

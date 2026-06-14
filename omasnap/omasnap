@@ -1,0 +1,518 @@
+#!/usr/bin/env bash
+
+set -o pipefail
+
+APP_NAME="Omasnap"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omasnap"
+STATE_FILE="$STATE_DIR/state.json"
+TMP_DIR="${TMPDIR:-/tmp}"
+
+COMMAND="${1:-help}"
+shift || true
+
+TARGET="${1:-selection}"
+if [[ $TARGET == --* || -z $TARGET ]]; then
+  TARGET="selection"
+else
+  shift || true
+fi
+
+OUTPUT_MODE="file-and-clipboard"
+SAVE_LOCATION="pictures"
+TIMER_SECONDS=0
+INCLUDE_CURSOR="false"
+SHOW_THUMBNAIL="true"
+REMEMBER_SELECTION="true"
+SETTLE_SECONDS="0.15"
+SCREENSHOT_EDITOR="${OMASNAP_EDITOR:-${OMARCHY_SCREENSHOT_EDITOR:-tensaku-edit}}"
+DESKTOP_AUDIO="false"
+MICROPHONE_AUDIO="false"
+WEBCAM="false"
+
+fail() {
+  printf '%s: %s\n' "$APP_NAME" "$*" >&2
+  exit 1
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || fail "$1 is required"
+}
+
+truthy() {
+  case "${1,,}" in
+  1 | true | yes | on) return 0 ;;
+  *) return 1 ;;
+  esac
+}
+
+take_value() {
+  local arg="$1"
+  local next="${2:-}"
+  if [[ $arg == *=* ]]; then
+    printf '%s\n' "${arg#*=}"
+  else
+    printf '%s\n' "$next"
+  fi
+}
+
+while (($# > 0)); do
+  case "$1" in
+  --output-mode | --output-mode=*)
+    OUTPUT_MODE=$(take_value "$1" "${2:-}")
+    [[ $1 == *=* ]] && shift || shift 2
+    ;;
+  --save-location | --save-location=*)
+    SAVE_LOCATION=$(take_value "$1" "${2:-}")
+    [[ $1 == *=* ]] && shift || shift 2
+    ;;
+  --timer | --timer=*)
+    TIMER_SECONDS=$(take_value "$1" "${2:-}")
+    [[ $1 == *=* ]] && shift || shift 2
+    ;;
+  --cursor | --cursor=*)
+    INCLUDE_CURSOR=$(take_value "$1" "${2:-}")
+    [[ $1 == *=* ]] && shift || shift 2
+    ;;
+  --thumbnail | --thumbnail=*)
+    SHOW_THUMBNAIL=$(take_value "$1" "${2:-}")
+    [[ $1 == *=* ]] && shift || shift 2
+    ;;
+  --remember | --remember=*)
+    REMEMBER_SELECTION=$(take_value "$1" "${2:-}")
+    [[ $1 == *=* ]] && shift || shift 2
+    ;;
+  --settle | --settle=*)
+    SETTLE_SECONDS=$(take_value "$1" "${2:-}")
+    [[ $1 == *=* ]] && shift || shift 2
+    ;;
+  --editor | --editor=*)
+    SCREENSHOT_EDITOR=$(take_value "$1" "${2:-}")
+    [[ $1 == *=* ]] && shift || shift 2
+    ;;
+  --desktop-audio | --with-desktop-audio)
+    DESKTOP_AUDIO="true"
+    shift
+    ;;
+  --microphone-audio | --with-microphone-audio)
+    MICROPHONE_AUDIO="true"
+    shift
+    ;;
+  --webcam | --with-webcam)
+    WEBCAM="true"
+    shift
+    ;;
+  *)
+    shift
+    ;;
+  esac
+done
+
+load_user_dirs() {
+  [[ -f "$HOME/.config/user-dirs.dirs" ]] && source "$HOME/.config/user-dirs.dirs"
+}
+
+normalize_output_mode() {
+  case "${OUTPUT_MODE,,}" in
+  copy | clipboard) printf '%s\n' "clipboard" ;;
+  save | file) printf '%s\n' "file" ;;
+  edit | editor | preview) printf '%s\n' "editor" ;;
+  both | file-and-clipboard | default | "") printf '%s\n' "file-and-clipboard" ;;
+  *) printf '%s\n' "file-and-clipboard" ;;
+  esac
+}
+
+directory_for_location() {
+  load_user_dirs
+
+  case "${SAVE_LOCATION,,}" in
+  desktop) printf '%s\n' "${XDG_DESKTOP_DIR:-$HOME/Desktop}" ;;
+  documents) printf '%s\n' "${XDG_DOCUMENTS_DIR:-$HOME/Documents}" ;;
+  downloads) printf '%s\n' "${XDG_DOWNLOAD_DIR:-$HOME/Downloads}" ;;
+  videos) printf '%s\n' "${OMASNAP_RECORDING_DIR:-${OMARCHY_SCREENRECORD_DIR:-${XDG_VIDEOS_DIR:-$HOME/Videos}}}" ;;
+  /*) printf '%s\n' "$SAVE_LOCATION" ;;
+  *) printf '%s\n' "${OMASNAP_SCREENSHOT_DIR:-${OMARCHY_SCREENSHOT_DIR:-${XDG_PICTURES_DIR:-$HOME/Pictures}}}" ;;
+  esac
+}
+
+recording_directory() {
+  load_user_dirs
+  printf '%s\n' "${OMASNAP_RECORDING_DIR:-${OMARCHY_SCREENRECORD_DIR:-${XDG_VIDEOS_DIR:-$HOME/Videos}}}"
+}
+
+safe_timer_seconds() {
+  local value="${TIMER_SECONDS:-0}"
+  [[ $value =~ ^[0-9]+$ ]] || value=0
+  ((value < 0)) && value=0
+  ((value > 60)) && value=60
+  printf '%s\n' "$value"
+}
+
+wait_for_timer() {
+  local seconds
+  seconds=$(safe_timer_seconds)
+  if ((seconds > 0)); then
+    if command -v notify-send >/dev/null 2>&1; then
+      notify-send "$APP_NAME" "Capturing in ${seconds}s" -t 1500 >/dev/null 2>&1 || true
+    fi
+    sleep "$seconds"
+  fi
+  sleep "$SETTLE_SECONDS"
+}
+
+JQ_MONITOR_GEO='
+  def format_geo:
+    .x as $x | .y as $y |
+    (.width / .scale | floor) as $w |
+    (.height / .scale | floor) as $h |
+    .transform as $t |
+    if $t == 1 or $t == 3 then
+      "\($x),\($y) \($h)x\($w)"
+    else
+      "\($x),\($y) \($w)x\($h)"
+    end;
+'
+
+focused_workspace_id() {
+  hyprctl monitors -j | jq -r '.[] | select(.focused == true) | .activeWorkspace.id' | head -1
+}
+
+focused_display_geometry() {
+  hyprctl monitors -j | jq -r "${JQ_MONITOR_GEO} .[] | select(.focused == true) | format_geo" | head -1
+}
+
+monitor_rectangles() {
+  local active_workspace
+  active_workspace=$(focused_workspace_id)
+  hyprctl monitors -j | jq -r --arg ws "$active_workspace" "${JQ_MONITOR_GEO} .[] | select(.activeWorkspace.id == (\$ws | tonumber)) | format_geo"
+}
+
+client_rectangles() {
+  local active_workspace
+  active_workspace=$(focused_workspace_id)
+  hyprctl clients -j | jq -r --arg ws "$active_workspace" '.[] | select(.workspace.id == ($ws | tonumber)) | "\(.at[0]),\(.at[1]) \(.size[0])x\(.size[1])"'
+}
+
+active_window_geometry() {
+  hyprctl activewindow -j | jq -r 'select(.at and .size) | "\(.at[0]),\(.at[1]) \(.size[0])x\(.size[1])"'
+}
+
+all_rectangles() {
+  monitor_rectangles
+  client_rectangles
+}
+
+rect_contains_point() {
+  local rect="$1" px="$2" py="$3"
+  [[ $rect =~ ^(-?[0-9]+),(-?[0-9]+)[[:space:]]([0-9]+)x([0-9]+)$ ]] || return 1
+  local rx="${BASH_REMATCH[1]}" ry="${BASH_REMATCH[2]}" rw="${BASH_REMATCH[3]}" rh="${BASH_REMATCH[4]}"
+  ((px >= rx && px < rx + rw && py >= ry && py < ry + rh))
+}
+
+snap_tiny_selection() {
+  local selection="$1" rects="$2"
+  [[ $selection =~ ^(-?[0-9]+),(-?[0-9]+)[[:space:]]([0-9]+)x([0-9]+)$ ]] || {
+    printf '%s\n' "$selection"
+    return
+  }
+
+  local sx="${BASH_REMATCH[1]}" sy="${BASH_REMATCH[2]}" sw="${BASH_REMATCH[3]}" sh="${BASH_REMATCH[4]}"
+  if ((sw * sh >= 20)); then
+    printf '%s\n' "$selection"
+    return
+  fi
+
+  while IFS= read -r rect; do
+    if rect_contains_point "$rect" "$sx" "$sy"; then
+      printf '%s\n' "$rect"
+      return
+    fi
+  done <<<"$rects"
+
+  printf '%s\n' "$selection"
+}
+
+FREEZE_PID=""
+
+start_freeze() {
+  if command -v hyprpicker >/dev/null 2>&1; then
+    hyprpicker -r -z >/dev/null 2>&1 &
+    FREEZE_PID=$!
+    sleep 0.1
+  fi
+}
+
+stop_freeze() {
+  [[ -n $FREEZE_PID ]] && kill "$FREEZE_PID" >/dev/null 2>&1 || true
+  FREEZE_PID=""
+}
+
+trap stop_freeze EXIT
+
+last_state_value() {
+  local key="$1"
+  [[ -f "$STATE_FILE" ]] || return 0
+  jq -r --arg key "$key" '.[$key] // empty' "$STATE_FILE" 2>/dev/null
+}
+
+write_state() {
+  mkdir -p "$STATE_DIR" 2>/dev/null || true
+
+  local selection="${1:-}" screenshot="${2:-}" recording="${3:-}"
+  local current='{}'
+  [[ -f "$STATE_FILE" ]] && current=$(cat "$STATE_FILE" 2>/dev/null || printf '{}')
+
+  jq -n \
+    --argjson current "$current" \
+    --arg selection "$selection" \
+    --arg screenshot "$screenshot" \
+    --arg recording "$recording" \
+    --arg updatedAt "$(date -Iseconds)" '
+      $current
+      + (if $selection != "" then {lastSelection: $selection} else {} end)
+      + (if $screenshot != "" then {lastScreenshot: $screenshot} else {} end)
+      + (if $recording != "" then {lastRecording: $recording} else {} end)
+      + {updatedAt: $updatedAt}
+    ' >"$STATE_FILE.tmp" && mv "$STATE_FILE.tmp" "$STATE_FILE"
+}
+
+pick_geometry() {
+  require_command hyprctl
+  require_command jq
+
+  local rects selection
+  case "${TARGET,,}" in
+  screen | all | all-screens)
+    printf '\n'
+    ;;
+  display | monitor | fullscreen)
+    focused_display_geometry
+    ;;
+  active-window | active)
+    active_window_geometry
+    ;;
+  window | windows)
+    require_command slurp
+    rects=$(client_rectangles)
+    [[ -n $rects ]] || rects=$(all_rectangles)
+    start_freeze
+    selection=$(printf '%s\n' "$rects" | slurp -r 2>/dev/null)
+    stop_freeze
+    printf '%s\n' "$selection"
+    ;;
+  last | last-selection)
+    last_state_value lastSelection
+    ;;
+  smart)
+    require_command slurp
+    rects=$(all_rectangles)
+    start_freeze
+    selection=$(printf '%s\n' "$rects" | slurp 2>/dev/null)
+    stop_freeze
+    snap_tiny_selection "$selection" "$rects"
+    ;;
+  selection | region | *)
+    require_command slurp
+    start_freeze
+    selection=$(slurp 2>/dev/null)
+    stop_freeze
+    printf '%s\n' "$selection"
+    ;;
+  esac
+}
+
+open_editor() {
+  local file="$1"
+  [[ -f $file ]] || return 0
+
+  if [[ -n $SCREENSHOT_EDITOR ]]; then
+    if [[ $SCREENSHOT_EDITOR == *" "* ]]; then
+      bash -lc "$SCREENSHOT_EDITOR \"\$1\"" _ "$file" >/dev/null 2>&1 &
+      return 0
+    fi
+    if command -v "$SCREENSHOT_EDITOR" >/dev/null 2>&1; then
+      "$SCREENSHOT_EDITOR" "$file" >/dev/null 2>&1 &
+      return 0
+    fi
+  fi
+
+  if command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$file" >/dev/null 2>&1 &
+  fi
+}
+
+notify_capture() {
+  local title="$1" body="$2" image="${3:-}"
+  truthy "$SHOW_THUMBNAIL" || return 0
+
+  if command -v omarchy-notification-send >/dev/null 2>&1 && [[ -n $image && -f $image ]]; then
+    (
+      if [[ -n $(omarchy-notification-send "$title" "$body" -t 10000 --image "$image" -a 2>/dev/null) ]]; then
+        open_editor "$image"
+      fi
+    ) >/dev/null 2>&1 &
+  elif command -v notify-send >/dev/null 2>&1; then
+    if [[ -n $image && -f $image ]]; then
+      notify-send "$title" "$body" -i "$image" -t 6000 >/dev/null 2>&1 || true
+    else
+      notify-send "$title" "$body" -t 3000 >/dev/null 2>&1 || true
+    fi
+  fi
+}
+
+screenshot() {
+  require_command grim
+  require_command jq
+
+  local mode filepath output_dir filename selection
+  mode=$(normalize_output_mode)
+
+  if [[ $mode == "clipboard" || $mode == "file-and-clipboard" ]]; then
+    require_command wl-copy
+  fi
+
+  wait_for_timer
+  selection=$(pick_geometry)
+  if [[ -z $selection && ! ${TARGET,,} =~ ^(screen|all|all-screens)$ ]]; then
+    exit 0
+  fi
+
+  if truthy "$REMEMBER_SELECTION" && [[ -n $selection ]]; then
+    write_state "$selection" "" ""
+  fi
+
+  if [[ $mode == "clipboard" ]]; then
+    filepath=$(mktemp "$TMP_DIR/omasnap.XXXXXX.png")
+  else
+    output_dir=$(directory_for_location)
+    mkdir -p "$output_dir"
+    filename="screenshot-$(date +'%Y-%m-%d_%H-%M-%S').png"
+    filepath="$output_dir/$filename"
+  fi
+
+  local grim_args=()
+  [[ -n $selection ]] && grim_args+=(-g "$selection")
+  truthy "$INCLUDE_CURSOR" && grim_args+=(-c)
+
+  grim "${grim_args[@]}" "$filepath" || exit 1
+
+  case "$mode" in
+  clipboard)
+    wl-copy --type image/png <"$filepath"
+    write_state "" "$filepath" ""
+    notify_capture "Screenshot copied" "Image is on the clipboard." "$filepath"
+    ;;
+  file)
+    printf '%s\n' "$filepath"
+    write_state "" "$filepath" ""
+    notify_capture "Screenshot saved" "$filepath" "$filepath"
+    ;;
+  editor)
+    printf '%s\n' "$filepath"
+    write_state "" "$filepath" ""
+    open_editor "$filepath"
+    notify_capture "Screenshot opened" "$filepath" "$filepath"
+    ;;
+  file-and-clipboard | *)
+    wl-copy --type image/png <"$filepath"
+    printf '%s\n' "$filepath"
+    write_state "" "$filepath" ""
+    notify_capture "Screenshot saved to file and clipboard" "$filepath" "$filepath"
+    ;;
+  esac
+}
+
+recording_active() {
+  pgrep -f "^gpu-screen-recorder" >/dev/null 2>&1
+}
+
+record_screen() {
+  require_command omarchy-capture-screenrecording
+
+  local output_dir
+  output_dir=$(recording_directory)
+  mkdir -p "$output_dir"
+
+  wait_for_timer
+
+  local args=()
+  case "${TARGET,,}" in
+  screen | display | monitor | fullscreen | all | all-screens)
+    args+=(--fullscreen)
+    ;;
+  esac
+
+  truthy "$DESKTOP_AUDIO" && args+=(--with-desktop-audio)
+  truthy "$MICROPHONE_AUDIO" && args+=(--with-microphone-audio)
+  truthy "$WEBCAM" && args+=(--with-webcam)
+
+  OMARCHY_SCREENRECORD_DIR="$output_dir" omarchy-capture-screenrecording "${args[@]}"
+}
+
+stop_recording() {
+  require_command omarchy-capture-screenrecording
+  omarchy-capture-screenrecording --stop-recording
+}
+
+status_json() {
+  mkdir -p "$STATE_DIR" 2>/dev/null || true
+  jq -n \
+    --argjson recording "$(recording_active && printf true || printf false)" \
+    --arg lastSelection "$(last_state_value lastSelection)" \
+    --arg lastScreenshot "$(last_state_value lastScreenshot)" \
+    --arg lastRecording "$(last_state_value lastRecording)" \
+    '{recording:$recording,lastSelection:$lastSelection,lastScreenshot:$lastScreenshot,lastRecording:$lastRecording}'
+}
+
+open_last() {
+  local file
+  file=$(last_state_value lastScreenshot)
+  [[ -f $file ]] || file=$(last_state_value lastRecording)
+  [[ -f $file ]] || exit 1
+
+  if command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$file" >/dev/null 2>&1 &
+  else
+    printf '%s\n' "$file"
+  fi
+}
+
+case "${COMMAND,,}" in
+screenshot | capture)
+  screenshot
+  ;;
+record | recording)
+  record_screen
+  ;;
+stop | stop-recording)
+  stop_recording
+  ;;
+toggle-recording)
+  if recording_active; then stop_recording; else record_screen; fi
+  ;;
+status | debug)
+  status_json
+  ;;
+open-last)
+  open_last
+  ;;
+help | -h | --help | *)
+  cat <<USAGE
+Usage:
+  omasnap screenshot [screen|display|selection|window|active-window|last|smart] [options]
+  omasnap record [screen|selection] [options]
+  omasnap stop-recording
+  omasnap status
+
+Options:
+  --output-mode=file-and-clipboard|file|clipboard|editor
+  --save-location=pictures|desktop|documents|downloads|/absolute/path
+  --timer=0|5|10
+  --cursor=true|false
+  --thumbnail=true|false
+  --remember=true|false
+  --desktop-audio
+  --microphone-audio
+  --webcam
+USAGE
+  ;;
+esac
