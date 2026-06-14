@@ -50,7 +50,6 @@ Item {
   readonly property bool regionEditor: selectedMode === "selection" || pickerMode
   readonly property bool showSelectionFrame: hasSelection && (!pickerMode || targetKind === "region")
   readonly property int minimumSelectionSize: 1
-  readonly property int dragThreshold: Math.max(3, Style.space(3))
 
   function open(payloadJson) {
     var payload = ({})
@@ -378,7 +377,7 @@ Item {
     var dy = py - pointerStartY
 
     if (pointerAction === "pending") {
-      if (Math.abs(dx) + Math.abs(dy) < dragThreshold) return
+      if (dx === 0 && dy === 0) return
       pointerAction = "draw"
       targetKind = "region"
       regionLocked = true
