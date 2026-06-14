@@ -420,7 +420,7 @@ Item {
     if (action === "draw") {
       if (hasSelection) {
         targetKind = "region"
-        captureCurrentTarget(screenName)
+        regionLocked = true
       }
       return
     }
