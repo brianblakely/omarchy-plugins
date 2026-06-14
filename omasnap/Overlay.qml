@@ -48,6 +48,7 @@ Item {
   readonly property bool recording: service && service.recording === true
   readonly property bool pickerMode: pickerAction !== ""
   readonly property bool regionEditor: selectedMode === "selection" || pickerMode
+  readonly property bool showSelectionFrame: hasSelection && (!pickerMode || targetKind === "region")
   readonly property int minimumSelectionSize: 1
   readonly property int dragThreshold: Math.max(3, Style.space(3))
 
@@ -707,7 +708,7 @@ Item {
         y: root.selectionY
         width: root.selectionW
         height: root.selectionH
-        visible: root.hasSelection
+        visible: root.showSelectionFrame
         color: Util.alpha(Color.accent, 0.10)
         border.color: Color.accent
         border.width: Math.max(1, Style.normalBorderWidth)
