@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
@@ -41,11 +42,11 @@ Item {
   property var pickerMonitors: []
 
   readonly property var captureModes: [
-    { value: "screen", label: "Screen", shortLabel: "Screen", icon: "󰍹" },
-    { value: "window", label: "Window", shortLabel: "Window", icon: "󰖲" },
-    { value: "selection", label: "Selection", shortLabel: "Area", icon: "󰆞" },
-    { value: "record-screen", label: "Record Screen", shortLabel: "Rec Screen", icon: "󰑋" },
-    { value: "record-selection", label: "Record Selection", shortLabel: "Rec Area", icon: "󰻂" }
+    { value: "screen", label: "Screen", icon: "󰍹" },
+    { value: "window", label: "Window", icon: "󰖲" },
+    { value: "selection", label: "Selection", icon: "󰆞" },
+    { value: "record-screen", label: "Record Screen", icon: "󰑋" },
+    { value: "record-selection", label: "Record Selection", icon: "󰻂" }
   ]
 
   readonly property bool recordingMode: selectedMode === "record-screen" || selectedMode === "record-selection"
@@ -598,98 +599,48 @@ Item {
   component MenuButton: Rectangle {
     id: menuButton
 
-    property string text: ""
     property string iconText: ""
+    property string tooltipText: ""
     property bool checked: false
-    property bool emphasized: false
-    property bool showSwitch: false
+    property bool cta: false
 
     signal clicked()
 
-    readonly property bool highlighted: checked || emphasized
     readonly property color activeText: Color.menu.selectedText
     readonly property color idleText: Color.menu.text
+    readonly property color ctaColor: Color.accent
     readonly property color selectedBorder: Color.menu.selectedBorder.a > 0
       ? Color.menu.selectedBorder
       : Style.selectedBorderFor(idleText, activeText)
 
-    width: implicitWidth
-    height: implicitHeight
-    implicitWidth: buttonRow.implicitWidth + Style.spacing.controlPaddingX * 2
-    implicitHeight: Math.max(Style.spacing.controlHeight, buttonRow.implicitHeight + Style.spacing.controlPaddingY * 2)
+    width: Style.spacing.controlHeight
+    height: Style.spacing.controlHeight
+    implicitWidth: Style.spacing.controlHeight
+    implicitHeight: Style.spacing.controlHeight
     radius: Style.cornerRadius
-    color: buttonMouse.pressed ? Style.pressedFillFor(idleText, activeText)
+    color: cta && buttonMouse.pressed ? Util.alpha(ctaColor, 0.36)
+      : cta && buttonMouse.containsMouse ? Util.alpha(ctaColor, 0.30)
+      : cta ? Util.alpha(ctaColor, 0.22)
+      : buttonMouse.pressed ? Style.pressedFillFor(idleText, activeText)
       : buttonMouse.containsMouse ? Style.hoverFillFor(idleText, activeText)
-      : highlighted ? Color.menu.selectedBackground
+      : checked ? Color.menu.selectedBackground
       : Style.normalFillFor(idleText, activeText)
-    border.color: highlighted ? selectedBorder
+    border.color: cta ? Util.alpha(ctaColor, buttonMouse.containsMouse ? 1.0 : 0.78)
+      : checked ? selectedBorder
       : buttonMouse.containsMouse ? Style.hoverBorderFor(idleText, activeText)
       : Style.normalBorderFor(idleText, activeText)
-    border.width: highlighted ? Math.max(1, Style.selectedBorderWidth, Style.normalBorderWidth)
+    border.width: cta ? Math.max(1, Style.normalBorderWidth)
+      : checked ? Math.max(1, Style.selectedBorderWidth, Style.normalBorderWidth)
       : Style.normalBorderWidth
 
     Behavior on color { ColorAnimation { duration: 100 } }
 
-    Row {
-      id: buttonRow
+    Text {
       anchors.centerIn: parent
-      spacing: Style.spacing.controlGap
-
-      Rectangle {
-        visible: menuButton.checked && !menuButton.showSwitch
-        width: Style.space(5)
-        height: width
-        radius: width / 2
-        color: menuButton.activeText
-        anchors.verticalCenter: parent.verticalCenter
-      }
-
-      Text {
-        visible: menuButton.iconText !== ""
-        text: menuButton.iconText
-        color: menuButton.highlighted ? menuButton.activeText : menuButton.idleText
-        font.family: Style.font.menuFamily
-        font.pixelSize: Style.font.icon
-        anchors.verticalCenter: parent.verticalCenter
-      }
-
-      Text {
-        visible: menuButton.text !== ""
-        text: menuButton.text
-        color: menuButton.highlighted ? menuButton.activeText : menuButton.idleText
-        font.family: Style.font.menuFamily
-        font.pixelSize: Style.font.body
-        font.bold: menuButton.highlighted
-        anchors.verticalCenter: parent.verticalCenter
-      }
-
-      Rectangle {
-        id: switchTrack
-        visible: menuButton.showSwitch
-        width: Style.space(26)
-        height: Math.max(Style.space(12), Math.round(Style.spacing.controlHeight * 0.42))
-        radius: Style.cornerRadius > 0 ? height / 2 : 0
-        color: menuButton.checked
-          ? Util.alpha(menuButton.activeText, 0.32)
-          : Style.normalFillFor(menuButton.idleText, menuButton.activeText)
-        border.color: menuButton.checked
-          ? menuButton.activeText
-          : Style.normalBorderFor(menuButton.idleText, menuButton.activeText)
-        border.width: Math.max(1, Style.normalBorderWidth)
-        anchors.verticalCenter: parent.verticalCenter
-
-        Rectangle {
-          width: Math.max(Style.space(7), switchTrack.height - Style.space(5))
-          height: width
-          radius: Style.cornerRadius > 0 ? height / 2 : 0
-          x: menuButton.checked ? switchTrack.width - width - Style.space(2) : Style.space(2)
-          anchors.verticalCenter: parent.verticalCenter
-          color: menuButton.checked ? menuButton.activeText : Qt.darker(menuButton.idleText, 1.35)
-
-          Behavior on x { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
-          Behavior on color { ColorAnimation { duration: 120 } }
-        }
-      }
+      text: menuButton.iconText
+      color: menuButton.cta ? menuButton.idleText : (menuButton.checked ? menuButton.activeText : menuButton.idleText)
+      font.family: Style.font.menuFamily
+      font.pixelSize: Style.font.icon
     }
 
     MouseArea {
@@ -699,47 +650,171 @@ Item {
       cursorShape: Qt.PointingHandCursor
       onClicked: menuButton.clicked()
     }
+
+    PanelToolTip {
+      visible: menuButton.tooltipText !== "" && buttonMouse.containsMouse
+      text: menuButton.tooltipText
+      fontFamily: Style.font.menuFamily
+    }
   }
 
-  component CompactDropdown: Item {
-    id: compactDropdown
+  component IconDropdown: Rectangle {
+    id: iconDropdown
 
     property string label: ""
+    property string iconText: ""
     property string value: ""
     property var options: []
-    property int controlWidth: Style.space(130)
+    property int popupWidth: Style.space(160)
 
     signal changed(string value)
 
-    width: implicitWidth
-    height: implicitHeight
-    implicitWidth: dropdownRow.implicitWidth
-    implicitHeight: dropdownRow.implicitHeight
+    function optionValue(o) {
+      return (o && typeof o === "object") ? String(o.value) : String(o)
+    }
 
-    Row {
-      id: dropdownRow
-      spacing: Style.spacing.xs
+    function optionLabel(o) {
+      return (o && typeof o === "object") ? String(o.label) : String(o)
+    }
 
-      Text {
-        text: compactDropdown.label
-        color: Qt.darker(Color.menu.text, 1.35)
-        font.family: Style.font.menuFamily
-        font.pixelSize: Style.font.caption
-        font.bold: true
-        anchors.verticalCenter: parent.verticalCenter
+    function currentLabel() {
+      for (var i = 0; i < options.length; i++) {
+        if (optionValue(options[i]) === value) return optionLabel(options[i])
+      }
+      return value
+    }
+
+    width: Style.spacing.controlHeight
+    height: Style.spacing.controlHeight
+    implicitWidth: Style.spacing.controlHeight
+    implicitHeight: Style.spacing.controlHeight
+    radius: Style.cornerRadius
+    color: dropdownMouse.pressed ? Style.pressedFillFor(Color.menu.text, Color.menu.selectedText)
+      : dropdownMouse.containsMouse || popup.opened ? Style.hoverFillFor(Color.menu.text, Color.menu.selectedText)
+      : Style.normalFillFor(Color.menu.text, Color.menu.selectedText)
+    border.color: dropdownMouse.containsMouse || popup.opened
+      ? Style.hoverBorderFor(Color.menu.text, Color.menu.selectedText)
+      : Style.normalBorderFor(Color.menu.text, Color.menu.selectedText)
+    border.width: dropdownMouse.containsMouse || popup.opened ? Style.hoverBorderWidth : Style.normalBorderWidth
+
+    Behavior on color { ColorAnimation { duration: 100 } }
+
+    Text {
+      anchors.centerIn: parent
+      text: iconDropdown.iconText
+      color: Color.menu.text
+      font.family: Style.font.menuFamily
+      font.pixelSize: Style.font.icon
+    }
+
+    MouseArea {
+      id: dropdownMouse
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: popup.opened ? popup.close() : popup.open()
+    }
+
+    PanelToolTip {
+      visible: !popup.opened && dropdownMouse.containsMouse
+      text: iconDropdown.label + ": " + iconDropdown.currentLabel()
+      fontFamily: Style.font.menuFamily
+    }
+
+    Popup {
+      id: popup
+      x: 0
+      y: iconDropdown.height + Style.spacing.xxs
+      width: iconDropdown.popupWidth
+      implicitHeight: Math.min(iconDropdown.options.length * Style.spacing.popupRowHeight + Math.max(0, iconDropdown.options.length - 1) * Style.spacing.labelGap + Style.spacing.xxs,
+                               Style.spacing.popupRowHeight * 8 + 7 * Style.spacing.labelGap + Style.spacing.xxs)
+      padding: Style.spacing.hairline
+      focus: true
+
+      background: Rectangle {
+        color: Color.menu.background
+        border.color: Color.menu.border
+        border.width: Style.normalBorderWidth
+        radius: Style.cornerRadius
       }
 
-      Dropdown {
-        width: compactDropdown.controlWidth
-        label: compactDropdown.label
-        value: compactDropdown.value
-        options: compactDropdown.options
-        showLabel: false
-        foreground: Color.menu.text
-        background: Color.menu.background
-        popupBorder: Color.menu.border
-        accent: Color.menu.selectedText
-        onChanged: function(value) { compactDropdown.changed(value) }
+      onOpened: {
+        optionList.currentIndex = Math.max(0, optionList.indexOfValue(iconDropdown.value))
+        optionList.forceActiveFocus()
+      }
+
+      contentItem: ListView {
+        id: optionList
+        spacing: Style.spacing.labelGap
+        implicitHeight: contentHeight
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        model: iconDropdown.options
+        currentIndex: -1
+
+        Keys.priority: Keys.BeforeItem
+        Keys.onPressed: function(event) {
+          if (event.key === Qt.Key_Escape) {
+            popup.close()
+            event.accepted = true
+          } else if (event.key === Qt.Key_Down || event.text === "j") {
+            optionList.currentIndex = Math.min(iconDropdown.options.length - 1, optionList.currentIndex + 1)
+            event.accepted = true
+          } else if (event.key === Qt.Key_Up || event.text === "k") {
+            optionList.currentIndex = Math.max(0, optionList.currentIndex - 1)
+            event.accepted = true
+          } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+            optionList.selectCurrent()
+            event.accepted = true
+          }
+        }
+
+        function indexOfValue(v) {
+          for (var i = 0; i < iconDropdown.options.length; i++) {
+            if (iconDropdown.optionValue(iconDropdown.options[i]) === v) return i
+          }
+          return -1
+        }
+
+        function selectCurrent() {
+          if (currentIndex < 0 || currentIndex >= iconDropdown.options.length) return
+          var next = iconDropdown.optionValue(iconDropdown.options[currentIndex])
+          iconDropdown.value = next
+          iconDropdown.changed(next)
+          popup.close()
+        }
+
+        delegate: Rectangle {
+          required property var modelData
+          required property int index
+
+          width: optionList.width
+          height: Style.spacing.popupRowHeight
+          color: index === optionList.currentIndex
+            ? Style.hoverFillFor(Color.menu.text, Color.menu.selectedText)
+            : "transparent"
+
+          Text {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.leftMargin: Style.spacing.controlPaddingX
+            anchors.rightMargin: Style.spacing.controlPaddingX
+            text: iconDropdown.optionLabel(modelData)
+            color: index === optionList.currentIndex ? Style.hoverStateColor(Color.menu.text, Color.menu.selectedText) : Color.menu.text
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.body
+            elide: Text.ElideRight
+          }
+
+          MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onPositionChanged: optionList.currentIndex = parent.index
+            onClicked: optionList.selectCurrent()
+          }
+        }
       }
     }
   }
@@ -1075,7 +1150,7 @@ Item {
     BorderSurface {
       id: toolbar
       visible: !root.pickerMode
-      readonly property int preferredWidth: root.recordingMode || root.recording ? Style.space(760) : Style.space(700)
+      readonly property int preferredWidth: root.recordingMode || root.recording ? Style.space(500) : Style.space(410)
       width: Math.max(1, Math.min(panel.width - Style.gapsOut * 2, preferredWidth))
       height: content.implicitHeight + padding * 2 + borderTop + borderBottom
       anchors.horizontalCenter: parent.horizontalCenter
@@ -1089,7 +1164,7 @@ Item {
 
       MouseArea { anchors.fill: parent; onClicked: {} }
 
-      Column {
+      Flow {
         id: content
         anchors.left: parent.left
         anchors.right: parent.right
@@ -1097,161 +1172,119 @@ Item {
         anchors.leftMargin: toolbar.contentLeftInset
         anchors.rightMargin: toolbar.contentRightInset
         anchors.topMargin: toolbar.contentTopInset
-        spacing: Style.spacing.sm
+        spacing: Style.spacing.xs
 
-        Row {
-          width: parent.width
-          spacing: Style.spacing.sm
+        Repeater {
+          model: root.captureModes
 
-          Flow {
-            width: Math.max(1, parent.width - actionButtons.width - parent.spacing)
-            spacing: Style.spacing.xs
-
-            Repeater {
-              model: root.captureModes
-
-              MenuButton {
-                text: modelData.shortLabel || modelData.label
-                iconText: modelData.icon
-                checked: root.selectedMode === modelData.value
-                onClicked: root.setMode(modelData.value)
-              }
-            }
-          }
-
-          Row {
-            id: actionButtons
-            width: implicitWidth
-            height: implicitHeight
-            spacing: Style.spacing.xs
-            anchors.verticalCenter: parent.verticalCenter
-
-            MenuButton {
-              text: root.recording ? "Stop" : (root.recordingMode ? "Record" : "Capture")
-              iconText: root.recording ? "󰓛" : (root.recordingMode ? "󰑋" : "")
-              emphasized: true
-              onClicked: {
-                if (root.regionEditor) root.ensureSelection(panel.width, panel.height, panel.currentScreenName)
-                root.runSelected(panel.currentScreenName)
-              }
-            }
-
-            MenuButton {
-              text: "Open"
-              iconText: "󰈙"
-              onClicked: if (service) service.openLast()
-            }
-
-            PanelActionButton {
-              id: closeButton
-              iconText: "󰅖"
-              tooltipText: "Close"
-              size: Style.spacing.controlHeight
-              bordered: true
-              foreground: Color.menu.text
-              hoverColor: Color.menu.selectedText
-              onClicked: root.dismiss()
-            }
+          MenuButton {
+            iconText: modelData.icon
+            tooltipText: modelData.label
+            checked: root.selectedMode === modelData.value
+            onClicked: root.setMode(modelData.value)
           }
         }
 
-        Flow {
-          width: parent.width
-          spacing: Style.spacing.xs
+        IconDropdown {
+          label: "Save"
+          iconText: "󰈙"
+          popupWidth: Style.space(170)
+          value: service ? service.outputMode : "file-and-clipboard"
+          options: [
+            { value: "file-and-clipboard", label: "File + Clipboard" },
+            { value: "file", label: "File" },
+            { value: "clipboard", label: "Clipboard" },
+            { value: "editor", label: "Editor" }
+          ]
+          onChanged: function(value) { if (service) service.setOutputMode(value) }
+        }
 
-          CompactDropdown {
-            label: "Save"
-            controlWidth: Style.space(132)
-            value: service ? service.outputMode : "file-and-clipboard"
-            options: [
-              { value: "file-and-clipboard", label: "File + Clipboard" },
-              { value: "file", label: "File" },
-              { value: "clipboard", label: "Clipboard" },
-              { value: "editor", label: "Editor" }
-            ]
-            onChanged: function(value) { if (service) service.setOutputMode(value) }
-          }
+        IconDropdown {
+          label: "Location"
+          iconText: "󰉋"
+          popupWidth: Style.space(150)
+          value: service ? service.saveLocation : "pictures"
+          options: [
+            { value: "pictures", label: "Pictures" },
+            { value: "desktop", label: "Desktop" },
+            { value: "documents", label: "Documents" },
+            { value: "downloads", label: "Downloads" }
+          ]
+          onChanged: function(value) { if (service) service.setSaveLocation(value) }
+        }
 
-          CompactDropdown {
-            label: "To"
-            controlWidth: Style.space(108)
-            value: service ? service.saveLocation : "pictures"
-            options: [
-              { value: "pictures", label: "Pictures" },
-              { value: "desktop", label: "Desktop" },
-              { value: "documents", label: "Documents" },
-              { value: "downloads", label: "Downloads" }
-            ]
-            onChanged: function(value) { if (service) service.setSaveLocation(value) }
-          }
+        IconDropdown {
+          label: "Delay"
+          iconText: "󰔟"
+          popupWidth: Style.space(100)
+          value: service ? String(service.timerSeconds) : "0"
+          options: [
+            { value: "0", label: "None" },
+            { value: "5", label: "5 sec" },
+            { value: "10", label: "10 sec" }
+          ]
+          onChanged: function(value) { if (service) service.setTimer(value) }
+        }
 
-          CompactDropdown {
-            label: "Delay"
-            controlWidth: Style.space(82)
-            value: service ? String(service.timerSeconds) : "0"
-            options: [
-              { value: "0", label: "None" },
-              { value: "5", label: "5 sec" },
-              { value: "10", label: "10 sec" }
-            ]
-            onChanged: function(value) { if (service) service.setTimer(value) }
-          }
+        MenuButton {
+          iconText: "󰆿"
+          tooltipText: "Pointer: " + (service && service.includeCursor ? "On" : "Off")
+          checked: service && service.includeCursor
+          onClicked: root.toggleBoolean("cursor")
+        }
 
-          MenuButton {
-            text: "Pointer"
-            iconText: "󰆿"
-            checked: service && service.includeCursor
-            showSwitch: true
-            onClicked: root.toggleBoolean("cursor")
-          }
+        MenuButton {
+          iconText: "󰋩"
+          tooltipText: "Thumbnail: " + (!service || service.showThumbnail ? "On" : "Off")
+          checked: !service || service.showThumbnail
+          onClicked: root.toggleBoolean("thumbnail")
+        }
 
-          MenuButton {
-            text: "Thumbnail"
-            iconText: "󰋩"
-            checked: !service || service.showThumbnail
-            showSwitch: true
-            onClicked: root.toggleBoolean("thumbnail")
-          }
+        MenuButton {
+          iconText: "󰆓"
+          tooltipText: "Remember selection: " + (!service || service.rememberSelection ? "On" : "Off")
+          checked: !service || service.rememberSelection
+          onClicked: root.toggleBoolean("remember")
+        }
 
-          MenuButton {
-            text: "Remember"
-            iconText: "󰆓"
-            checked: !service || service.rememberSelection
-            showSwitch: true
-            onClicked: root.toggleBoolean("remember")
+        Item {
+          width: Style.spacing.xs
+          height: Style.spacing.controlHeight
+        }
+
+        MenuButton {
+          iconText: root.recording ? "󰓛" : (root.recordingMode ? "󰑋" : "")
+          tooltipText: root.recording ? "Stop recording" : (root.recordingMode ? "Record" : "Capture")
+          cta: true
+          onClicked: {
+            if (root.regionEditor) root.ensureSelection(panel.width, panel.height, panel.currentScreenName)
+            root.runSelected(panel.currentScreenName)
           }
         }
 
-        Flow {
-          width: parent.width
-          spacing: Style.spacing.xs
+        MenuButton {
+          iconText: "󰓃"
+          tooltipText: "Desktop audio: " + (service && service.recordDesktopAudio ? "On" : "Off")
+          checked: service && service.recordDesktopAudio
           visible: root.recordingMode || root.recording
-
-          MenuButton {
-            text: "Desktop"
-            iconText: "󰓃"
-            checked: service && service.recordDesktopAudio
-            showSwitch: true
-            onClicked: root.toggleBoolean("desktopAudio")
-          }
-
-          MenuButton {
-            text: "Mic"
-            iconText: "󰍬"
-            checked: service && service.recordMicrophoneAudio
-            showSwitch: true
-            onClicked: root.toggleBoolean("microphoneAudio")
-          }
-
-          MenuButton {
-            text: "Webcam"
-            iconText: "󰄀"
-            checked: service && service.recordWebcam
-            showSwitch: true
-            onClicked: root.toggleBoolean("webcam")
-          }
+          onClicked: root.toggleBoolean("desktopAudio")
         }
 
+        MenuButton {
+          iconText: "󰍬"
+          tooltipText: "Microphone: " + (service && service.recordMicrophoneAudio ? "On" : "Off")
+          checked: service && service.recordMicrophoneAudio
+          visible: root.recordingMode || root.recording
+          onClicked: root.toggleBoolean("microphoneAudio")
+        }
+
+        MenuButton {
+          iconText: "󰄀"
+          tooltipText: "Webcam: " + (service && service.recordWebcam ? "On" : "Off")
+          checked: service && service.recordWebcam
+          visible: root.recordingMode || root.recording
+          onClicked: root.toggleBoolean("webcam")
+        }
       }
     }
   }
