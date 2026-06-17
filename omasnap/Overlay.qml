@@ -609,6 +609,7 @@ Item {
 
       MouseArea {
         anchors.fill: parent
+        enabled: root.pointerAction === ""
         hoverEnabled: true
         cursorShape: parent.cursor
         acceptedButtons: Qt.LeftButton
@@ -685,6 +686,7 @@ Item {
         cursorShape: Qt.CrossCursor
         acceptedButtons: Qt.LeftButton
         hoverEnabled: root.pickerMode
+        preventStealing: true
         onPressed: function(mouse) {
           keyCatcher.forceActiveFocus()
           if (root.pickerMode) root.beginPickerPointer(mouse.x, mouse.y, selectionLayer.width, selectionLayer.height, panel.currentScreenName)
@@ -714,8 +716,10 @@ Item {
 
         MouseArea {
           anchors.fill: parent
+          enabled: root.pointerAction === ""
           cursorShape: Qt.SizeAllCursor
           acceptedButtons: Qt.LeftButton
+          preventStealing: true
           onPressed: function(mouse) {
             var point = mapToItem(selectionLayer, mouse.x, mouse.y)
             keyCatcher.forceActiveFocus()
