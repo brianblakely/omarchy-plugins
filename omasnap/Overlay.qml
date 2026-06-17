@@ -41,11 +41,11 @@ Item {
   property var pickerMonitors: []
 
   readonly property var captureModes: [
-    { value: "screen", label: "Screen", icon: "󰍹" },
-    { value: "window", label: "Window", icon: "󰖲" },
-    { value: "selection", label: "Selection", icon: "󰆞" },
-    { value: "record-screen", label: "Record Screen", icon: "󰑋" },
-    { value: "record-selection", label: "Record Selection", icon: "󰻂" }
+    { value: "screen", label: "Screen", shortLabel: "Screen", icon: "󰍹" },
+    { value: "window", label: "Window", shortLabel: "Window", icon: "󰖲" },
+    { value: "selection", label: "Selection", shortLabel: "Area", icon: "󰆞" },
+    { value: "record-screen", label: "Record Screen", shortLabel: "Rec Screen", icon: "󰑋" },
+    { value: "record-selection", label: "Record Selection", shortLabel: "Rec Area", icon: "󰻂" }
   ]
 
   readonly property bool recordingMode: selectedMode === "record-screen" || selectedMode === "record-selection"
@@ -595,6 +595,155 @@ Item {
     }
   }
 
+  component MenuButton: Rectangle {
+    id: menuButton
+
+    property string text: ""
+    property string iconText: ""
+    property bool checked: false
+    property bool emphasized: false
+    property bool showSwitch: false
+
+    signal clicked()
+
+    readonly property bool highlighted: checked || emphasized
+    readonly property color activeText: Color.menu.selectedText
+    readonly property color idleText: Color.menu.text
+    readonly property color selectedBorder: Color.menu.selectedBorder.a > 0
+      ? Color.menu.selectedBorder
+      : Style.selectedBorderFor(idleText, activeText)
+
+    width: implicitWidth
+    height: implicitHeight
+    implicitWidth: buttonRow.implicitWidth + Style.spacing.controlPaddingX * 2
+    implicitHeight: Math.max(Style.spacing.controlHeight, buttonRow.implicitHeight + Style.spacing.controlPaddingY * 2)
+    radius: Style.cornerRadius
+    color: buttonMouse.pressed ? Style.pressedFillFor(idleText, activeText)
+      : buttonMouse.containsMouse ? Style.hoverFillFor(idleText, activeText)
+      : highlighted ? Color.menu.selectedBackground
+      : Style.normalFillFor(idleText, activeText)
+    border.color: highlighted ? selectedBorder
+      : buttonMouse.containsMouse ? Style.hoverBorderFor(idleText, activeText)
+      : Style.normalBorderFor(idleText, activeText)
+    border.width: highlighted ? Math.max(1, Style.selectedBorderWidth, Style.normalBorderWidth)
+      : Style.normalBorderWidth
+
+    Behavior on color { ColorAnimation { duration: 100 } }
+
+    Row {
+      id: buttonRow
+      anchors.centerIn: parent
+      spacing: Style.spacing.controlGap
+
+      Rectangle {
+        visible: menuButton.checked && !menuButton.showSwitch
+        width: Style.space(5)
+        height: width
+        radius: width / 2
+        color: menuButton.activeText
+        anchors.verticalCenter: parent.verticalCenter
+      }
+
+      Text {
+        visible: menuButton.iconText !== ""
+        text: menuButton.iconText
+        color: menuButton.highlighted ? menuButton.activeText : menuButton.idleText
+        font.family: Style.font.menuFamily
+        font.pixelSize: Style.font.icon
+        anchors.verticalCenter: parent.verticalCenter
+      }
+
+      Text {
+        visible: menuButton.text !== ""
+        text: menuButton.text
+        color: menuButton.highlighted ? menuButton.activeText : menuButton.idleText
+        font.family: Style.font.menuFamily
+        font.pixelSize: Style.font.body
+        font.bold: menuButton.highlighted
+        anchors.verticalCenter: parent.verticalCenter
+      }
+
+      Rectangle {
+        id: switchTrack
+        visible: menuButton.showSwitch
+        width: Style.space(26)
+        height: Math.max(Style.space(12), Math.round(Style.spacing.controlHeight * 0.42))
+        radius: Style.cornerRadius > 0 ? height / 2 : 0
+        color: menuButton.checked
+          ? Util.alpha(menuButton.activeText, 0.32)
+          : Style.normalFillFor(menuButton.idleText, menuButton.activeText)
+        border.color: menuButton.checked
+          ? menuButton.activeText
+          : Style.normalBorderFor(menuButton.idleText, menuButton.activeText)
+        border.width: Math.max(1, Style.normalBorderWidth)
+        anchors.verticalCenter: parent.verticalCenter
+
+        Rectangle {
+          width: Math.max(Style.space(7), switchTrack.height - Style.space(5))
+          height: width
+          radius: Style.cornerRadius > 0 ? height / 2 : 0
+          x: menuButton.checked ? switchTrack.width - width - Style.space(2) : Style.space(2)
+          anchors.verticalCenter: parent.verticalCenter
+          color: menuButton.checked ? menuButton.activeText : Qt.darker(menuButton.idleText, 1.35)
+
+          Behavior on x { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+          Behavior on color { ColorAnimation { duration: 120 } }
+        }
+      }
+    }
+
+    MouseArea {
+      id: buttonMouse
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: menuButton.clicked()
+    }
+  }
+
+  component CompactDropdown: Item {
+    id: compactDropdown
+
+    property string label: ""
+    property string value: ""
+    property var options: []
+    property int controlWidth: Style.space(130)
+
+    signal changed(string value)
+
+    width: implicitWidth
+    height: implicitHeight
+    implicitWidth: dropdownRow.implicitWidth
+    implicitHeight: dropdownRow.implicitHeight
+
+    Row {
+      id: dropdownRow
+      spacing: Style.spacing.xs
+
+      Text {
+        text: compactDropdown.label
+        color: Qt.darker(Color.menu.text, 1.35)
+        font.family: Style.font.menuFamily
+        font.pixelSize: Style.font.caption
+        font.bold: true
+        anchors.verticalCenter: parent.verticalCenter
+      }
+
+      Dropdown {
+        width: compactDropdown.controlWidth
+        label: compactDropdown.label
+        value: compactDropdown.value
+        options: compactDropdown.options
+        showLabel: false
+        foreground: Color.menu.text
+        background: Color.menu.background
+        popupBorder: Color.menu.border
+        accent: Color.menu.selectedText
+        onChanged: function(value) { compactDropdown.changed(value) }
+      }
+    }
+  }
+
   Process {
     id: pickerTargetsProc
     command: [
@@ -926,15 +1075,16 @@ Item {
     BorderSurface {
       id: toolbar
       visible: !root.pickerMode
-      width: Math.min(panel.width - Style.gapsOut * 2, Style.space(930))
-      height: content.implicitHeight + Style.spacing.panelPadding * 2 + borderTop + borderBottom
+      readonly property int preferredWidth: root.recordingMode || root.recording ? Style.space(760) : Style.space(700)
+      width: Math.max(1, Math.min(panel.width - Style.gapsOut * 2, preferredWidth))
+      height: content.implicitHeight + padding * 2 + borderTop + borderBottom
       anchors.horizontalCenter: parent.horizontalCenter
       anchors.bottom: parent.bottom
-      anchors.bottomMargin: Math.max(Style.gapsOut, Style.space(28))
+      anchors.bottomMargin: Math.max(Style.gapsOut, Style.space(14))
       radius: Style.cornerRadius
       color: Color.menu.background
       borderSpec: Border.surfaceSpec("menu", "border", Color.menu.border, Math.max(1, Style.normalBorderWidth))
-      padding: Style.spacing.panelPadding
+      padding: Style.spacing.xxl
       clip: true
 
       MouseArea { anchors.fill: parent; onClicked: {} }
@@ -947,62 +1097,72 @@ Item {
         anchors.leftMargin: toolbar.contentLeftInset
         anchors.rightMargin: toolbar.contentRightInset
         anchors.topMargin: toolbar.contentTopInset
-        spacing: Style.spacing.md
+        spacing: Style.spacing.sm
 
         Row {
           width: parent.width
-          spacing: Style.spacing.md
-
-          Text {
-            width: parent.width - closeButton.width - parent.spacing
-            text: "Omasnap"
-            color: Color.menu.text
-            font.family: Style.font.menuFamily
-            font.pixelSize: Style.font.heading
-            font.bold: true
-            elide: Text.ElideRight
-            anchors.verticalCenter: parent.verticalCenter
-          }
-
-          PanelActionButton {
-            id: closeButton
-            iconText: "󰅖"
-            tooltipText: "Close"
-            foreground: Color.menu.text
-            onClicked: root.dismiss()
-          }
-        }
-
-        Flow {
-          width: parent.width
           spacing: Style.spacing.sm
 
-          Repeater {
-            model: root.captureModes
+          Flow {
+            width: Math.max(1, parent.width - actionButtons.width - parent.spacing)
+            spacing: Style.spacing.xs
 
-            Button {
-              text: modelData.label
-              iconText: modelData.icon
-              selected: root.selectedMode === modelData.value
-              foreground: Color.menu.text
-              fontFamily: Style.font.menuFamily
+            Repeater {
+              model: root.captureModes
+
+              MenuButton {
+                text: modelData.shortLabel || modelData.label
+                iconText: modelData.icon
+                checked: root.selectedMode === modelData.value
+                onClicked: root.setMode(modelData.value)
+              }
+            }
+          }
+
+          Row {
+            id: actionButtons
+            width: implicitWidth
+            height: implicitHeight
+            spacing: Style.spacing.xs
+            anchors.verticalCenter: parent.verticalCenter
+
+            MenuButton {
+              text: root.recording ? "Stop" : (root.recordingMode ? "Record" : "Capture")
+              iconText: root.recording ? "󰓛" : (root.recordingMode ? "󰑋" : "")
+              emphasized: true
+              onClicked: {
+                if (root.regionEditor) root.ensureSelection(panel.width, panel.height, panel.currentScreenName)
+                root.runSelected(panel.currentScreenName)
+              }
+            }
+
+            MenuButton {
+              text: "Open"
+              iconText: "󰈙"
+              onClicked: if (service) service.openLast()
+            }
+
+            PanelActionButton {
+              id: closeButton
+              iconText: "󰅖"
+              tooltipText: "Close"
+              size: Style.spacing.controlHeight
               bordered: true
-              onClicked: root.setMode(modelData.value)
+              foreground: Color.menu.text
+              hoverColor: Color.menu.selectedText
+              onClicked: root.dismiss()
             }
           }
         }
 
         Flow {
           width: parent.width
-          spacing: Style.spacing.sm
+          spacing: Style.spacing.xs
 
-          Dropdown {
-            width: Style.space(170)
+          CompactDropdown {
             label: "Save"
+            controlWidth: Style.space(132)
             value: service ? service.outputMode : "file-and-clipboard"
-            foreground: Color.menu.text
-            background: Color.menu.background
-            popupBorder: Color.menu.border
             options: [
               { value: "file-and-clipboard", label: "File + Clipboard" },
               { value: "file", label: "File" },
@@ -1012,13 +1172,10 @@ Item {
             onChanged: function(value) { if (service) service.setOutputMode(value) }
           }
 
-          Dropdown {
-            width: Style.space(150)
-            label: "Location"
+          CompactDropdown {
+            label: "To"
+            controlWidth: Style.space(108)
             value: service ? service.saveLocation : "pictures"
-            foreground: Color.menu.text
-            background: Color.menu.background
-            popupBorder: Color.menu.border
             options: [
               { value: "pictures", label: "Pictures" },
               { value: "desktop", label: "Desktop" },
@@ -1028,13 +1185,10 @@ Item {
             onChanged: function(value) { if (service) service.setSaveLocation(value) }
           }
 
-          Dropdown {
-            width: Style.space(110)
-            label: "Timer"
+          CompactDropdown {
+            label: "Delay"
+            controlWidth: Style.space(82)
             value: service ? String(service.timerSeconds) : "0"
-            foreground: Color.menu.text
-            background: Color.menu.background
-            popupBorder: Color.menu.border
             options: [
               { value: "0", label: "None" },
               { value: "5", label: "5 sec" },
@@ -1043,100 +1197,61 @@ Item {
             onChanged: function(value) { if (service) service.setTimer(value) }
           }
 
-          Button {
+          MenuButton {
             text: "Pointer"
             iconText: "󰆿"
-            selected: service && service.includeCursor
-            foreground: Color.menu.text
-            fontFamily: Style.font.menuFamily
-            bordered: true
+            checked: service && service.includeCursor
+            showSwitch: true
             onClicked: root.toggleBoolean("cursor")
           }
 
-          Button {
+          MenuButton {
             text: "Thumbnail"
             iconText: "󰋩"
-            selected: !service || service.showThumbnail
-            foreground: Color.menu.text
-            fontFamily: Style.font.menuFamily
-            bordered: true
+            checked: !service || service.showThumbnail
+            showSwitch: true
             onClicked: root.toggleBoolean("thumbnail")
           }
 
-          Button {
+          MenuButton {
             text: "Remember"
             iconText: "󰆓"
-            selected: !service || service.rememberSelection
-            foreground: Color.menu.text
-            fontFamily: Style.font.menuFamily
-            bordered: true
+            checked: !service || service.rememberSelection
+            showSwitch: true
             onClicked: root.toggleBoolean("remember")
           }
         }
 
         Flow {
           width: parent.width
-          spacing: Style.spacing.sm
+          spacing: Style.spacing.xs
           visible: root.recordingMode || root.recording
 
-          Button {
-            text: "Desktop Audio"
+          MenuButton {
+            text: "Desktop"
             iconText: "󰓃"
-            selected: service && service.recordDesktopAudio
-            foreground: Color.menu.text
-            fontFamily: Style.font.menuFamily
-            bordered: true
+            checked: service && service.recordDesktopAudio
+            showSwitch: true
             onClicked: root.toggleBoolean("desktopAudio")
           }
 
-          Button {
-            text: "Microphone"
+          MenuButton {
+            text: "Mic"
             iconText: "󰍬"
-            selected: service && service.recordMicrophoneAudio
-            foreground: Color.menu.text
-            fontFamily: Style.font.menuFamily
-            bordered: true
+            checked: service && service.recordMicrophoneAudio
+            showSwitch: true
             onClicked: root.toggleBoolean("microphoneAudio")
           }
 
-          Button {
+          MenuButton {
             text: "Webcam"
             iconText: "󰄀"
-            selected: service && service.recordWebcam
-            foreground: Color.menu.text
-            fontFamily: Style.font.menuFamily
-            bordered: true
+            checked: service && service.recordWebcam
+            showSwitch: true
             onClicked: root.toggleBoolean("webcam")
           }
         }
 
-        Row {
-          width: parent.width
-          spacing: Style.spacing.md
-
-          Button {
-            text: root.recording ? "Stop Recording" : (root.recordingMode ? "Record" : "Capture")
-            iconText: root.recording ? "󰓛" : (root.recordingMode ? "󰑋" : "")
-            foreground: Color.menu.text
-            fontFamily: Style.font.menuFamily
-            bordered: true
-            selected: true
-            horizontalPadding: Style.spacing.lg
-            onClicked: {
-              if (root.regionEditor) root.ensureSelection(panel.width, panel.height, panel.currentScreenName)
-              root.runSelected(panel.currentScreenName)
-            }
-          }
-
-          Button {
-            text: "Open Last"
-            iconText: "󰈙"
-            foreground: Color.menu.text
-            fontFamily: Style.font.menuFamily
-            bordered: true
-            onClicked: if (service) service.openLast()
-          }
-        }
       }
     }
   }
