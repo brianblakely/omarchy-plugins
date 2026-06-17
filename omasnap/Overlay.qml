@@ -653,6 +653,7 @@ Item {
 
     PanelToolTip {
       visible: menuButton.tooltipText !== "" && buttonMouse.containsMouse
+      delay: 0
       text: menuButton.tooltipText
       fontFamily: Style.font.menuFamily
     }
@@ -666,6 +667,7 @@ Item {
     property string value: ""
     property var options: []
     property int popupWidth: Style.space(160)
+    property var boundaryItem: null
 
     signal changed(string value)
 
@@ -686,7 +688,7 @@ Item {
 
     width: Style.spacing.controlHeight
     height: Style.spacing.controlHeight
-    implicitWidth: Style.spacing.controlHeight
+    implicitWidth: dropdownRow.implicitWidth + Style.spacing.controlPaddingX
     implicitHeight: Style.spacing.controlHeight
     radius: Style.cornerRadius
     color: dropdownMouse.pressed ? Style.pressedFillFor(Color.menu.text, Color.menu.selectedText)
@@ -699,12 +701,29 @@ Item {
 
     Behavior on color { ColorAnimation { duration: 100 } }
 
-    Text {
+    readonly property bool openAbove: boundaryItem
+      && iconDropdown.mapToItem(boundaryItem, 0, iconDropdown.height + Style.spacing.xxs).y + popup.implicitHeight > boundaryItem.height
+
+    Row {
+      id: dropdownRow
       anchors.centerIn: parent
-      text: iconDropdown.iconText
-      color: Color.menu.text
-      font.family: Style.font.menuFamily
-      font.pixelSize: Style.font.icon
+      spacing: Style.spacing.xxs
+
+      Text {
+        text: iconDropdown.iconText
+        color: Color.menu.text
+        font.family: Style.font.menuFamily
+        font.pixelSize: Style.font.icon
+        anchors.verticalCenter: parent.verticalCenter
+      }
+
+      Text {
+        text: "󰅀"
+        color: Qt.darker(Color.menu.text, 1.25)
+        font.family: Style.font.menuFamily
+        font.pixelSize: Style.font.caption
+        anchors.verticalCenter: parent.verticalCenter
+      }
     }
 
     MouseArea {
@@ -717,6 +736,7 @@ Item {
 
     PanelToolTip {
       visible: !popup.opened && dropdownMouse.containsMouse
+      delay: 0
       text: iconDropdown.label + ": " + iconDropdown.currentLabel()
       fontFamily: Style.font.menuFamily
     }
@@ -724,7 +744,7 @@ Item {
     Popup {
       id: popup
       x: 0
-      y: iconDropdown.height + Style.spacing.xxs
+      y: iconDropdown.openAbove ? -popup.implicitHeight - Style.spacing.xxs : iconDropdown.height + Style.spacing.xxs
       width: iconDropdown.popupWidth
       implicitHeight: Math.min(iconDropdown.options.length * Style.spacing.popupRowHeight + Math.max(0, iconDropdown.options.length - 1) * Style.spacing.labelGap + Style.spacing.xxs,
                                Style.spacing.popupRowHeight * 8 + 7 * Style.spacing.labelGap + Style.spacing.xxs)
@@ -817,6 +837,11 @@ Item {
         }
       }
     }
+  }
+
+  component GroupGap: Item {
+    width: Style.spacing.xs
+    height: Style.spacing.controlHeight
   }
 
   Process {
@@ -1150,8 +1175,17 @@ Item {
     BorderSurface {
       id: toolbar
       visible: !root.pickerMode
-      readonly property int preferredWidth: root.recordingMode || root.recording ? Style.space(500) : Style.space(410)
-      width: Math.max(1, Math.min(panel.width - Style.gapsOut * 2, preferredWidth))
+      readonly property int visibleAudioControls: root.recordingMode || root.recording ? 3 : 0
+      readonly property int buttonControlCount: 5 + 3 + visibleAudioControls + 1
+      readonly property int dropdownControlCount: 3
+      readonly property int groupGapCount: 3
+      readonly property int itemCount: buttonControlCount + dropdownControlCount + groupGapCount
+      readonly property int dropdownButtonWidth: Style.spacing.controlHeight + Style.spacing.controlPaddingX
+      readonly property int preferredContentWidth: buttonControlCount * Style.spacing.controlHeight
+        + dropdownControlCount * dropdownButtonWidth
+        + groupGapCount * Style.spacing.xs
+        + Math.max(0, itemCount - 1) * Style.spacing.xs
+      width: Math.max(1, Math.min(panel.width - Style.gapsOut * 2, preferredContentWidth + contentLeftInset + contentRightInset))
       height: content.implicitHeight + padding * 2 + borderTop + borderBottom
       anchors.horizontalCenter: parent.horizontalCenter
       anchors.bottom: parent.bottom
@@ -1185,10 +1219,14 @@ Item {
           }
         }
 
+        GroupGap {}
+
         IconDropdown {
           label: "Save"
           iconText: "󰈙"
+          width: toolbar.dropdownButtonWidth
           popupWidth: Style.space(170)
+          boundaryItem: panel
           value: service ? service.outputMode : "file-and-clipboard"
           options: [
             { value: "file-and-clipboard", label: "File + Clipboard" },
@@ -1202,7 +1240,9 @@ Item {
         IconDropdown {
           label: "Location"
           iconText: "󰉋"
+          width: toolbar.dropdownButtonWidth
           popupWidth: Style.space(150)
+          boundaryItem: panel
           value: service ? service.saveLocation : "pictures"
           options: [
             { value: "pictures", label: "Pictures" },
@@ -1216,7 +1256,9 @@ Item {
         IconDropdown {
           label: "Delay"
           iconText: "󰔟"
+          width: toolbar.dropdownButtonWidth
           popupWidth: Style.space(100)
+          boundaryItem: panel
           value: service ? String(service.timerSeconds) : "0"
           options: [
             { value: "0", label: "None" },
@@ -1225,6 +1267,8 @@ Item {
           ]
           onChanged: function(value) { if (service) service.setTimer(value) }
         }
+
+        GroupGap {}
 
         MenuButton {
           iconText: "󰆿"
@@ -1245,21 +1289,6 @@ Item {
           tooltipText: "Remember selection: " + (!service || service.rememberSelection ? "On" : "Off")
           checked: !service || service.rememberSelection
           onClicked: root.toggleBoolean("remember")
-        }
-
-        Item {
-          width: Style.spacing.xs
-          height: Style.spacing.controlHeight
-        }
-
-        MenuButton {
-          iconText: root.recording ? "󰓛" : (root.recordingMode ? "󰑋" : "")
-          tooltipText: root.recording ? "Stop recording" : (root.recordingMode ? "Record" : "Capture")
-          cta: true
-          onClicked: {
-            if (root.regionEditor) root.ensureSelection(panel.width, panel.height, panel.currentScreenName)
-            root.runSelected(panel.currentScreenName)
-          }
         }
 
         MenuButton {
@@ -1284,6 +1313,18 @@ Item {
           checked: service && service.recordWebcam
           visible: root.recordingMode || root.recording
           onClicked: root.toggleBoolean("webcam")
+        }
+
+        GroupGap {}
+
+        MenuButton {
+          iconText: root.recording ? "󰓛" : (root.recordingMode ? "󰑋" : "")
+          tooltipText: root.recording ? "Stop recording" : (root.recordingMode ? "Record" : "Capture")
+          cta: true
+          onClicked: {
+            if (root.regionEditor) root.ensureSelection(panel.width, panel.height, panel.currentScreenName)
+            root.runSelected(panel.currentScreenName)
+          }
         }
       }
     }
