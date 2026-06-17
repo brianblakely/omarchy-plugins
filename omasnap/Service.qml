@@ -118,12 +118,19 @@ Item {
     return "unknown"
   }
 
-  function showTargetPicker(action) {
+  function showTargetPicker(action, regionOnly) {
     if (shell && typeof shell.summon === "function") {
-      var payload = JSON.stringify({ action: String(action || "file") })
+      var payload = JSON.stringify({
+        action: String(action || "file"),
+        regionOnly: regionOnly === true
+      })
       return shell.summon(pluginId, payload) ? "ok" : "unknown"
     }
     return "unknown"
+  }
+
+  function showRegionPicker(action) {
+    return showTargetPicker(action || "file", true)
   }
 
   function screenshot(mode, outputOverride) {
@@ -183,6 +190,18 @@ Item {
 
   function recordPicker() {
     return showTargetPicker("record")
+  }
+
+  function captureSelection() {
+    return showRegionPicker("file")
+  }
+
+  function copySelection() {
+    return showRegionPicker("clipboard")
+  }
+
+  function recordSelection() {
+    return showRegionPicker("record")
   }
 
   function openLast() {
@@ -316,7 +335,7 @@ Item {
     appid: root.pluginId
     name: "capture-selection"
     description: "Omasnap capture selection"
-    onPressed: root.screenshot("selection")
+    onPressed: root.captureSelection()
   }
 
   GlobalShortcut {
@@ -337,7 +356,7 @@ Item {
     appid: root.pluginId
     name: "copy-selection"
     description: "Omasnap copy selection"
-    onPressed: root.screenshot("selection", "clipboard")
+    onPressed: root.copySelection()
   }
 
   GlobalShortcut {
@@ -351,7 +370,7 @@ Item {
     appid: root.pluginId
     name: "record-selection"
     description: "Omasnap record selection"
-    onPressed: root.record("selection")
+    onPressed: root.recordSelection()
   }
 
   GlobalShortcut {
@@ -378,17 +397,17 @@ Item {
 
     function captureScreen(): string { return root.screenshot("screen") }
     function captureDisplay(): string { return root.screenshot("display") }
-    function captureSelection(): string { return root.screenshot("selection") }
+    function captureSelection(): string { return root.captureSelection() }
     function captureWindow(): string { return root.screenshot("window") }
     function captureActiveWindow(): string { return root.screenshot("active-window") }
     function captureLastSelection(): string { return root.screenshot("last") }
 
     function copyScreen(): string { return root.screenshot("screen", "clipboard") }
-    function copySelection(): string { return root.screenshot("selection", "clipboard") }
+    function copySelection(): string { return root.copySelection() }
     function copyWindow(): string { return root.screenshot("window", "clipboard") }
 
     function recordScreen(): string { return root.record("screen") }
-    function recordSelection(): string { return root.record("selection") }
+    function recordSelection(): string { return root.recordSelection() }
     function stopRecording(): string { return root.stopRecording() }
     function toggleRecording(): string { return root.toggleRecording() }
     function openLast(): string { return root.openLast() }

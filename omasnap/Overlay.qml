@@ -33,6 +33,10 @@ Item {
   property string pickerAction: ""
   property string targetKind: ""
   property bool regionLocked: false
+  property bool regionOnlyPicker: false
+  property bool freezeCapturePending: false
+  property string freezeImagePath: ""
+  property string freezeImageSource: ""
   property var pickerClients: []
   property var pickerMonitors: []
 
@@ -61,17 +65,19 @@ Item {
       hasSelection = false
       targetKind = ""
       regionLocked = false
+      regionOnlyPicker = payload.regionOnly === true || String(payload.target || "") === "region"
       refreshPickerTargets()
     } else {
       pickerAction = ""
+      regionOnlyPicker = false
       if (payload.mode) selectedMode = String(payload.mode)
       else if (service && service.captureMode) selectedMode = service.captureMode
     }
 
-    opened = true
     if (service && typeof service.refreshStatus === "function") service.refreshStatus()
     if (regionEditor && service && service.rememberSelection !== true) hasSelection = false
-    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+    if (regionEditor) captureFreezeAndOpen()
+    else showOverlay()
   }
 
   function close() {
@@ -79,7 +85,11 @@ Item {
     pickerAction = ""
     targetKind = ""
     regionLocked = false
+    regionOnlyPicker = false
+    freezeCapturePending = false
+    if (freezeCaptureProc.running) freezeCaptureProc.running = false
     finishPointer()
+    clearFreezeImage()
   }
 
   function dismiss() {
@@ -88,9 +98,15 @@ Item {
   }
 
   function setMode(mode) {
+    var wasRegionEditor = regionEditor
     selectedMode = String(mode || "selection")
     if (service && typeof service.setCaptureMode === "function")
       service.setCaptureMode(selectedMode)
+
+    if (opened && !pickerMode) {
+      if (!wasRegionEditor && regionEditor) captureFreezeAndOpen()
+      else if (wasRegionEditor && !regionEditor) clearFreezeImage()
+    }
   }
 
   function runSelected(screenName) {
@@ -123,6 +139,52 @@ Item {
     if (value === "clipboard" || value === "copy") return "clipboard"
     if (value === "record" || value === "recording") return "record"
     return "file"
+  }
+
+  function freezeCommand() {
+    return "set -e; dir=\"${XDG_RUNTIME_DIR:-/tmp}\"; path=\"$dir/omasnap-freeze-$(date +%s%N)-$$.png\"; screen=\"\"; if command -v hyprctl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then screen=$(hyprctl monitors -j 2>/dev/null | jq -r '.[] | select(.focused == true) | .name' | head -1); fi; if [ -n \"$screen\" ]; then grim -o \"$screen\" \"$path\" >/dev/null 2>&1; else grim \"$path\" >/dev/null 2>&1; fi; printf '%s\\n' \"$path\""
+  }
+
+  function fileUrl(path) {
+    return path === "" ? "" : "file://" + path
+  }
+
+  function clearFreezeImage() {
+    var oldPath = freezeImagePath
+    freezeImagePath = ""
+    freezeImageSource = ""
+    if (oldPath !== "")
+      Quickshell.execDetached(["rm", "-f", "--", oldPath])
+  }
+
+  function showOverlay() {
+    opened = true
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function captureFreezeAndOpen() {
+    if (freezeCaptureProc.running) freezeCaptureProc.running = false
+    opened = false
+    clearFreezeImage()
+    freezeCapturePending = true
+    Qt.callLater(function() {
+      if (!freezeCapturePending) return
+      freezeCaptureProc.command = ["bash", "-lc", freezeCommand()]
+      freezeCaptureProc.running = true
+      freezeCaptureFallback.restart()
+    })
+  }
+
+  function finishFreezeCapture(path) {
+    if (!freezeCapturePending) return
+
+    var nextPath = String(path || "").replace(/^\s+|\s+$/g, "")
+    freezeCapturePending = false
+    if (nextPath !== "") {
+      freezeImagePath = nextPath
+      freezeImageSource = fileUrl(nextPath)
+    }
+    showOverlay()
   }
 
   function refreshPickerTargets() {
@@ -252,6 +314,7 @@ Item {
 
   function updatePickerHover(x, y, maxWidth, maxHeight, screenName) {
     if (!pickerMode || pointerAction !== "" || regionLocked) return
+    if (regionOnlyPicker) return
 
     if (isPointInBar(x, y, maxWidth, maxHeight)) {
       setScreenTarget(maxWidth, maxHeight, screenName)
@@ -345,6 +408,14 @@ Item {
 
   function beginPickerPointer(x, y, maxWidth, maxHeight, screenName) {
     selectionScreenName = String(screenName || "")
+
+    if (regionOnlyPicker) {
+      targetKind = "region"
+      regionLocked = true
+      beginPointer("draw", x, y, maxWidth, maxHeight, screenName)
+      return
+    }
+
     pointerAction = "pending"
     pointerStartX = clamp(x, 0, maxWidth)
     pointerStartY = clamp(y, 0, maxHeight)
@@ -547,6 +618,26 @@ Item {
     }
   }
 
+  Process {
+    id: freezeCaptureProc
+
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.finishFreezeCapture(String(text || ""))
+    }
+  }
+
+  Timer {
+    id: freezeCaptureFallback
+    interval: 1200
+    repeat: false
+    onTriggered: {
+      if (!root.freezeCapturePending) return
+      if (freezeCaptureProc.running) freezeCaptureProc.running = false
+      root.finishFreezeCapture("")
+    }
+  }
+
   Timer {
     interval: 700
     running: root.opened && root.pickerMode
@@ -633,6 +724,16 @@ Item {
       id: selectionLayer
       anchors.fill: parent
       visible: root.regionEditor
+
+      Image {
+        anchors.fill: parent
+        source: root.freezeImageSource
+        visible: root.freezeImageSource !== ""
+        fillMode: Image.Stretch
+        asynchronous: true
+        cache: false
+        smooth: false
+      }
 
       Rectangle {
         anchors.fill: parent
