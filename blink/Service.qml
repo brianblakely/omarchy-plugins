@@ -13,7 +13,7 @@ Item {
   property var manifest: null
 
   readonly property string pluginId: manifest && manifest.id ? String(manifest.id) : "b.blink"
-  readonly property color strokeColor: colorFromToken(themeBorderColorRaw, Color.accent)
+  readonly property color strokeColor: Color.accent
 
   property bool showing: false
   property bool queued: false
@@ -23,95 +23,12 @@ Item {
   property int targetW: 0
   property int targetH: 0
   property int strokeWidth: 2
-  property string themeBorderColorRaw: ""
   property string state: "idle"
   property string lastError: ""
   property string lastWindowJson: ""
 
   function trim(value) {
     return String(value || "").replace(/^\s+|\s+$/g, "")
-  }
-
-  function clamp(value, min, max) {
-    var n = Number(value)
-    if (!isFinite(n)) return min
-    return Math.max(min, Math.min(max, n))
-  }
-
-  function padHex(value) {
-    var n = clamp(Math.round(Number(value)), 0, 255)
-    var h = n.toString(16)
-    return h.length < 2 ? "0" + h : h
-  }
-
-  function rgbaFromHex(rgb, alphaByte) {
-    var h = String(rgb || "").replace(/^#/, "")
-    var a = clamp(alphaByte === undefined ? 255 : Number(alphaByte), 0, 255) / 255
-    return Qt.rgba(
-      parseInt(h.substr(0, 2), 16) / 255,
-      parseInt(h.substr(2, 2), 16) / 255,
-      parseInt(h.substr(4, 2), 16) / 255,
-      a
-    )
-  }
-
-  function firstColorToken(value) {
-    var parts = trim(value).split(/\s+/)
-    for (var i = 0; i < parts.length; i++) {
-      if (!parts[i].match(/^-?\d+(?:\.\d+)?deg$/)) return parts[i]
-    }
-    return ""
-  }
-
-  function colorFromToken(value, fallback) {
-    var token = firstColorToken(value)
-    var match = token.match(/^#([0-9A-Fa-f]{6})([0-9A-Fa-f]{2})?$/)
-    if (match) return rgbaFromHex(match[1], match[2] ? parseInt(match[2], 16) : 255)
-
-    match = token.match(/^[Rr][Gg][Bb]\(([0-9A-Fa-f]{6})\)$/)
-    if (match) return rgbaFromHex(match[1], 255)
-
-    match = token.match(/^[Rr][Gg][Bb][Aa]\(([0-9A-Fa-f]{6})([0-9A-Fa-f]{2})\)$/)
-    if (match) return rgbaFromHex(match[1], parseInt(match[2], 16))
-
-    match = token.match(/^[Rr][Gg][Bb]\(([0-9]+),([0-9]+),([0-9]+)\)$/)
-    if (match) return rgbaFromHex(padHex(match[1]) + padHex(match[2]) + padHex(match[3]), 255)
-
-    match = token.match(/^[Rr][Gg][Bb][Aa]\(([0-9]+),([0-9]+),([0-9]+),([0-9.]+)\)$/)
-    if (match) return rgbaFromHex(
-      padHex(match[1]) + padHex(match[2]) + padHex(match[3]),
-      clamp(Number(match[4]), 0, 1) * 255
-    )
-
-    try {
-      if (token !== "") return Qt.color(token)
-    } catch (e) {}
-
-    return fallback
-  }
-
-  function valueForKey(raw, key) {
-    var lines = String(raw || "").split("\n")
-    for (var i = 0; i < lines.length; i++) {
-      var match = lines[i].match(/^\s*([A-Za-z0-9_-]+)\s*=\s*(.+)\s*$/)
-      if (!match || match[1] !== key) continue
-
-      var value = trim(match[2])
-      var quote = value.charAt(0)
-      if (quote === "\"" || quote === "'") {
-        var end = value.indexOf(quote, 1)
-        return end >= 0 ? value.substring(1, end) : value.substring(1)
-      }
-
-      return trim(value.replace(/\s+#.*$/, ""))
-    }
-    return ""
-  }
-
-  function applyThemeColors(raw) {
-    themeBorderColorRaw = valueForKey(raw, "active_border_color")
-      || valueForKey(raw, "hyprland_active_border")
-      || ""
   }
 
   function screenNumber(screen, name, fallback) {
@@ -214,7 +131,6 @@ Item {
       targetW: targetW,
       targetH: targetH,
       strokeWidth: strokeWidth,
-      themeBorderColorRaw: themeBorderColorRaw,
       lastError: lastError
     })
   }
@@ -252,16 +168,6 @@ Item {
     interval: 35
     repeat: false
     onTriggered: root.blink()
-  }
-
-  FileView {
-    id: colorsFile
-    path: Quickshell.env("HOME") + "/.config/omarchy/current/theme/colors.toml"
-    watchChanges: true
-    printErrors: false
-    onLoaded: root.applyThemeColors(text())
-    onFileChanged: reload()
-    onLoadFailed: root.themeBorderColorRaw = ""
   }
 
   Process {
