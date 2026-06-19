@@ -22,7 +22,7 @@ Item {
   property int targetY: 0
   property int targetW: 0
   property int targetH: 0
-  property int strokeWidth: 2
+  readonly property int strokeWidth: 2
   property string state: "idle"
   property string lastError: ""
   property string lastWindowJson: ""
@@ -99,22 +99,6 @@ Item {
       state = "parse-error"
       lastError = String(e)
     }
-  }
-
-  function applyBorderSize(raw) {
-    try {
-      var option = JSON.parse(raw || "{}")
-      var n = Number(option.int)
-      if (!isFinite(n)) {
-        var match = String(option.css || "").match(/-?\d+(?:\.\d+)?/)
-        if (match) n = Number(match[0])
-      }
-      if (isFinite(n)) strokeWidth = Math.max(1, Math.round(n))
-    } catch (e) {}
-  }
-
-  function refreshBorderSize() {
-    if (!borderSizeProc.running) borderSizeProc.running = true
   }
 
   function scheduleActiveWindowBlink() {
@@ -195,26 +179,13 @@ Item {
     }
   }
 
-  Process {
-    id: borderSizeProc
-    command: ["hyprctl", "-j", "getoption", "general:border_size"]
-
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.applyBorderSize(text)
-    }
-  }
-
   Connections {
     target: Hyprland
     function onRawEvent(event) {
       var name = String(event && event.name ? event.name : "")
-      if (name === "configreloaded") root.refreshBorderSize()
-      else if (name === "activewindow" || name === "activewindowv2") root.scheduleActiveWindowBlink()
+      if (name === "activewindow" || name === "activewindowv2") root.scheduleActiveWindowBlink()
     }
   }
-
-  Component.onCompleted: refreshBorderSize()
 
   Variants {
     model: Quickshell.screens
