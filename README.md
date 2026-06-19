@@ -7,6 +7,7 @@
 * [Omanews](#omanews) - Headlines in the Omarchy bar, with instant access to commentary
 * [OmaLED](#omaled) - Dim the Omarchy bar when not in use
 * [Peek](#peek) - Peek behind floating Hyprland windows
+* [Blink](#blink) - Briefly flash an indicating border over the active window
 
 ## Omacal
 
@@ -263,4 +264,35 @@ omarchy plugin update b.peek
 o.bind("SUPER + GRAVE", "Toggle floating window peek", "omarchy-shell b.peek toggle")
 o.bind("SUPER + ALT + GRAVE", "Enable floating window peek", "omarchy-shell b.peek enable")
 o.bind("SUPER + CTRL + GRAVE", "Disable floating window peek", "omarchy-shell b.peek disable")
+```
+
+## Blink
+
+Intended for Hyprland setups that remove borders and gaps to maintain a sleek, fullscreen experience. Blink flashes an inset border over the active Hyprland window and then quickly fades it out. It flashes when the active window changes or when triggered by shortcut.
+
+### Install
+
+```bash
+omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b
+omarchy plugin available
+omarchy plugin add b.blink --from b --review --enable
+```
+
+For unattended installs:
+
+```bash
+omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b --yes
+omarchy plugin add b.blink --from b --enable --yes
+```
+
+### Update
+
+```bash
+omarchy plugin update b.blink
+```
+
+### Shortcuts
+
+```lua
+o.bind("SUPER + B", "Blink active window", "omarchy-shell b.blink blink")
 ```
