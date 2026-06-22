@@ -6,7 +6,7 @@
 * [Omanote](#omanote) - Secure scratch note in the Omarchy bar
 * [Omanews](#omanews) - Headlines in the Omarchy bar, with instant access to commentary
 * [OmaLED](#omaled) - Dim the Omarchy bar when not in use
-* [Peek](#peek) - Peek behind floating Hyprland windows
+* [Peek](#peek) - Peek behind floating windows
 * [Blink](#blink) - Briefly flash an indicating border over the active window
 
 ## Omacal
