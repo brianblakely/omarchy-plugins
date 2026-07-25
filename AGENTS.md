@@ -16,7 +16,7 @@ When editing this project:
 5. Keep global keybindings user-owned and documented explicitly.
 6. Bump `manifest.json` `version` for published changes as release metadata. Current `omarchy plugin update` fast-forwards the installed Git checkout; it does not compare manifest versions.
 7. Validate each plugin you change or intend to publish with `omarchy plugin validate ./<plugin-folder>`.
-8. Keep README examples copy-pastable and explicit about the plugin Git URL, plugin id, review, enablement, and updates. Do not invent a URL before that plugin has a standalone repository.
+8. Keep README examples copy-pastable and explicit about the plugin Git URL, plugin id, source review, the interactive enable prompt, and updates. Do not invent a URL before that plugin has a standalone repository.
 
 ## Documentation Map
 

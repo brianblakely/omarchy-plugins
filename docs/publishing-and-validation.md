@@ -20,30 +20,20 @@ This repository is a development/catalog monorepo, not an installable plugin rep
 
 Do not publish an installation command until that per-plugin repository and its actual URL exist. Do not substitute a monorepo URL, sparse-checkout recipe, synthetic source id, or undocumented subdirectory syntax.
 
-## Install, Review, And Enable
+## Install And Enable
 
 Current Omarchy accepts a Git URL directly:
 
 ```bash
-omarchy plugin add <plugin-git-url> --no-enable
+omarchy plugin add <plugin-git-url>
 ```
 
-`--no-enable` guarantees that the cloned plugin stays disabled while the user reviews `~/.config/omarchy/plugins/<plugin-id>/`. In an interactive terminal, this is also available after the clone:
+In an interactive terminal, Omarchy confirms the clone and then asks whether to enable the plugin. Review the repository before installing it, then accept the enable prompt when the plugin should run immediately.
+
+Enabling a bar widget during installation adds it to the right bar section. Move it afterward when another placement is required:
 
 ```bash
-omarchy plugin edit <plugin-id>
-```
-
-Enable the reviewed plugin explicitly:
-
-```bash
-omarchy plugin enable <plugin-id>
-```
-
-Enabling a bar widget adds it to the right bar section if it is not already in the layout. Placement can be selected at enable time:
-
-```bash
-omarchy plugin enable <plugin-id> --section center
+omarchy bar plugin move <plugin-id> --section center
 ```
 
 Enabling a `bar` plugin selects it as the active full-bar implementation. It can also be selected later with:
@@ -58,9 +48,9 @@ For an unattended, trusted install that should run immediately:
 omarchy plugin add <plugin-git-url> --enable --yes
 ```
 
-In a bare interactive `add`, Omarchy confirms the clone and then asks whether to enable the plugin. With `--yes` or without an interactive terminal, it defaults to disabled unless `--enable` is supplied.
+With `--yes` or without an interactive terminal, `add` defaults to disabled unless `--enable` is supplied.
 
-The current CLI has no source registry, source id, available-plugin catalog, `--from`, `--review`, or add-time `--ref` option. Review is an explicit disabled-install workflow.
+The current CLI has no source registry, source id, available-plugin catalog, `--from`, `--review`, or add-time `--ref` option.
 
 ## Updates
 
@@ -172,17 +162,13 @@ Use the actual per-plugin Git URL and manifest id when filling in this template:
 ````markdown
 ## Install
 
-Install the plugin disabled so you can review its files before running it:
+Review the repository, then add the plugin:
 
 ```bash
-omarchy plugin add <actual-plugin-git-url> --no-enable
+omarchy plugin add <actual-plugin-git-url>
 ```
 
-Review `~/.config/omarchy/plugins/acme.cool-clock/`, then enable it:
-
-```bash
-omarchy plugin enable acme.cool-clock
-```
+Accept the prompt to enable the plugin during installation.
 
 For an unattended install from a repository you already trust:
 
@@ -213,7 +199,7 @@ omarchy plugin validate .
 ## Security
 
 This plugin runs unsandboxed inside `omarchy-shell` when enabled. Review its
-files and the documented command, file, and network behavior before enabling it.
+source and the documented command, file, and network behavior before installing it.
 ````
 
 Replace every angle-bracket placeholder before publishing. The finished plugin README should contain a real URL and copy-pastable commands; do not leave a catalog URL or fictional repository name in its place.
@@ -239,7 +225,7 @@ Before announcing or tagging a release, verify:
 - [ ] The manifest `version` has been bumped for the published change.
 - [ ] `omarchy plugin validate ./<plugin-folder>` succeeds in this catalog and `omarchy plugin validate .` succeeds in the published repository.
 - [ ] Runtime QML and every documented action have been exercised against the current Omarchy checkout.
-- [ ] A clean user can add the real Git URL with `--no-enable`, review the installed checkout, enable the plugin, and update it by id.
+- [ ] A clean user can review the source, add the real Git URL, accept the interactive enable prompt, and update the plugin by id.
 - [ ] Automated docs use `--enable --yes` only where immediate execution is intended and trusted.
 - [ ] The README does not mention removed source ids, `plugin available`, `--from`, `--review`, or add-time `--ref`.
 - [ ] A shell restart is documented only if current runtime testing proves it necessary.
