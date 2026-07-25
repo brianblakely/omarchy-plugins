@@ -2,13 +2,14 @@
   "schemaVersion": 1,
   "id": "b.omasnap",
   "name": "Omasnap",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "author": "Brian Blakely",
   "description": "Screenshot and screen recording overlay for Omarchy",
   "kinds": [
     "service",
     "overlay"
   ],
+  "keepLoaded": true,
   "entryPoints": {
     "service": "Service.qml",
     "overlay": "Overlay.qml"

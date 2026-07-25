@@ -1,94 +1,90 @@
 # Publishing And Validation
 
-Use this reference when updating installation docs, source ids, versioning, validation, security notes, or release checklists.
+Use this reference when publishing a plugin repository, documenting installation and updates, changing versions, validating a release, or writing security notes.
 
-## Publishing A Source Repository
+## Publishing Model
 
-Users add a trusted plugin source with:
-
-```bash
-omarchy plugin source add https://github.com/acme/omarchy-plugins.git --as acme
-```
-
-They can browse available plugins with:
-
-```bash
-omarchy plugin available
-```
-
-They can install a plugin with review and enablement:
-
-```bash
-omarchy plugin add acme.cool-clock --from acme --review --enable
-```
-
-Non-interactive example:
-
-```bash
-omarchy plugin source add https://github.com/acme/omarchy-plugins.git --as acme --yes
-omarchy plugin add acme.cool-clock --from acme --enable --yes
-```
-
-When `omarchy plugin add` runs with `--yes` or non-interactively and no enable flag is provided, it installs without enabling by default. Include `--enable` in unattended install docs when the intended result is an enabled plugin.
-
-If the same plugin id exists in multiple trusted sources, users must pass `--from <source-id>` to disambiguate.
-
-## Source Ids
-
-A source id is the local name users assign to a plugin source repo with `--as`.
-
-Good source ids:
+The installable unit is one Git repository containing one plugin. Its `manifest.json` must be at the repository root:
 
 ```text
-acme
-acme-plugins
-jane.omarchy
+cool-clock/
+  .git/
+  manifest.json
+  Widget.qml
+  README.md
 ```
 
-Rules:
+`omarchy plugin add <git-url>` clones that repository and validates its root. The command cannot select a plugin subdirectory from a remote monorepo.
 
-- Lowercase only.
-- Start with a lowercase letter or digit.
-- Contain only lowercase letters, digits, `.`, `_`, and `-`.
-- Must not contain `..`.
-- Must not contain `/`.
+This repository is a development/catalog monorepo, not an installable plugin repository. Each immediate top-level plugin folder must remain self-contained and be published or mirrored as the root of its own Git repository. The public repository should contain the folder's contents, not the catalog folder wrapped around them.
 
-Invalid source ids:
+Do not publish an installation command until that per-plugin repository and its actual URL exist. Do not substitute a monorepo URL, sparse-checkout recipe, synthetic source id, or undocumented subdirectory syntax.
 
-```text
-Acme
-acme/plugins
-../acme
-```
+## Install, Review, And Enable
 
-Use a stable `--as` value in documentation so users get predictable commands:
+Current Omarchy accepts a Git URL directly:
 
 ```bash
-omarchy plugin source add https://github.com/acme/omarchy-plugins.git --as acme
-omarchy plugin add acme.cool-clock --from acme
+omarchy plugin add <plugin-git-url> --no-enable
 ```
 
-## Refs And Branches
-
-A source can be pinned with `--ref`:
+`--no-enable` guarantees that the cloned plugin stays disabled while the user reviews `~/.config/omarchy/plugins/<plugin-id>/`. In an interactive terminal, this is also available after the clone:
 
 ```bash
-omarchy plugin source add https://github.com/acme/omarchy-plugins.git --as acme --ref main
+omarchy plugin edit <plugin-id>
 ```
 
-or:
+Enable the reviewed plugin explicitly:
 
 ```bash
-omarchy plugin source add https://github.com/acme/omarchy-plugins.git --as acme --ref v1
+omarchy plugin enable <plugin-id>
 ```
 
-The source command uses a shallow clone and passes `--branch <ref>` when a ref is supplied. Prefer documenting branch or tag names rather than raw commit hashes.
+Enabling a bar widget adds it to the right bar section if it is not already in the layout. Placement can be selected at enable time:
 
-## Versioning And Updates
+```bash
+omarchy plugin enable <plugin-id> --section center
+```
 
-Omarchy update detection compares the installed manifest `version` to the source manifest `version` using version sorting.
+Enabling a `bar` plugin selects it as the active full-bar implementation. It can also be selected later with:
 
-Use predictable version strings such as:
+```bash
+omarchy bar use <plugin-id>
+```
+
+For an unattended, trusted install that should run immediately:
+
+```bash
+omarchy plugin add <plugin-git-url> --enable --yes
+```
+
+In a bare interactive `add`, Omarchy confirms the clone and then asks whether to enable the plugin. With `--yes` or without an interactive terminal, it defaults to disabled unless `--enable` is supplied.
+
+The current CLI has no source registry, source id, available-plugin catalog, `--from`, `--review`, or add-time `--ref` option. Review is an explicit disabled-install workflow.
+
+## Updates
+
+Common update commands are:
+
+```bash
+omarchy plugin update <plugin-id>
+omarchy plugin update --all
+```
+
+For each Git-managed plugin, update fetches `origin`'s current `HEAD`, compares it with the installed commit, shows the diff and asks for confirmation in an interactive run, then performs a fast-forward-only merge. It validates the updated checkout and rolls back the merge if validation fails. After one or more successful updates, the shell rescans plugins.
+
+Use `--yes` only when intentionally skipping diff review:
+
+```bash
+omarchy plugin update <plugin-id> --yes
+omarchy plugin update --all --yes
+```
+
+Local divergence or a non-fast-forward update is rejected. The normal update command follows the remote's current `HEAD`; it does not maintain a catalog ref or select a subdirectory. An author who documents a manually pinned ref must also document that its maintenance is ordinary Git work inside the installed checkout and is outside the standard update flow.
+
+## Versioning
+
+The manifest `version` remains required release metadata. Use predictable versions such as:
 
 ```text
 1.0.0
@@ -104,25 +100,21 @@ or date-style versions:
 2026.06.15
 ```
 
-When publishing any change that users should receive through `omarchy plugin update`, update the manifest `version`.
-
-Common user update commands:
-
-```bash
-omarchy plugin update acme.cool-clock
-```
-
-```bash
-omarchy plugin update --all
-```
-
-Updates reinstall from the trusted source folder. Enabled state is preserved. Enabled plugins may require an Omarchy shell restart to fully reload.
+Bump `manifest.json` for a published change users should receive, as required by this repository's release policy. Current Omarchy delivery is Git-commit based: `plugin update` compares and fast-forwards commits, not manifest versions.
 
 ## Install Behavior And Security Model
 
-The installer validates the manifest, copies plugin files, rescans plugins, and toggles enabled state through shell IPC. It does not run plugin code during installation, does not run install hooks, and does not require `sudo`.
+The installer:
 
-Do not design a plugin that needs a post-install script to become structurally valid. Put all required QML and assets inside the plugin folder.
+- Clones the repository into a hidden staging directory.
+- Validates the repository root.
+- Moves the checkout to `~/.config/omarchy/plugins/<manifest-id>/`.
+- Rescans the shell.
+- Enables the plugin only when requested or confirmed.
+
+It does not run plugin code during the clone/validation step, execute install hooks, or require `sudo`.
+
+Do not design a plugin that needs a post-install script to become structurally valid. Put every required QML file and asset inside the repository, and do not include symlinks.
 
 Once enabled, plugins run unsandboxed inside the long-lived `omarchy-shell` process. Document meaningful behavior clearly in the plugin README, especially:
 
@@ -130,22 +122,20 @@ Once enabled, plugins run unsandboxed inside the long-lived `omarchy-shell` proc
 - Files read or written.
 - Network access.
 - Background services.
-- Global shortcut endpoints.
-- User configuration changes required outside the plugin folder.
+- IPC or global-shortcut endpoints.
+- User configuration required outside the plugin repository.
+
+Plugin rescans and configuration watching normally reload plugin-backed UI. Do not tell users to restart the shell unless the plugin actually requires it and that behavior has been verified against the current checkout.
 
 ## Validation
 
-Validate each plugin directory before publishing:
+Validate a published repository from its root:
 
 ```bash
-omarchy plugin validate ./cool-clock
-omarchy plugin validate ./quick-notes
-omarchy plugin validate ./media-helper
+omarchy plugin validate .
 ```
 
-Validation should succeed for every plugin folder in the repository.
-
-CI-style loop from the repository root:
+Validate every plugin in this development/catalog monorepo from its root:
 
 ```bash
 set -euo pipefail
@@ -156,85 +146,100 @@ for manifest in ./*/manifest.json; do
 done
 ```
 
-## Recommended README Install Section
+The current validator checks:
 
-Use a README section like this for each public plugin source:
+- Valid JSON and numeric `schemaVersion: 1`.
+- Required `id`, `name`, `version`, `kinds`, and `entryPoints` fields.
+- A non-empty kinds array and an entry-points object.
+- A valid, non-reserved id that does not collide with first-party plugins.
+- Safe relative entry-point paths that exist inside the plugin.
+- The absence of symlinks anywhere outside Git internals.
 
-````markdown
-# Acme Omarchy Plugins
+Validation proves structural compatibility; it does not prove that QML loads successfully or that runtime behavior is safe. Exercise the plugin in the current shell as part of release testing.
 
-## Plugins
-
-### acme.cool-clock
-
-A compact configurable clock for the Omarchy bar.
-
-Kinds: `bar-widget`
-Version: `1.0.0`
-
-## Install
+When validating against a source checkout instead of the installed Omarchy version, run that checkout's command and point `OMARCHY_PATH` at it:
 
 ```bash
-omarchy plugin source add https://github.com/acme/omarchy-plugins.git --as acme
-omarchy plugin available
-omarchy plugin add acme.cool-clock --from acme --review --enable
+PATH=/path/to/omarchy/bin:$PATH \
+  OMARCHY_PATH=/path/to/omarchy \
+  /path/to/omarchy/bin/omarchy-plugin validate ./<plugin-folder>
 ```
 
-For unattended installs:
+## Recommended README Install Section
+
+Use the actual per-plugin Git URL and manifest id when filling in this template:
+
+````markdown
+## Install
+
+Install the plugin disabled so you can review its files before running it:
 
 ```bash
-omarchy plugin source add https://github.com/acme/omarchy-plugins.git --as acme --yes
-omarchy plugin add acme.cool-clock --from acme --enable --yes
+omarchy plugin add <actual-plugin-git-url> --no-enable
+```
+
+Review `~/.config/omarchy/plugins/acme.cool-clock/`, then enable it:
+
+```bash
+omarchy plugin enable acme.cool-clock
+```
+
+For an unattended install from a repository you already trust:
+
+```bash
+omarchy plugin add <actual-plugin-git-url> --enable --yes
 ```
 
 ## Update
+
+Review and apply the next fast-forward update:
 
 ```bash
 omarchy plugin update acme.cool-clock
 ```
 
-or update all installed plugins with available updates:
+Or update all Git-managed plugins:
 
 ```bash
 omarchy plugin update --all
 ```
 
-## Optional keybinding
-
-```lua
-o.bind("SUPER + N", "Quick Notes", "omarchy-shell shell toggle acme.quick-notes")
-```
-
 ## Validate from source
 
 ```bash
-omarchy plugin validate ./cool-clock
+omarchy plugin validate .
 ```
 
-## Notes
+## Security
 
-Plugins run inside `omarchy-shell`. Review plugin files before enabling.
+This plugin runs unsandboxed inside `omarchy-shell` when enabled. Review its
+files and the documented command, file, and network behavior before enabling it.
 ````
+
+Replace every angle-bracket placeholder before publishing. The finished plugin README should contain a real URL and copy-pastable commands; do not leave a catalog URL or fictional repository name in its place.
 
 ## Pre-Publish Checklist
 
 Before announcing or tagging a release, verify:
 
-- [ ] The repository has one immediate top-level folder per plugin.
-- [ ] Each plugin folder contains `manifest.json`.
-- [ ] No plugin folder contains symlinks.
+- [ ] The public Git repository contains exactly one plugin and has `manifest.json` at its root.
+- [ ] If developed here, the corresponding top-level catalog folder remains self-contained and matches the published repository contents.
+- [ ] The actual public repository URL exists, and the README does not use this catalog monorepo as an install URL.
+- [ ] The plugin contains no symlinks, install hooks, post-install scripts, or privileged setup.
 - [ ] `schemaVersion` is the JSON number `1`.
 - [ ] `id`, `name`, `version`, `kinds`, and `entryPoints` are present.
-- [ ] The plugin id is namespaced and does not start with `omarchy.`.
-- [ ] The plugin id does not contain `/` or `..`.
-- [ ] `kinds` contains only kinds the plugin actually implements.
-- [ ] Third-party bar widgets use `bar-widget`, not `bar`.
-- [ ] Every entry point is a safe relative path to an existing file inside the plugin folder.
-- [ ] Bar widget settings are represented by `defaults`, `schema`, and inline shell settings.
-- [ ] `category` uses an existing category where possible, or falls back to `Plugin` by omission.
-- [ ] Global keybindings are documented as user-owned Hyprland bindings or registered `GlobalShortcut` endpoints.
-- [ ] No install hook or post-install script is required.
-- [ ] Any published behavior involving external commands, files, or network access is documented.
-- [ ] The manifest `version` has been bumped for user-visible publishable changes.
-- [ ] `omarchy plugin validate ./<plugin-folder>` exits successfully for each plugin.
-- [ ] A clean user can run source add, available, add with review, enable, and update successfully.
+- [ ] The plugin id is namespaced, does not start with `omarchy.`, and contains neither `/` nor `..`.
+- [ ] `kinds` lists only host kinds the plugin actually implements; use `bar-widget` for a component and `bar` only for a complete bar.
+- [ ] Every entry point is a safe relative path to an existing file inside the repository.
+- [ ] Bar-widget settings use `defaults`, `schema`, and inline shell settings where appropriate.
+- [ ] A popup-owning bar-widget root exposes `opened`, `open()`, and `close()` for shell lifecycle routing.
+- [ ] Direct bar-widget IPC broadcasts display-state changes that must reach every monitor, without duplicating external side effects.
+- [ ] Global keybindings remain user-owned and are documented with current shell IPC or an intentional `GlobalShortcut`.
+- [ ] Commands, file access, network access, background behavior, and required user configuration are documented.
+- [ ] The manifest `version` has been bumped for the published change.
+- [ ] `omarchy plugin validate ./<plugin-folder>` succeeds in this catalog and `omarchy plugin validate .` succeeds in the published repository.
+- [ ] Runtime QML and every documented action have been exercised against the current Omarchy checkout.
+- [ ] A clean user can add the real Git URL with `--no-enable`, review the installed checkout, enable the plugin, and update it by id.
+- [ ] Automated docs use `--enable --yes` only where immediate execution is intended and trusted.
+- [ ] The README does not mention removed source ids, `plugin available`, `--from`, `--review`, or add-time `--ref`.
+- [ ] A shell restart is documented only if current runtime testing proves it necessary.

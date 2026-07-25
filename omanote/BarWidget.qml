@@ -6,6 +6,8 @@ BarWidget {
   id: root
   moduleName: "b.omanote"
 
+  readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
+
   function injectPanel() {
     var target = panelLoader.item
     if (!target) return
@@ -44,13 +46,11 @@ BarWidget {
     }
   }
 
-  WidgetButton {
+  BarIconButton {
     id: button
     anchors.fill: parent
     bar: root.bar
     text: "\uf249"
-    horizontalMargin: 5
-    verticalPadding: 6
     tooltipText: "Omanote"
     onPressed: root.toggle()
   }

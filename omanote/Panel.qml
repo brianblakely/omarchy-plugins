@@ -100,7 +100,7 @@ Panel {
     lookupOutput = ""
     lookupError = ""
     storageStatus = "loading"
-    lookupProc.command = ["bash", "-lc", loadScript(), "omanote-load"]
+    lookupProc.command = ["bash", "-c", loadScript(), "omanote-load"]
     lookupProc.running = true
   }
 
@@ -132,7 +132,7 @@ Panel {
     storageStatus = "saving"
 
     if (savingText === "") {
-      clearProc.command = ["bash", "-lc", clearScript(), "omanote-clear"]
+      clearProc.command = ["bash", "-c", clearScript(), "omanote-clear"]
       clearProc.running = true
       return
     }
@@ -153,7 +153,7 @@ Panel {
       return
     }
 
-    storeProc.command = ["bash", "-lc", storeScript(), "omanote-store", path]
+    storeProc.command = ["bash", "-c", storeScript(), "omanote-store", path]
     storeProc.running = true
   }
 

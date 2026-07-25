@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "b.omanews",
   "name": "Omanews",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "author": "Brian Blakely",
   "description": "Omarchy-native headline ticker for the bar",
   "kinds": [

@@ -170,7 +170,7 @@ Item {
     freezeCapturePending = true
     Qt.callLater(function() {
       if (!freezeCapturePending) return
-      freezeCaptureProc.command = ["bash", "-lc", freezeCommand()]
+      freezeCaptureProc.command = ["bash", "-c", freezeCommand()]
       freezeCaptureProc.running = true
       freezeCaptureFallback.restart()
     })
@@ -848,7 +848,7 @@ Item {
     id: pickerTargetsProc
     command: [
       "bash",
-      "-lc",
+      "-c",
       "printf '{\"monitors\":'; hyprctl monitors -j 2>/dev/null || printf '[]'; printf ',\"clients\":'; hyprctl clients -j 2>/dev/null || printf '[]'; printf '}'"
     ]
 

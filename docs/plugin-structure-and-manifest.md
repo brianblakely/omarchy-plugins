@@ -4,9 +4,9 @@ Use this reference when creating or changing plugin folders, entry points, manif
 
 ## Repository Structure
 
-An Omarchy plugin source repository may contain one or more plugins. Each plugin must be an immediate child directory of the repository root, and each plugin directory must contain its own `manifest.json`.
+An installable Omarchy plugin is one Git repository with `manifest.json` at the repository root. `omarchy plugin add <git-url>` clones that repository and validates its root as one plugin.
 
-Recommended shape:
+This repository is a development/catalog monorepo. Each immediate top-level plugin directory is kept self-contained so it can be validated here and published or mirrored as the root of its own Git repository:
 
 ```text
 omarchy-plugins/
@@ -27,9 +27,9 @@ omarchy-plugins/
     BarWidget.qml
 ```
 
-Omarchy discovers plugins by scanning immediate child folders of each trusted source clone for `<folder>/manifest.json`. Do not put a plugin manifest at the repository root, and do not bury plugin manifests in nested subdirectories.
+The monorepo itself is not a valid argument to `omarchy plugin add`: its root intentionally has no `manifest.json`, and the current installer does not select a subdirectory from a remote repository. Public releases therefore need one real Git repository per plugin, with the contents of a top-level folder above placed at that repository's root. Do not document a per-plugin URL until that repository actually exists.
 
-The installed plugin directory is determined by `manifest.id`, not by the source folder name. Prefer folder names that match the plugin id or a clear slug, but do not rely on the folder name as identity.
+Installed plugins live at `~/.config/omarchy/plugins/<id>/`. The destination name is determined by `manifest.id`, not by the remote repository name or this monorepo's source-folder name. Prefer source-folder and repository names that clearly correspond to the plugin, but do not rely on them as identity.
 
 ## Filesystem Safety
 
@@ -132,11 +132,20 @@ cool/clock
 | `overlay` | A fullscreen overlay. |
 | `menu` | A summoned menu surface. |
 | `service` | A headless singleton with no UI. |
-| `bar` | Reserved for the first-party Omarchy bar host. |
+| `bar` | A complete bar implementation that can replace the built-in `omarchy.bar`. |
 
-Third-party plugins should use `bar-widget`, not `bar`. Treat `bar` as reserved for `omarchy.bar`.
+Use `bar-widget` when adding something to the active bar. Use `bar` only when implementing the complete bar host. One `bar` plugin is active at a time through `bar.id` in `shell.json`; an unavailable or invalid selection falls back to `omarchy.bar`.
 
 Panels, overlays, and menus are generally loaded when summoned. A plugin that must stay alive between summons can use `keepLoaded: true`. A `service` plugin is the preferred always-loaded place for background behavior.
+
+Entry-point QML files are `Item`-based components, not `ShellRoot`s. The host injects supported properties after loading when the entry point declares them:
+
+- Service and panel/overlay/menu entry points may declare `omarchyPath`, `shell`, `manifest`, `pluginRegistry`, and `barWidgetRegistry`.
+- A panel/overlay/menu entry point paired with a service may also declare `service`.
+- A bar-widget entry point receives `bar`, `moduleName`, and `settings` from the active bar. It can reach the host shell through `bar.shell` when available.
+- A full `bar` entry point may declare `omarchyPath`, `shell`, `manifest`, `pluginRegistry`, `barWidgetRegistry`, and `barConfig`.
+
+Do not mark host-injected properties as `required` on dynamically loaded third-party entry points; the host assigns them after the component loads.
 
 ## Bar Widget Manifest Example
 

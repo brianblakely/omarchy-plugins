@@ -236,7 +236,7 @@ Panel {
   KeyboardPanel {
     id: calendarPanel
     anchorItem: root.anchorItem
-    owner: root
+    owner: root.host || root
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher

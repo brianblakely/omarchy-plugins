@@ -9,43 +9,43 @@
 * [Peek](#peek) - Peek behind floating windows
 * [Blink](#blink) - Briefly flash an indicating border over the active window
 
+## Compatibility and publishing
+
+These plugins target Omarchy `quattro` at commit
+[`248659de`](https://github.com/basecamp/omarchy/commit/248659de5a4ce1364703601a70b56624e9817c46).
+
+Current Omarchy installs one plugin Git repository at a time and requires
+`manifest.json` at that repository's root. This repository is a development
+and catalog workspace whose immediate child folders are the individual plugin
+source roots; the monorepo itself cannot be passed to `omarchy plugin add`.
+
+Each plugin folder must be published or mirrored as its own Git repository
+before it can have a truthful `omarchy plugin add` command.
+
+The old source-catalog commands (`plugin source add`, `plugin available`,
+`--from`, and `--review`) no longer exist. Once standalone repository URLs are
+published, document their exact URLs here; Omarchy will initially leave the
+plugin disabled for review unless the user explicitly enables it, and
+`omarchy plugin update <plugin-id>` will fast-forward its installed Git
+checkout.
+
 ## Omacal
 
 Omacal is a drop-in replacement for the default Omarchy clock that adds a mini calendar. The calendar supports keyboard controls (including vim bindings) for browsing month and year.
 
 ![Omacal screenshot](images/omacal.png)
 
-### Install
-
-```bash
-omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b
-omarchy plugin available
-omarchy plugin add b.omacal --from b --review --enable
-```
-
-Set `"centerAnchor": "b.omacal"` in `~/.config/omarchy/shell.json`.
-
-For unattended installs:
-
-```bash
-omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b --yes
-omarchy plugin add b.omacal --from b --enable --yes
-```
-
-### Update
-
-```bash
-omarchy plugin update b.omacal
-```
+Set `"centerAnchor": "b.omacal"` in `~/.config/omarchy/shell.json` after
+installing and enabling the plugin.
 
 ### Shortcuts
 
 ```lua
 hl.unbind("SUPER + CTRL + ALT + T")
 o.bind("SUPER + CTRL + ALT + T", "Flash mini calendar", "omarchy-shell b.omacal flash")
-o.bind("SUPER + F9", "Toggle mini calendar", "omarchy-shell b.omacal toggle")
-o.bind("SUPER + ALT + F9", "Open mini calendar", "omarchy-shell b.omacal open")
-o.bind("SUPER + CTRL + F9", "Close mini calendar", "omarchy-shell b.omacal close")
+o.bind("SUPER + F9", "Toggle mini calendar", "omarchy-shell shell toggle b.omacal")
+o.bind("SUPER + ALT + F9", "Open mini calendar", "omarchy-shell shell summon b.omacal")
+o.bind("SUPER + CTRL + F9", "Close mini calendar", "omarchy-shell shell hide b.omacal")
 ```
 
 Right-clicking the clock will allow you to change timezone, exactly like the default Omarchy clock.
@@ -56,26 +56,12 @@ Omasnap is a screenshot and recording tool inspired by [macOS](https://support.a
 
 `SPACE` captures the screen, `ENTER` captures the focused window, and `arrow keys` or `HJKL` create and adjust a region by 1px. Hold `SHIFT` to grow the addressed side, or `SHIFT + CTRL` to shrink it. Using the mouse, click the Omarchy Bar to capture the entire screen, click a window to capture it, or drag a region.
 
-### Install
-
-```bash
-omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b
-omarchy plugin available
-omarchy plugin add b.omasnap --from b --review --enable
-```
-
-For unattended installs:
-
-```bash
-omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b --yes
-omarchy plugin add b.omasnap --from b --enable --yes
-```
-
-### Update
-
-```bash
-omarchy plugin update b.omasnap
-```
+Omasnap reads Hyprland's monitor and window state, stores plugin settings
+inline in `~/.config/omarchy/shell.json`, and records recent capture state
+under `$XDG_STATE_HOME/omasnap`. It runs Omarchy's screen-recording tool plus
+`grim`, `slurp`, and `wl-copy`. Recording uses `gpu-screen-recorder`; webcam
+overlay recording also uses `v4l2-ctl` and `mpv`. Omasnap does not use the
+network.
 
 ### Shortcuts
 
@@ -96,28 +82,9 @@ Omastonk is a bar widget for a selected market symbol. It starts with no selecte
 
 After a symbol is set, click the bar widget to display the chart panel, which supports keyboard controls (including vim bindings) for switching intervals. Right-click the bar widget to change symbol.
 
+Omastonk uses `curl` to request quote and chart data from Yahoo Finance.
+
 ![Omastonk screenshot](images/omastonk.png)
-
-### Install
-
-```bash
-omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b
-omarchy plugin available
-omarchy plugin add b.omastonk --from b --review --enable
-```
-
-For unattended installs:
-
-```bash
-omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b --yes
-omarchy plugin add b.omastonk --from b --enable --yes
-```
-
-### Update
-
-```bash
-omarchy plugin update b.omastonk
-```
 
 ## Omanote
 
@@ -129,61 +96,22 @@ Omanote runs `bash` and `secret-tool`. It does not use the network.
 
 ![Omanote screenshot](images/omanote.png)
 
-### Install
-
-```bash
-omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b
-omarchy plugin available
-omarchy plugin add b.omanote --from b --review --enable
-```
-
-For unattended installs:
-
-```bash
-omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b --yes
-omarchy plugin add b.omanote --from b --enable --yes
-```
-
-### Update
-
-```bash
-omarchy plugin update b.omanote
-```
-
 ### Shortcuts
 
 ```lua
-o.bind("SUPER + F8", "Toggle Omanote", "omarchy-shell b.omanote toggle")
-o.bind("SUPER + ALT + F8", "Open Omanote", "omarchy-shell b.omanote open")
-o.bind("SUPER + CTRL + F8", "Close Omanote", "omarchy-shell b.omanote close")
+o.bind("SUPER + F8", "Toggle Omanote", "omarchy-shell shell toggle b.omanote")
+o.bind("SUPER + ALT + F8", "Open Omanote", "omarchy-shell shell summon b.omanote")
+o.bind("SUPER + CTRL + F8", "Close Omanote", "omarchy-shell shell hide b.omanote")
 ```
 
 ## Omanews
 
 Omanews is a headline ticker for the Omarchy bar. It displays top headlines from Google News; additional headlines every 10 minutes. Left-click advances to the next headline, right-click goes to the previous headline, and middle-click opens an X search for the current headline.
 
+Omanews uses `curl` to read Google News RSS and opens X searches in the
+default browser.
+
 ![Omanews screenshot](images/omanews.png)
-
-### Install
-
-```bash
-omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b
-omarchy plugin available
-omarchy plugin add b.omanews --from b --review --enable
-```
-
-For unattended installs:
-
-```bash
-omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b --yes
-omarchy plugin add b.omanews --from b --enable --yes
-```
-
-### Update
-
-```bash
-omarchy plugin update b.omanews
-```
 
 ### Shortcuts
 
@@ -195,34 +123,16 @@ o.bind("SUPER + CTRL + F10", "Search headline on X", "omarchy-shell b.omanews se
 
 ## OmaLED
 
-OmaLED heavily dims the Omarchy bar when not in use. The bar will un-dim when the mouse cursor touches the bar or [a shortcut is triggered](#shortcuts-3).
+OmaLED heavily dims the Omarchy bar when not in use. The bar will un-dim when the mouse cursor touches the bar or its shortcut is triggered.
 
-**NOTE:** OmaLED will not work when the Omarchy bar's background is transparent (double-click the bar's background to cycle its color).
+**NOTE:** OmaLED will not work when the Omarchy bar's background is transparent
+(double-click the bar's background to turn transparency off).
+
+OmaLED polls `hyprctl cursorpos` while its hover overlay is active. Its IPC
+settings update the plugin's inline entry in `~/.config/omarchy/shell.json`;
+it does not use the network.
 
 ![OmaLED screenshot](images/omaled.png)
-
-### Install
-
-```bash
-omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b
-omarchy plugin available
-omarchy plugin add b.omaled --from b --review --enable
-omarchy restart shell
-```
-
-For unattended installs:
-
-```bash
-omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b --yes
-omarchy plugin add b.omaled --from b --enable --yes
-omarchy restart shell
-```
-
-### Update
-
-```bash
-omarchy plugin update b.omaled
-```
 
 ### Shortcuts
 
@@ -232,31 +142,13 @@ o.bind("SUPER + CTRL + F11", "Toggle OmaLED", "omarchy-shell b.omaled toggle")
 
 ## Peek
 
-Fade out floating windows and interact with content below. [Bind a shortcut](#shortcuts-4) to use Peek.
+Fade out floating windows and interact with content below. Bind one of the shortcuts below to use Peek.
+
+Peek runs `hyprctl eval` to install and toggle a runtime Hyprland window rule.
+It does not write files or use the network.
 
 ![Peek disabled screenshot](images/peek1.png)
 ![Peek enabled screenshot](images/peek2.png)
-
-### Install
-
-```bash
-omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b
-omarchy plugin available
-omarchy plugin add b.peek --from b --review --enable
-```
-
-For unattended installs:
-
-```bash
-omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b --yes
-omarchy plugin add b.peek --from b --enable --yes
-```
-
-### Update
-
-```bash
-omarchy plugin update b.peek
-```
 
 ### Shortcuts
 
@@ -270,26 +162,8 @@ o.bind("SUPER + CTRL + GRAVE", "Disable floating window peek", "omarchy-shell b.
 
 Intended for Hyprland setups that remove borders and gaps to maintain a sleek, fullscreen experience. Blink flashes an inset border over the active Hyprland window and then quickly fades it out. It flashes when the active window changes or when triggered by shortcut.
 
-### Install
-
-```bash
-omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b
-omarchy plugin available
-omarchy plugin add b.blink --from b --review --enable
-```
-
-For unattended installs:
-
-```bash
-omarchy plugin source add https://github.com/brianblakely/omarchy-plugins.git --as b --yes
-omarchy plugin add b.blink --from b --enable --yes
-```
-
-### Update
-
-```bash
-omarchy plugin update b.blink
-```
+Blink reads active-window state with `hyprctl`; it does not write files or use
+the network.
 
 ### Shortcuts
 

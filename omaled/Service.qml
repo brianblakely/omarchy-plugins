@@ -248,7 +248,7 @@ Item {
 
   Process {
     id: cursorProc
-    command: ["bash", "-lc", "hyprctl cursorpos 2>/dev/null || true"]
+    command: ["hyprctl", "cursorpos"]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: root.applyCursorPosition(text)

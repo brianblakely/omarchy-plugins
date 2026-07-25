@@ -63,7 +63,7 @@ The bar model copies all entry keys except `id` into the widget settings object.
 
 ## Known Schema Field Types
 
-The first-party manifests in the target commit use these schema field `type` values:
+The first-party manifests in the current Omarchy checkout use these schema field `type` values:
 
 | Type | Use |
 | --- | --- |
@@ -171,8 +171,8 @@ BarWidget {
 For bar widgets, settings can be changed with:
 
 ```bash
-omarchy plugin bar set acme.cool-clock format HH:mm
-omarchy plugin bar set acme.cool-clock showSeconds false --json
+omarchy bar plugin set acme.cool-clock format HH:mm
+omarchy bar plugin set acme.cool-clock showSeconds false --json
 ```
 
 Use `--json` for booleans, numbers, arrays, and objects. Without `--json`, the value is stored as a string.
@@ -180,13 +180,26 @@ Use `--json` for booleans, numbers, arrays, and objects. Without `--json`, the v
 Array example:
 
 ```bash
-omarchy plugin bar set acme.system items '["cpu","memory","network"]' --json
+omarchy bar plugin set acme.system items '["cpu","memory","network"]' --json
 ```
 
 Object example:
 
 ```bash
-omarchy plugin bar set acme.widget options '{"compact":true,"limit":5}' --json
+omarchy bar plugin set acme.widget options '{"compact":true,"limit":5}' --json
+```
+
+When a widget appears more than once, select the intended entry explicitly:
+
+```bash
+omarchy bar plugin set acme.cool-clock format HH:mm:ss --section right --index 2
+```
+
+The entry at that section and index must have the requested widget id. A widget can also be selected by source position:
+
+```bash
+omarchy bar plugin set acme.cool-clock showSeconds true --json \
+  --from-section right --from-index 2
 ```
 
 ## Saving Settings From QML
@@ -222,13 +235,45 @@ BarWidget {
 
 `updateEntryInline` rewrites the inline entry in `shell.json`, preserving `id` and replacing the other keys with the supplied settings object.
 
-For `allowMultiple: true` widgets that save settings from their own UI, do not rely on `updateEntryInline` when the setting must change only the clicked instance. In the target shell, `updateEntryInline(moduleName, settings)` matches entries by widget id, so duplicate instances share that id. A more resilient plugin-only pattern is to persist a generated `instanceId` inline on the entry, then use `bar.shell.mutateShellConfig(...)` to find that `instanceId` and update only that entry. The first write may still need to locate the current bar slot section/index to bootstrap `instanceId`, unless the shell exposes a dedicated current-entry save API.
+For `allowMultiple: true` widgets that save settings from their own UI, do not rely on `updateEntryInline` when the setting must change only the clicked instance. In the current shell, `updateEntryInline(moduleName, settings)` matches entries by widget id, so duplicate instances share that id. A more resilient plugin-only pattern is to persist a generated `instanceId` inline on the entry, then use `bar.shell.mutateShellConfig(...)` to find that `instanceId` and update only that entry. The first write may still need to locate the current bar slot section/index to bootstrap `instanceId`, unless the shell exposes a dedicated current-entry save API.
 
-For non-bar plugins, the documented storage model also uses top-level `plugins[]` entries in `shell.json` with settings inline on the entry. However, settings injection is clearly implemented for bar widget slots in the target commit. For third-party portability, prefer the bar-widget settings pattern unless upstream loader behavior has been verified.
+For non-bar plugins, the documented storage model also uses top-level `plugins[]` entries in `shell.json` with settings inline on the entry. However, settings injection is clearly implemented for bar widget slots in the current checkout. For third-party portability, prefer the bar-widget settings pattern unless upstream loader behavior has been verified.
+
+## Direct IPC And Multiple Monitors
+
+The active bar creates widget instances for every monitor. A Quickshell `IpcHandler` target routes an invocation to one matching handler, so a direct IPC method that changes displayed state can otherwise update only one screen.
+
+`BarWidget` provides `broadcast(method)`, which invokes a no-argument method on every live widget instance with the same `moduleName`:
+
+```qml
+import QtQuick
+import Quickshell
+import qs.Ui
+
+BarWidget {
+  id: root
+
+  function refresh() {
+    // Refresh this instance's displayed state.
+  }
+
+  IpcHandler {
+    target: "acme.status"
+
+    function refresh(): void {
+      root.broadcast("refresh")
+    }
+  }
+}
+```
+
+Use `broadcast()` for state-changing actions such as refresh, next, or previous when every visible instance should stay in sync. It reaches every live instance with that widget id, including duplicate layout entries.
+
+Keep query-style IPC on one handler. Do not broadcast an action that launches a process, opens a URL, writes shared state more than once, or is intentionally local to the clicked instance.
 
 ## Valid Category Values
 
-`category` is not validated against a fixed enum in the target commit. Omarchy reads it as metadata and falls back to `"Plugin"` when omitted.
+`category` is not validated against a fixed enum in the current checkout. Omarchy reads it as metadata and falls back to `"Plugin"` when omitted.
 
 Use existing first-party categories for UI consistency:
 
@@ -236,6 +281,7 @@ Use existing first-party categories for UI consistency:
 AI
 Audio
 Compositor
+Files
 Info
 Layout
 Media
@@ -253,6 +299,7 @@ Recommended behavior:
 - Use `Network` for network, VPN, Bluetooth, or connectivity UI.
 - Use `Media` for playback controls or now-playing UI.
 - Use `Audio` for microphone, volume, and audio-device UI.
+- Use `Files` for file synchronization, storage, or cloud-drive status.
 - Use `Status` for status indicators.
 - Use `Info` for weather or passive informational widgets.
 - Use `AI` for model or AI-assistant usage widgets.

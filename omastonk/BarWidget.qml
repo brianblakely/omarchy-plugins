@@ -22,6 +22,7 @@ BarWidget {
   readonly property string trendGlyph: quoteReady ? (priceDown ? "\u25BC" : "\u25B2") : ""
   readonly property string priceText: quoteReady ? formatPrice(quotePrice) : (quoteStatus === "loading" ? "..." : "?")
   readonly property string labelText: symbol === "" ? "$" : symbol + " " + priceText + (trendGlyph === "" ? "" : " " + trendGlyph)
+  readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
 
   function normalizeSymbol(value) {
     return String(value || "").trim().toUpperCase().replace(/\s+/g, "")
@@ -247,7 +248,15 @@ BarWidget {
     if ("host" in target) target.host = root
   }
 
-  function togglePanel() {
+  function open() {
+    if (panelLoader.item && panelLoader.item.open) panelLoader.item.open()
+  }
+
+  function close() {
+    if (panelLoader.item && panelLoader.item.close) panelLoader.item.close()
+  }
+
+  function toggle() {
     if (panelLoader.item && panelLoader.item.toggle) panelLoader.item.toggle()
   }
 
@@ -324,7 +333,7 @@ BarWidget {
     tooltipText: root.symbol === "" ? "Set symbol" : ""
     onPressed: function(button) {
       if (button === Qt.RightButton) root.openEditor()
-      else root.togglePanel()
+      else root.toggle()
     }
   }
 }

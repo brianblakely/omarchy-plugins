@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "b.omanote",
   "name": "Omanote",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "author": "Brian Blakely",
   "description": "Omarchy-native secure scratch note for the bar",
   "kinds": [

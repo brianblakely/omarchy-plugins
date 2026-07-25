@@ -27,10 +27,6 @@ Item {
     return new Date().toISOString()
   }
 
-  function shellQuote(value) {
-    return "'" + String(value).replace(/'/g, "'\\''") + "'"
-  }
-
   function luaQuote(value) {
     return "'" + String(value)
       .replace(/\\/g, "\\\\")
@@ -61,12 +57,8 @@ Item {
     return lines.join("\n")
   }
 
-  function scriptFor(targetEnabled) {
-    return "set -e\nhyprctl eval " + shellQuote(ruleLua(targetEnabled))
-  }
-
   function detachedDisable() {
-    Quickshell.execDetached(["bash", "-lc", scriptFor(false)])
+    Quickshell.execDetached(["hyprctl", "eval", ruleLua(false)])
   }
 
   function setState(nextState) {
@@ -87,7 +79,7 @@ Item {
     lastError = ""
     lastOutput = ""
     setState(targetEnabled ? "enabling" : "disabling")
-    actionProcess.command = ["bash", "-lc", scriptFor(targetEnabled)]
+    actionProcess.command = ["hyprctl", "eval", ruleLua(targetEnabled)]
     actionProcess.running = true
     return targetEnabled ? "enabling" : "disabling"
   }

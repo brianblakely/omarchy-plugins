@@ -220,19 +220,23 @@ BarWidget {
     }
 
     function next(): string {
-      return root.showNextHeadline()
+      root.broadcast("showNextHeadline")
+      return root.currentHeadline
     }
 
     function nextHeadline(): string {
-      return root.showNextHeadline()
+      root.broadcast("showNextHeadline")
+      return root.currentHeadline
     }
 
     function previous(): string {
-      return root.showPreviousHeadline()
+      root.broadcast("showPreviousHeadline")
+      return root.currentHeadline
     }
 
     function previousHeadline(): string {
-      return root.showPreviousHeadline()
+      root.broadcast("showPreviousHeadline")
+      return root.currentHeadline
     }
 
     function search(): string {
@@ -244,7 +248,8 @@ BarWidget {
     }
 
     function refresh(): string {
-      return root.refresh()
+      root.broadcast("refresh")
+      return "ok"
     }
   }
 

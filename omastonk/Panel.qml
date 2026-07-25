@@ -290,7 +290,7 @@ Panel {
   KeyboardPanel {
     id: symbolPanel
     anchorItem: root.anchorItem
-    owner: root
+    owner: root.host || root
     bar: root.bar
     open: root.opened
     focusTarget: root.editing ? symbolField : keyCatcher

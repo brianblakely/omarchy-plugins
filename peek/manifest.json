@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "b.peek",
   "name": "Peek",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "author": "Brian Blakely",
   "description": "Hyprland floating-window peek service",
   "kinds": [

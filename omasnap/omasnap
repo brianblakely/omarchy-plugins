@@ -283,6 +283,7 @@ snap_tiny_selection() {
 }
 
 FREEZE_PID=""
+NO_HW_CURSORS=""
 
 start_freeze() {
   if command -v hyprpicker >/dev/null 2>&1; then
@@ -297,7 +298,37 @@ stop_freeze() {
   FREEZE_PID=""
 }
 
-trap stop_freeze EXIT
+set_no_hw_cursors() {
+  hyprctl eval "hl.config({ cursor = { no_hardware_cursors = $1 } })" >/dev/null 2>&1 ||
+    hyprctl keyword cursor:no_hardware_cursors "$1" >/dev/null 2>&1
+}
+
+prepare_cursor_capture() {
+  truthy "$INCLUDE_CURSOR" && return 0
+  command -v hyprctl >/dev/null 2>&1 || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+
+  NO_HW_CURSORS=$(hyprctl getoption cursor:no_hardware_cursors -j 2>/dev/null | jq -r '.int // empty' 2>/dev/null)
+  [[ $NO_HW_CURSORS =~ ^-?[0-9]+$ ]] || {
+    NO_HW_CURSORS=""
+    return 0
+  }
+
+  set_no_hw_cursors 0
+}
+
+restore_cursor_mode() {
+  [[ -n $NO_HW_CURSORS ]] || return 0
+  set_no_hw_cursors "$NO_HW_CURSORS"
+  NO_HW_CURSORS=""
+}
+
+cleanup() {
+  stop_freeze
+  restore_cursor_mode
+}
+
+trap cleanup EXIT
 
 last_state_value() {
   local key="$1"
@@ -449,7 +480,9 @@ screenshot() {
   [[ -n $selection ]] && grim_args+=(-g "$selection")
   truthy "$INCLUDE_CURSOR" && grim_args+=(-c)
 
+  prepare_cursor_capture
   grim "${grim_args[@]}" "$filepath" || exit 1
+  restore_cursor_mode
 
   case "$mode" in
   clipboard)
@@ -488,33 +521,29 @@ cleanup_webcam() {
 start_webcam_overlay() {
   cleanup_webcam
 
-  local webcam_device scale target_width video_size_arg available_formats resolution
+  local webcam_device capture_options available_formats resolution
   webcam_device=$(v4l2-ctl --list-devices 2>/dev/null | grep -m1 "^[[:space:]]*/dev/video" | tr -d '\t')
   if [[ -z $webcam_device ]]; then
     notify_capture "No webcam devices found" "Recording will start without webcam."
     return 1
   fi
 
-  scale=$(hyprctl monitors -j 2>/dev/null | jq -r '.[] | select(.focused == true) | .scale' | head -1)
-  [[ $scale =~ ^[0-9]+([.][0-9]+)?$ ]] || scale=1
-  target_width=$(awk "BEGIN {printf \"%.0f\", 360 * $scale}")
-
-  video_size_arg=""
+  capture_options="framerate=30"
   available_formats=$(v4l2-ctl --list-formats-ext -d "$webcam_device" 2>/dev/null)
   for resolution in 640x360 1280x720 1920x1080; do
     if grep -q "$resolution" <<<"$available_formats"; then
-      video_size_arg="-video_size $resolution"
+      capture_options="video_size=$resolution,$capture_options"
       break
     fi
   done
 
-  ffplay -f v4l2 $video_size_arg -framerate 30 "$webcam_device" \
-    -vf "crop=iw/2:ih,scale=${target_width}:-1" \
-    -window_title "WebcamOverlay" \
-    -noborder \
-    -fflags nobuffer -flags low_delay \
-    -probesize 32 -analyzeduration 0 \
-    -loglevel quiet >/dev/null 2>&1 &
+  mpv "av://v4l2:$webcam_device" \
+    --profile=low-latency --untimed --no-cache \
+    --demuxer-lavf-o="$capture_options" \
+    '--vf=lavfi=[crop=ih*8/9:ih]' \
+    --title="WebcamOverlay" --wayland-app-id="WebcamOverlay-medium" \
+    --no-border --no-audio --no-osc --osd-level=0 \
+    --really-quiet >/dev/null 2>&1 &
   sleep 1
 }
 
@@ -526,7 +555,7 @@ geometry_to_gsr_region() {
 
 refresh_recording_indicator() {
   if command -v omarchy-shell >/dev/null 2>&1; then
-    omarchy-shell -q Indicators refresh >/dev/null 2>&1 || true
+    omarchy-shell -q omarchy.indicators refresh >/dev/null 2>&1 || true
   fi
 }
 

@@ -10,9 +10,12 @@ BarWidget {
 
   property date displayDate: clock.date
 
-  readonly property string timeFormat: bar && bar.vertical
+  readonly property string timeFormat: vertical
     ? setting("verticalClockFormat", "HH\n\u2014\nmm")
     : setting("horizontalClockFormat", "dddd HH:mm")
+  readonly property string displayText: formatted(displayDate, timeFormat)
+  readonly property var verticalLines: displayText.split("\n")
+  readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
 
   function injectPanel() {
     var target = panelLoader.item
@@ -25,6 +28,18 @@ BarWidget {
 
   function refresh() {
     displayDate = new Date()
+  }
+
+  function open() {
+    if (panelLoader.item && panelLoader.item.open) panelLoader.item.open()
+  }
+
+  function close() {
+    if (panelLoader.item && panelLoader.item.close) panelLoader.item.close()
+  }
+
+  function toggle() {
+    if (panelLoader.item && panelLoader.item.toggle) panelLoader.item.toggle()
   }
 
   function isoWeek(date) {
@@ -72,14 +87,38 @@ BarWidget {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: root.formatted(root.displayDate, root.timeFormat)
+    text: root.vertical ? "" : root.displayText
+    labelVisible: !root.vertical
+    hasVisualContent: root.vertical ? root.verticalLines.length > 0 : text !== ""
+    fixedHeight: root.vertical ? root.verticalLines.length * Style.bar.iconSlot : -1
     horizontalMargin: 8.75
     verticalPadding: 8.75
     tooltipText: ""
     onPressed: function(button) {
       if (!root.bar) return
       if (button === Qt.RightButton) root.bar.run("omarchy-menu-timezone")
-      else if (panelLoader.item) panelLoader.item.toggle()
+      else root.toggle()
+    }
+
+    Column {
+      visible: root.vertical
+      anchors.fill: parent
+
+      Repeater {
+        model: root.verticalLines
+
+        OpticalGlyph {
+          required property string modelData
+          width: button.width
+          height: Style.bar.iconSlot
+          text: modelData
+          fontFamily: button.fontFamily
+          fontSize: modelData.length > 3
+            ? button.fontSize * 0.9
+            : button.fontSize
+          color: button.foreground
+        }
+      }
     }
   }
 }
