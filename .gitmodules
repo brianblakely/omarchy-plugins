@@ -1,0 +1,32 @@
+[submodule "blink"]
+	path = blink
+	url = https://github.com/brianblakely/blink.git
+	branch = master
+[submodule "omacal"]
+	path = omacal
+	url = https://github.com/brianblakely/omacal.git
+	branch = master
+[submodule "omaled"]
+	path = omaled
+	url = https://github.com/brianblakely/omaled.git
+	branch = master
+[submodule "omanews"]
+	path = omanews
+	url = https://github.com/brianblakely/omanews.git
+	branch = master
+[submodule "omanote"]
+	path = omanote
+	url = https://github.com/brianblakely/omanote.git
+	branch = master
+[submodule "omasnap"]
+	path = omasnap
+	url = https://github.com/brianblakely/omasnap.git
+	branch = master
+[submodule "omastonk"]
+	path = omastonk
+	url = https://github.com/brianblakely/omastonk.git
+	branch = master
+[submodule "peek"]
+	path = peek
+	url = https://github.com/brianblakely/peek.git
+	branch = master
