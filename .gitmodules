@@ -30,3 +30,7 @@
 	path = peek
 	url = https://github.com/brianblakely/peek.git
 	branch = master
+[submodule "omahud"]
+	path = omahud
+	url = https://github.com/brianblakely/omahud.git
+	branch = master
