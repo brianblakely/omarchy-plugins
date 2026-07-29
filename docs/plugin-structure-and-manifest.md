@@ -6,28 +6,29 @@ Use this reference when creating or changing plugin folders, entry points, manif
 
 An installable Omarchy plugin is one Git repository with `manifest.json` at the repository root. `omarchy plugin add <git-url>` clones that repository and validates its root as one plugin.
 
-This repository is a development/catalog monorepo. Each immediate top-level plugin directory is kept self-contained so it can be validated here and published or mirrored as the root of its own Git repository:
+This repository is a development/catalog monorepo. Each immediate child of `plugins/` is kept self-contained so it can be validated here and published or mirrored as the root of its own Git repository:
 
 ```text
 omarchy-plugins/
   README.md
   AGENTS.md
 
-  cool-clock/
-    manifest.json
-    Widget.qml
+  plugins/
+    cool-clock/
+      manifest.json
+      Widget.qml
 
-  quick-notes/
-    manifest.json
-    Panel.qml
+    quick-notes/
+      manifest.json
+      Panel.qml
 
-  media-helper/
-    manifest.json
-    Service.qml
-    BarWidget.qml
+    media-helper/
+      manifest.json
+      Service.qml
+      BarWidget.qml
 ```
 
-The monorepo itself is not a valid argument to `omarchy plugin add`: its root intentionally has no `manifest.json`, and the current installer does not select a subdirectory from a remote repository. Public releases therefore need one real Git repository per plugin, with the contents of a top-level folder above placed at that repository's root. Do not document a per-plugin URL until that repository actually exists.
+The monorepo itself is not a valid argument to `omarchy plugin add`: its root intentionally has no `manifest.json`, and the current installer does not select a subdirectory from a remote repository. Public releases therefore need one real Git repository per plugin, with the contents of the corresponding folder under `plugins/` placed at that repository's root. Do not document a per-plugin URL until that repository actually exists.
 
 Installed plugins live at `~/.config/omarchy/plugins/<id>/`. The destination name is determined by `manifest.id`, not by the remote repository name or this monorepo's source-folder name. Prefer source-folder and repository names that clearly correspond to the plugin, but do not rely on them as identity.
 

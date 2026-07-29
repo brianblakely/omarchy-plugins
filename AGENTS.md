@@ -9,13 +9,13 @@ Target Omarchy reference:
 
 When editing this project:
 
-1. Treat each top-level plugin folder as the root of its own Git-published repository, not as a package artifact. This monorepo is a development/catalog workspace and is not itself accepted by `omarchy plugin add`.
-2. Keep each plugin self-contained in one immediate top-level directory.
+1. Treat each plugin folder under `plugins/` as the root of its own Git-published repository, not as a package artifact. This monorepo is a development/catalog workspace and is not itself accepted by `omarchy plugin add`.
+2. Keep each plugin self-contained in one immediate child directory of `plugins/`.
 3. Do not invent unsupported `manifest.json` fields.
 4. Do not add symlinks, install hooks, post-install scripts, privileged setup, or automatic keybinding mutation.
 5. Keep global keybindings user-owned and documented explicitly.
 6. Bump `manifest.json` `version` for published changes as release metadata. Current `omarchy plugin update` fast-forwards the installed Git checkout; it does not compare manifest versions.
-7. Validate each plugin you change or intend to publish with `omarchy plugin validate ./<plugin-folder>`.
+7. Validate each plugin you change or intend to publish with `omarchy plugin validate ./plugins/<plugin-folder>`.
 8. Keep README examples copy-pastable and explicit about the plugin Git URL, plugin id, source review, the interactive enable prompt, and updates. Do not invent a URL before that plugin has a standalone repository.
 
 ## Documentation Map
@@ -34,7 +34,7 @@ For most plugin edits:
 1. Inspect the plugin folder and `manifest.json`.
 2. Check the relevant doc above before changing manifest fields, settings, keybindings, or publishing instructions.
 3. Keep behavior documented if the plugin runs commands, reads or writes files, uses network access, registers shortcuts, or needs user configuration.
-4. Run `omarchy plugin validate ./<plugin-folder>` for each changed plugin before calling it publishable.
+4. Run `omarchy plugin validate ./plugins/<plugin-folder>` for each changed plugin before calling it publishable.
 
 ## When Unsure
 

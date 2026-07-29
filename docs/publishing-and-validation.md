@@ -16,7 +16,7 @@ cool-clock/
 
 `omarchy plugin add <git-url>` clones that repository and validates its root. The command cannot select a plugin subdirectory from a remote monorepo.
 
-This repository is a development/catalog monorepo, not an installable plugin repository. Each immediate top-level plugin folder must remain self-contained and be published or mirrored as the root of its own Git repository. The public repository should contain the folder's contents, not the catalog folder wrapped around them.
+This repository is a development/catalog monorepo, not an installable plugin repository. Each immediate child of `plugins/` must remain self-contained and be published or mirrored as the root of its own Git repository. The public repository should contain the plugin folder's contents, not the catalog folder wrapped around them.
 
 Do not publish an installation command until that per-plugin repository and its actual URL exist. Do not substitute a monorepo URL, sparse-checkout recipe, synthetic source id, or undocumented subdirectory syntax.
 
@@ -130,7 +130,7 @@ Validate every plugin in this development/catalog monorepo from its root:
 ```bash
 set -euo pipefail
 
-for manifest in ./*/manifest.json; do
+for manifest in ./plugins/*/manifest.json; do
   plugin_dir="$(dirname "$manifest")"
   omarchy plugin validate "$plugin_dir"
 done
@@ -152,7 +152,7 @@ When validating against a source checkout instead of the installed Omarchy versi
 ```bash
 PATH=/path/to/omarchy/bin:$PATH \
   OMARCHY_PATH=/path/to/omarchy \
-  /path/to/omarchy/bin/omarchy-plugin validate ./<plugin-folder>
+  /path/to/omarchy/bin/omarchy-plugin validate ./plugins/<plugin-folder>
 ```
 
 ## Recommended README Install Section
@@ -209,7 +209,7 @@ Replace every angle-bracket placeholder before publishing. The finished plugin R
 Before announcing or tagging a release, verify:
 
 - [ ] The public Git repository contains exactly one plugin and has `manifest.json` at its root.
-- [ ] If developed here, the corresponding top-level catalog folder remains self-contained and matches the published repository contents.
+- [ ] If developed here, the corresponding folder under `plugins/` remains self-contained and matches the published repository contents.
 - [ ] The actual public repository URL exists, and the README does not use this catalog monorepo as an install URL.
 - [ ] The plugin contains no symlinks, install hooks, post-install scripts, or privileged setup.
 - [ ] `schemaVersion` is the JSON number `1`.
@@ -223,7 +223,7 @@ Before announcing or tagging a release, verify:
 - [ ] Global keybindings remain user-owned and are documented with current shell IPC or an intentional `GlobalShortcut`.
 - [ ] Commands, file access, network access, background behavior, and required user configuration are documented.
 - [ ] The manifest `version` has been bumped for the published change.
-- [ ] `omarchy plugin validate ./<plugin-folder>` succeeds in this catalog and `omarchy plugin validate .` succeeds in the published repository.
+- [ ] `omarchy plugin validate ./plugins/<plugin-folder>` succeeds in this catalog and `omarchy plugin validate .` succeeds in the published repository.
 - [ ] Runtime QML and every documented action have been exercised against the current Omarchy checkout.
 - [ ] A clean user can review the source, add the real Git URL, accept the interactive enable prompt, and update the plugin by id.
 - [ ] Automated docs use `--enable --yes` only where immediate execution is intended and trusted.
