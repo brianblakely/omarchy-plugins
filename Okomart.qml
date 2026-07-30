@@ -535,7 +535,7 @@ Item {
         rowSpacing: Style.space(8)
         anchors.right: parent.right
         anchors.rightMargin: storefront.frameInset + root.headerEdgeInset
-        y: root.wideLayout ? root.bodyTop - Style.space(40) : root.bodyTop - Style.space(70)
+        y: root.wideLayout ? root.bodyTop - Style.space(45) : root.bodyTop - Style.space(70)
 
         TextField {
           id: searchField
