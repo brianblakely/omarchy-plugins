@@ -436,6 +436,17 @@ grep -Fq 'if (text.length === 0)' "$ROOT_DIR/Okomart.qml" \
 grep -Fq 'event.key === Qt.Key_Left || event.key === Qt.Key_H' \
   "$ROOT_DIR/Okomart.qml" \
   || fail "toolbar H navigation is missing"
+grep -Fq 'iconText: root.installedOnly ? "󰈲" : "󱓯"' \
+  "$ROOT_DIR/Okomart.qml" \
+  || fail "installed filter does not distinguish filtered and unfiltered glyphs"
+grep -Fq 'iconText: "󰚰"' "$ROOT_DIR/Okomart.qml" \
+  || fail "updates button does not use its Nerd Font glyph"
+if grep -Fq 'text: root.installedOnly ? "Installed" : "All"' \
+    "$ROOT_DIR/Okomart.qml" \
+    || grep -Fq 'text: root.safeUpdateCount > 0 ? "Updates "' \
+      "$ROOT_DIR/Okomart.qml"; then
+  fail "toolbar buttons retain their old text labels"
+fi
 if grep -Fq 'Catalog refreshed' "$ROOT_DIR/Okomart.qml" \
     || grep -Fq 'Catalog is current.' "$ROOT_DIR/Okomart.qml" \
     || grep -Fq 'Refreshing catalog…' "$ROOT_DIR/Okomart.qml"; then

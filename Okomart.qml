@@ -693,7 +693,7 @@ Item {
           focusable: true
           bordered: true
           selected: root.installedOnly
-          text: root.installedOnly ? "Installed" : "All"
+          iconText: root.installedOnly ? "󰈲" : "󱓯"
           tooltipText: root.installedOnly ? "Show all plugins" : "Show installed plugins only"
           onClicked: root.installedOnly = !root.installedOnly
           Keys.onPressed: function(event) {
@@ -722,7 +722,11 @@ Item {
           selected: true
           enabled: root.snapshotActionable
             && !root.statusChecking && !root.refreshing && !root.actionInProgress
-          text: root.safeUpdateCount > 0 ? "Updates " + root.safeUpdateCount : "Updates !"
+          iconText: "󰚰"
+          tooltipText: root.safeUpdateCount > 0
+            ? "Review " + root.safeUpdateCount + " safe plugin "
+              + (root.safeUpdateCount === 1 ? "update" : "updates")
+            : "Review detected plugin updates"
           onClicked: root.openActionDialog("updates", null, root.updateRows)
           Keys.onPressed: function(event) {
             if (event.key === Qt.Key_Left || event.key === Qt.Key_H) {
@@ -733,7 +737,10 @@ Item {
               event.accepted = true
             }
           }
-          Accessible.name: root.safeUpdateCount + " safe plugin updates available"
+          Accessible.name: root.safeUpdateCount > 0
+            ? root.safeUpdateCount + " safe plugin "
+              + (root.safeUpdateCount === 1 ? "update" : "updates") + " available"
+            : "Review detected plugin updates"
           Accessible.role: Accessible.Button
         }
       }
