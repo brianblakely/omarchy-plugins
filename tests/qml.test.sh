@@ -130,6 +130,12 @@ grep -Fq 'function open(payloadJson)' "$ROOT_DIR/Okomart.qml" \
   || fail "panel lifecycle is missing open(payloadJson)"
 grep -Fq 'function close()' "$ROOT_DIR/Okomart.qml" \
   || fail "panel lifecycle is missing close()"
+grep -Fq 'function runtimeVersion(_arg)' "$ROOT_DIR/Okomart.qml" \
+  || fail "panel lifecycle cannot report the loaded Okomart version"
+if ! sed -n '/function runtimeVersion(_arg)/,/^  }/p' "$ROOT_DIR/Okomart.qml" \
+    | grep -Fq 'String(manifest.version)'; then
+  fail "runtime version probe does not report the loaded manifest"
+fi
 grep -Fq 'import QtQuick.Shapes' "$ROOT_DIR/StorefrontFrame.qml" \
   || fail "storefront is not drawn with QtQuick.Shapes"
 grep -Fq 'PathSvg { path: root.roofPath() }' "$ROOT_DIR/StorefrontFrame.qml" \

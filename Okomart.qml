@@ -80,6 +80,10 @@ Item {
   onQueryChanged: rebuildView()
   onInstalledOnlyChanged: rebuildView()
 
+  function runtimeVersion(_arg) {
+    return manifest && manifest.version ? String(manifest.version) : ""
+  }
+
   function open(payloadJson) {
     closingFromHost = false
     initialListFocusPending = true

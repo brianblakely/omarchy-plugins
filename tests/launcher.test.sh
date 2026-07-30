@@ -35,7 +35,7 @@ jq -e '
   .schemaVersion == 1
   and .id == "b.okomart"
   and .name == "Okomart"
-  and .version == "0.0.24"
+  and .version == "0.0.25"
   and .author == "Brian Blakely"
   and .license == "MIT"
   and .kinds == ["service", "panel"]
@@ -47,6 +47,11 @@ jq -e '
 
 grep -Fq 'Quickshell.execDetached([' "$SERVICE" \
   || fail "cleanup must be detached so service destruction cannot cancel it"
+grep -Fq 'Quickshell.execDetached([helperPath, "_recover-self-update", sourceDir])' \
+  "$SERVICE" \
+  || fail "service reload does not recover a completed Okomart self-update"
+grep -Fq 'onHelperPathChanged: recoverSelfUpdate()' "$SERVICE" \
+  || fail "self-update recovery does not wait for the injected manifest"
 grep -Fq 'X-Okomart-Managed=true' "$ASSET" \
   || fail "desktop entry is missing its ownership marker"
 grep -Fq 'omarchy-shell shell summon b.okomart' "$ASSET" \

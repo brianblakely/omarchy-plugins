@@ -14,6 +14,9 @@ Item {
   readonly property string desktopPath: dataHome + "/applications/b.okomart.desktop"
   readonly property string shellConfigPath: homeDir + "/.config/omarchy/shell.json"
   readonly property string desktopSourcePath: localPath(Qt.resolvedUrl("assets/b.okomart.desktop"))
+  readonly property string sourceDir: manifest && manifest.__sourceDir
+    ? String(manifest.__sourceDir) : ""
+  readonly property string helperPath: sourceDir ? sourceDir + "/bin/okomart" : ""
 
   // Keep these scripts as single JSON-compatible string literals. The isolated
   // launcher test extracts and executes the exact same text used at runtime.
@@ -22,6 +25,7 @@ Item {
 
   property string launcherState: "starting"
   property string launcherError: ""
+  property bool selfRecoveryStarted: false
 
   function localPath(url) {
     var value = String(url || "")
@@ -48,6 +52,12 @@ Item {
     launcherInstaller.running = true
   }
 
+  function recoverSelfUpdate() {
+    if (selfRecoveryStarted || !helperPath || !sourceDir) return
+    selfRecoveryStarted = true
+    Quickshell.execDetached([helperPath, "_recover-self-update", sourceDir])
+  }
+
   Process {
     id: launcherInstaller
 
@@ -68,7 +78,12 @@ Item {
     }
   }
 
-  Component.onCompleted: installLauncher()
+  onHelperPathChanged: recoverSelfUpdate()
+
+  Component.onCompleted: {
+    installLauncher()
+    recoverSelfUpdate()
+  }
 
   Component.onDestruction: {
     // Plugin reloads also destroy services. The detached cleanup re-reads the

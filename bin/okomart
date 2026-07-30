@@ -1806,15 +1806,92 @@ preflight_update() {
 }
 
 resummon_okomart() {
+  local source_dir="${1:-}"
   local shell_bin="${OKOMART_SHELL_BIN:-omarchy-shell}"
-  local attempt result
-  for (( attempt = 0; attempt < 10; attempt++ )); do
+  local expected_version attempts attempt result loaded_version
+  expected_version="$(
+    jq -r --arg id "$OKOMART_ID" '
+      if type == "object"
+        and .id == $id
+        and (.version | type) == "string"
+        and (.version | length) > 0
+      then .version
+      else ""
+      end
+    ' "$source_dir/manifest.json" 2>/dev/null || true
+  )"
+  [[ -n $expected_version ]] || return 1
+
+  attempts="${OKOMART_RELAUNCH_ATTEMPTS:-40}"
+  if [[ $attempts =~ ^[1-9][0-9]{0,2}$ ]]; then
+    attempts=$((10#$attempts))
+    (( attempts <= 100 )) || attempts=40
+  else
+    attempts=40
+  fi
+
+  for (( attempt = 0; attempt < attempts; attempt++ )); do
     result="$(
       timeout --signal=TERM --kill-after=1s 1s \
         "$shell_bin" shell summon "$OKOMART_ID" 2>/dev/null || true
     )"
-    [[ $result == "ok" ]] && return 0
+    if [[ $result == "ok" ]]; then
+      loaded_version="$(
+        timeout --signal=TERM --kill-after=1s 1s \
+          "$shell_bin" shell call "$OKOMART_ID" runtimeVersion "" \
+          2>/dev/null || true
+      )"
+      [[ $loaded_version == "$expected_version" ]] && return 0
+    fi
     sleep 0.1
+  done
+  return 1
+}
+
+recover_self_update_command() {
+  local source_arg="${1:-}"
+  (( $# == 1 )) || return 2
+
+  local source_dir
+  source_dir="$(realpath -m -- "$source_arg")"
+  [[ -d $source_dir
+    && $(realpath -m -- "$source_dir/bin/okomart") == "$SCRIPT_PATH" ]] ||
+    return 2
+
+  local attempts="${OKOMART_SELF_RECOVERY_ATTEMPTS:-200}"
+  if [[ $attempts =~ ^[1-9][0-9]{0,2}$ ]]; then
+    attempts=$((10#$attempts))
+    (( attempts <= 600 )) || attempts=200
+  else
+    attempts=200
+  fi
+
+  local attempt status
+  for (( attempt = 0; attempt < attempts; attempt++ )); do
+    [[ -f $ACTION_STATE && ! -L $ACTION_STATE ]] || return 0
+    status="$(cat -- "$ACTION_STATE" 2>/dev/null)" || return 0
+    jq -e 'type == "object"' <<<"$status" >/dev/null 2>&1 || return 0
+    jq -e '(.acknowledged // false) == true' <<<"$status" \
+      >/dev/null 2>&1 && return 0
+    jq -e '.action == "update" or .action == "update-all"' <<<"$status" \
+      >/dev/null 2>&1 || return 0
+
+    if jq -e '.running == true' <<<"$status" >/dev/null 2>&1; then
+      sleep 0.1
+      continue
+    fi
+
+    if jq -e --arg id "$OKOMART_ID" '
+      .running == false
+      and any(
+        (.results // [])[];
+        .id == $id and .operation == "update" and .ok == true
+      )
+    ' <<<"$status" >/dev/null 2>&1; then
+      resummon_okomart "$source_dir"
+      return
+    fi
+    return 0
   done
   return 1
 }
@@ -1975,7 +2052,7 @@ worker_command() {
   fi
 
   local resummoned=false
-  resummon_okomart && resummoned=true
+  resummon_okomart "$source_dir" && resummoned=true
   local finished message
   finished="$(utc_now)"
   if [[ $overall == true ]]; then
@@ -2212,6 +2289,10 @@ main() {
   _worker)
     shift
     worker_command "$@"
+    ;;
+  _recover-self-update)
+    shift
+    recover_self_update_command "$@"
     ;;
   *)
     usage_json

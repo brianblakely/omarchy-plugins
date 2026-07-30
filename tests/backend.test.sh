@@ -323,8 +323,9 @@ assert_jq "$TMP/cached-invalid.json" \
 
 MOCK_LOG="$TMP/omarchy.log"
 MOCK_LIST="$TMP/plugin-list.json"
+MOCK_OKOMART_SOURCE="$SOURCE"
 printf '[]\n' >"$MOCK_LIST"
-export MOCK_LOG MOCK_LIST
+export MOCK_LOG MOCK_LIST MOCK_OKOMART_SOURCE
 
 MOCK_OMARCHY="$TMP/bin/omarchy"
 MOCK_SHELL="$TMP/bin/omarchy-shell"
@@ -359,6 +360,15 @@ MOCK
 cat >"$MOCK_SHELL" <<'MOCK'
 #!/usr/bin/env bash
 printf 'shell:%s\n' "$*" >>"$MOCK_LOG"
+if [[ ${1:-} == shell && ${2:-} == call
+    && ${3:-} == b.okomart && ${4:-} == runtimeVersion ]]; then
+  if [[ -n ${MOCK_RUNTIME_VERSION+x} ]]; then
+    printf '%s\n' "$MOCK_RUNTIME_VERSION"
+  else
+    jq -r '.version // ""' "$MOCK_OKOMART_SOURCE/manifest.json"
+  fi
+  exit 0
+fi
 printf 'ok\n'
 MOCK
 chmod +x "$MOCK_OMARCHY" "$MOCK_SHELL"
@@ -1214,6 +1224,28 @@ assert_jq "$TMP/status.json" \
   '.action=="update-all" and (.running|not) and (.results|length)==3' \
   "status returns the last complete atomic worker state"
 
+: >"$MOCK_LOG"
+export MOCK_RUNTIME_VERSION
+MOCK_RUNTIME_VERSION="$(jq -r '.version' "$ROOT/manifest.json")"
+"$OKOMART" _recover-self-update "$ROOT"
+assert_eq \
+  $'shell:shell summon b.okomart\nshell:shell call b.okomart runtimeVersion ' \
+  "$(cat -- "$MOCK_LOG")" \
+  "completed self-update recovery verifies and reopens the updated runtime"
+
+: >"$MOCK_LOG"
+MOCK_RUNTIME_VERSION="stale"
+export OKOMART_RELAUNCH_ATTEMPTS=2
+if "$OKOMART" _recover-self-update "$ROOT"; then
+  fail "self-update recovery accepted a stale loaded runtime"
+fi
+unset OKOMART_RELAUNCH_ATTEMPTS
+assert_eq \
+  "2" \
+  "$(grep -Fc 'shell:shell call b.okomart runtimeVersion ' "$MOCK_LOG")" \
+  "self-update recovery retries until the loaded runtime version matches"
+unset MOCK_RUNTIME_VERSION
+
 ACTION_ID="$(jq -r '.actionId' "$TMP/status.json")"
 "$OKOMART" ack "$ACTION_ID" >"$TMP/ack.json"
 assert_jq "$TMP/ack.json" \
@@ -1223,6 +1255,11 @@ assert_jq "$TMP/ack.json" \
 assert_jq "$TMP/status-acknowledged.json" \
   '.actionId=="'"$ACTION_ID"'" and .acknowledged' \
   "acknowledgement persists so later storefront opens do not replay results"
+: >"$MOCK_LOG"
+"$OKOMART" _recover-self-update "$ROOT"
+[[ ! -s $MOCK_LOG ]] \
+  || fail "self-update recovery replayed an acknowledged action"
+pass "self-update recovery ignores acknowledged actions"
 [[ -z $(find "$XDG_STATE_HOME/okomart/worker" -maxdepth 1 \
   -name 'snapshot-*.json' -print -quit 2>/dev/null) ]] \
   || fail "completed workers left a confirmed snapshot copy behind"
