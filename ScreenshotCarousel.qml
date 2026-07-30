@@ -38,8 +38,7 @@ FocusScope {
   }
 
   function focusControls() {
-    if (imageCount > 1) previousButton.forceActiveFocus()
-    else root.forceActiveFocus()
+    root.forceActiveFocus()
   }
 
   function versionedSource(path) {
@@ -112,7 +111,6 @@ FocusScope {
         Button {
           id: previousButton
           anchors.fill: parent
-          focusable: true
           bordered: true
           background: "transparent"
           foreground: root.foreground
@@ -169,7 +167,6 @@ FocusScope {
         Button {
           id: nextButton
           anchors.fill: parent
-          focusable: true
           bordered: true
           background: "transparent"
           foreground: root.foreground

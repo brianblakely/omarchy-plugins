@@ -5,7 +5,6 @@ const {
   actionLabel,
   buildViewModel,
   canRemovePlugin,
-  catalogChange,
   filterPlugins,
   hasUpdate,
   hasVersionUpdate,
@@ -17,7 +16,6 @@ const {
   naturalCompare,
   normalizeFilter,
   normalizeQuery,
-  pluginBadges,
   pluginId,
   pluginName,
   pluginVersionText,
@@ -189,7 +187,7 @@ test("uses raw code-unit order only after case-insensitive natural equality", ()
   assert.equal(naturalCompare("same", "same"), 0)
 })
 
-test("sorts plugins naturally by display name and then id without mutation", () => {
+test("sorts timestamp ties naturally by display name and id without mutation", () => {
   const input = [
     plugin({ id: "b.z", name: "Tool 10" }),
     plugin({ id: "b.second", name: "Tool 2" }),
@@ -207,6 +205,22 @@ test("sorts plugins naturally by display name and then id without mutation", () 
   ])
   assert.deepEqual(input, snapshot)
   assert.notEqual(sorted, input)
+})
+
+test("sorts plugins by most recent repository update first", () => {
+  const input = [
+    plugin({ id: "b.old", name: "A", updatedAt: 100 }),
+    plugin({ id: "b.new", name: "Z", updatedAt: 300 }),
+    plugin({ id: "b.unknown", name: "B", updatedAt: "" }),
+    plugin({ id: "b.middle", name: "C", updatedAt: 200 })
+  ]
+
+  assert.deepEqual(sortPlugins(input).map(item => item.id), [
+    "b.new",
+    "b.middle",
+    "b.old",
+    "b.unknown"
+  ])
 })
 
 test("uses title then id then a safe placeholder when a name is absent", () => {
@@ -555,7 +569,7 @@ test("uses explicit update booleans only when a higher version exists", () => {
   assert.equal(hasUpdate(null), false)
 })
 
-test("omits update detail and badges for every uninstalled state", () => {
+test("omits update detail for every uninstalled state", () => {
   const states = [
     "update-available",
     "up-to-date",
@@ -577,8 +591,6 @@ test("omits update detail and badges for every uninstalled state", () => {
       availableVersion: "2.0"
     })
     assert.equal(updateDetailText(item), "")
-    assert.equal(pluginBadges(item).includes("Update available"), false)
-    assert.equal(pluginBadges(item).includes("Update blocked"), false)
   }
 })
 
@@ -688,41 +700,6 @@ test("blocks only dirty Git checkouts from removal", () => {
     installType: "git",
     dirty: true
   })), "")
-})
-
-test("derives catalog changes and ordered UI badges", () => {
-  const item = {
-    installed: true,
-    installedVersion: "1.0.0",
-    availableVersion: "2.0.0",
-    versionUpdateAvailable: true,
-    external: true,
-    catalogChange: "added",
-    updateState: "available"
-  }
-  assert.equal(catalogChange(item), "new")
-  assert.equal(catalogChange({ changed: true }), "changed")
-  assert.equal(catalogChange({}), "")
-  assert.deepEqual(pluginBadges(item), [
-    "Installed",
-    "External",
-    "New",
-    "Update available"
-  ])
-  assert.deepEqual(pluginBadges({
-    installed: true,
-    installedVersion: "1.0.0",
-    availableVersion: "2.0.0",
-    versionUpdateAvailable: true,
-    removed: true,
-    catalogUpdated: true,
-    updateState: "dirty"
-  }), [
-    "Installed",
-    "Removed",
-    "Updated",
-    "Update blocked"
-  ])
 })
 
 test("provides install, uninstall, busy, invalid, and unavailable actions", () => {

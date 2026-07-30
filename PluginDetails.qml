@@ -36,17 +36,6 @@ FocusScope {
     installed && plugin.safeUpdate === true
       && OkomartModel.hasVersionUpdate(plugin)
       && normalizedUpdateState === "available"
-  readonly property var detailBadges: {
-    if (!hasPlugin) return []
-    var badges = []
-    if (plugin.external) badges.push("External")
-    if (plugin.removed) badges.push("Removed from catalog")
-    if (plugin.isNew || plugin.newCatalog) badges.push("New")
-    if (plugin.catalogChanged) badges.push("Catalog updated")
-    if (installed && normalizedUpdateState === "available")
-      badges.push("Update available")
-    return badges
-  }
 
   activeFocusOnTab: true
 
@@ -138,11 +127,6 @@ FocusScope {
     return null
   }
 
-  function firstActionHasFocus() {
-    var action = firstActionButton()
-    return action !== null && action.activeFocus
-  }
-
   function focusFirstAction() {
     var action = firstActionButton()
     if (action !== null) {
@@ -184,8 +168,7 @@ FocusScope {
 
   Keys.priority: Keys.AfterItem
   Keys.onPressed: function(event) {
-    if ((event.key === Qt.Key_Left || event.key === Qt.Key_H)
-        && firstActionHasFocus()) {
+    if (event.key === Qt.Key_Left || event.key === Qt.Key_H) {
       pluginListRequested()
       event.accepted = true
     } else if (event.key === Qt.Key_Down || event.key === Qt.Key_J) {
@@ -291,6 +274,12 @@ FocusScope {
           bordered: true
           text: "Install"
           onClicked: root.installRequested(root.plugin)
+          Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Left || event.key === Qt.Key_H) {
+              root.pluginListRequested()
+              event.accepted = true
+            }
+          }
           onActiveFocusChanged: if (activeFocus) Qt.callLater(function() {
             root.ensureVisible(installButton)
           })
@@ -318,6 +307,12 @@ FocusScope {
             return "Uninstall"
           }
           onClicked: root.removeRequested(root.plugin)
+          Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Left || event.key === Qt.Key_H) {
+              root.pluginListRequested()
+              event.accepted = true
+            }
+          }
           onActiveFocusChanged: if (activeFocus) Qt.callLater(function() {
             root.ensureVisible(removeButton)
           })
@@ -337,6 +332,12 @@ FocusScope {
           selected: true
           text: "Update"
           onClicked: root.updateRequested(root.plugin)
+          Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Left || event.key === Qt.Key_H) {
+              root.pluginListRequested()
+              event.accepted = true
+            }
+          }
           onActiveFocusChanged: if (activeFocus) Qt.callLater(function() {
             root.ensureVisible(updateButton)
           })
@@ -344,35 +345,6 @@ FocusScope {
             ? "Update " + root.value(root.plugin.name || root.plugin.id, "plugin")
             : "Update plugin"
           Accessible.role: Accessible.Button
-        }
-      }
-
-      Flow {
-        visible: root.detailBadges.length > 0
-        width: parent.width
-        spacing: Style.space(8)
-
-        Repeater {
-          model: root.detailBadges
-
-          delegate: BorderSurface {
-            required property string modelData
-            implicitWidth: badgeText.implicitWidth + Style.space(14)
-            implicitHeight: badgeText.implicitHeight + Style.space(6)
-            color: Util.alpha(modelData.indexOf("Removed") !== -1 ? root.urgent : root.accent, 0.12)
-            borderSpec: Border.flat(Util.alpha(modelData.indexOf("Removed") !== -1 ? root.urgent : root.accent, 0.58), Math.max(1, Style.normalBorderWidth))
-            radius: Style.cornerRadius
-
-            Text {
-              id: badgeText
-              anchors.centerIn: parent
-              text: modelData
-              textFormat: Text.PlainText
-              color: modelData.indexOf("Removed") !== -1 ? root.urgent : root.accent
-              font.family: Style.font.family
-              font.pixelSize: Style.font.caption
-            }
-          }
         }
       }
 

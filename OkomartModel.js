@@ -176,6 +176,13 @@ function naturalCompare(first, second) {
 }
 
 function comparePlugins(first, second) {
+  var firstUpdated = Number(recordField(first, "updatedAt"))
+  var secondUpdated = Number(recordField(second, "updatedAt"))
+  if (!isFinite(firstUpdated) || firstUpdated < 0) firstUpdated = 0
+  if (!isFinite(secondUpdated) || secondUpdated < 0) secondUpdated = 0
+  if (firstUpdated !== secondUpdated)
+    return firstUpdated > secondUpdated ? -1 : 1
+
   var byName = naturalCompare(pluginName(first), pluginName(second))
   if (byName !== 0) return byName
   return naturalCompare(pluginId(first), pluginId(second))
@@ -645,48 +652,6 @@ function updateLabel(plugin) {
   return ""
 }
 
-function catalogChange(plugin) {
-  if (!isRecord(plugin)) return ""
-  var change = normalizedState(firstText([
-    plugin.catalogChange,
-    plugin.change,
-    plugin.changeType
-  ]))
-  if (plugin.isNew === true || change === "new" || change === "added") return "new"
-  if (plugin.catalogUpdated === true
-      || plugin.changed === true
-      || change === "changed"
-      || change === "updated") {
-    return "changed"
-  }
-  return ""
-}
-
-function pluginBadges(plugin) {
-  if (!isRecord(plugin)) return []
-
-  var badges = []
-  if (isInstalled(plugin)) badges.push("Installed")
-
-  var source = sourceState(plugin)
-  if (source === "removed") badges.push("Removed")
-  else if (source === "external") badges.push("External")
-
-  var change = catalogChange(plugin)
-  if (change === "new") badges.push("New")
-  else if (change === "changed") badges.push("Updated")
-
-  if (isInstalled(plugin)) {
-    var state = updateState(plugin)
-    if (state === "available") badges.push("Update available")
-    else if ((state === "dirty" || state === "diverged" || state === "blocked")
-        && hasVersionUpdate(plugin))
-      badges.push("Update blocked")
-  }
-
-  return badges
-}
-
 function actionBlockReason(plugin) {
   if (!isRecord(plugin)) return "Plugin data is unavailable"
   if (plugin.valid === false) {
@@ -765,7 +730,6 @@ if (typeof module !== "undefined") {
     actionLabel: actionLabel,
     buildViewModel: buildViewModel,
     canRemovePlugin: canRemovePlugin,
-    catalogChange: catalogChange,
     comparePlugins: comparePlugins,
     filterPlugins: filterPlugins,
     hasUpdate: hasUpdate,
@@ -778,7 +742,6 @@ if (typeof module !== "undefined") {
     naturalCompare: naturalCompare,
     normalizeFilter: normalizeFilter,
     normalizeQuery: normalizeQuery,
-    pluginBadges: pluginBadges,
     pluginId: pluginId,
     pluginName: pluginName,
     pluginVersionText: pluginVersionText,

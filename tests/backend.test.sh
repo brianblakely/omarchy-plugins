@@ -197,6 +197,7 @@ git -C "$TMP/alpha-work" add shot1.jpg images screenshots root-image.svg
 git -C "$TMP/alpha-work" commit -qm "alpha screenshots"
 git -C "$TMP/alpha-work" push -q origin main
 ALPHA_V1="$(git -C "$TMP/alpha-work" rev-parse HEAD)"
+ALPHA_V1_UPDATED_AT="$(git -C "$TMP/alpha-work" show -s --format=%ct "$ALPHA_V1")"
 ALPHA_REMOTE_HISTORY_COUNT="$(
   git -C "$TMP/alpha.git" rev-list --all --count
 )"
@@ -412,7 +413,8 @@ assert_jq "$SNAP1" \
       and (.images|length)==3
       and (.images[0]|endswith("/shot1.jpg"))
       and (.images[1]|endswith("/screenshots/shot2.PNG"))
-      and (.images[2]|endswith("/images/shot10.png"))' \
+      and (.images[2]|endswith("/images/shot10.png"))
+      and .updatedAt=='"$ALPHA_V1_UPDATED_AT"'' \
   "root, images, and screenshots files are filtered and naturally ordered"
 assert_jq "$SNAP1" \
   '([.plugins[]|select(.id=="b.beta")][0].images|length)==1' \
@@ -496,6 +498,7 @@ INITIAL_SCREENSHOT_SHA="$(
 printf 'png-v2' >"$TMP/alpha-work/images/shot2.PNG"
 advance_plugin alpha 2.0.0
 ALPHA_V2="$(git -C "$TMP/alpha-work" rev-parse HEAD)"
+ALPHA_V2_UPDATED_AT="$(git -C "$TMP/alpha-work" show -s --format=%ct "$ALPHA_V2")"
 printf '%s\n%s\n%s\n' \
   "$TMP/invalid.git" "$TMP/beta.git" "$TMP/alpha.git" \
   >"$CATALOG_WORK/plugins.txt"
@@ -745,8 +748,13 @@ assert_jq "$SNAP2" \
       and .updateState=="update-available"
       and .versionUpdateAvailable
       and .installedVersion=="1.0.0"
-      and .availableVersion=="2.0.0"' \
+      and .availableVersion=="2.0.0"
+      and .updatedAt=='"$ALPHA_V2_UPDATED_AT"'' \
   "installed Git plugin detects a clean fast-forward update"
+assert_jq "$SNAP2" \
+  '[.plugins[]|select(.id=="b.ahead")][0].updatedAt
+    == '"$(git -C "$OKOMART_PLUGINS_DIR/b.ahead" show -s --format=%ct HEAD)" \
+  "installed-only Git plugins expose their latest commit timestamp"
 assert_jq "$SNAP2" \
   '[.plugins[]|select(.id=="b.samever")][0]
     | .installed and .remoteRelation=="behind"

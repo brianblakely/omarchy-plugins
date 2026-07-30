@@ -384,6 +384,17 @@ materialize_cached_commit() {
     tar -x --no-same-owner --no-same-permissions -C "$destination"
 }
 
+git_commit_timestamp() {
+  local repository="$1"
+  local commit="$2"
+  local timestamp
+  timestamp="$(
+    git -C "$repository" show -s --format=%ct "$commit" 2>/dev/null
+  )" || return 1
+  [[ $timestamp =~ ^[0-9]+$ ]] || return 1
+  printf '%s\n' "$timestamp"
+}
+
 REFRESH_PLUGIN_URLS=()
 REFRESH_PLUGIN_COMMITS=()
 REFRESH_PLUGIN_KEYS=()
@@ -618,11 +629,13 @@ build_catalog_index() {
 
   local -A ids=()
   local index key path url ref dir public_dir metadata images id
+  local mirror updated_at
   for index in "${!REFRESH_PLUGIN_URLS[@]}"; do
     key="${REFRESH_PLUGIN_KEYS[$index]}"
     path=".okomart-repositories/$key"
     url="${REFRESH_PLUGIN_URLS[$index]}"
     ref="${REFRESH_PLUGIN_COMMITS[$index]}"
+    mirror="$REPOSITORY_CACHE/$key.git"
     dir="$stage/$path"
     public_dir="$CATALOG_DIR/$path"
 
@@ -647,17 +660,20 @@ build_catalog_index() {
     fi
     ids[$id]=1
     images="$(images_json "$dir" "$public_dir")"
+    updated_at="$(git_commit_timestamp "$mirror" "$ref")" || return 1
     jq -cn \
       --argjson metadata "$metadata" \
       --arg sourceUrl "$url" \
       --arg catalogPath "$path" \
       --arg catalogCommit "$ref" \
+      --argjson updatedAt "$updated_at" \
       --argjson images "$images" \
       '$metadata + {
         sourceUrl:$sourceUrl,
         images:$images,
         catalogPath:$catalogPath,
         catalogCommit:$catalogCommit,
+        updatedAt:$updatedAt,
         manifestValid:true
       }' >>"$entries_file"
   done
@@ -726,6 +742,24 @@ plugin_owned_git_worktree() {
     return 1
   worktree_root="$(realpath -m -- "$worktree_root")"
   [[ $worktree_root == "$plugin_root" ]]
+}
+
+installed_plugin_timestamp() {
+  local dir="$1"
+  local repository="$dir"
+  local commit
+  if [[ -L $dir ]]; then
+    repository="$(realpath -m -- "$dir")"
+  fi
+  if ! plugin_owned_git_worktree "$repository"; then
+    printf '0\n'
+    return
+  fi
+  commit="$(git -C "$repository" rev-parse HEAD 2>/dev/null)" || {
+    printf '0\n'
+    return
+  }
+  git_commit_timestamp "$repository" "$commit" || printf '0\n'
 }
 
 installed_update_json() {
@@ -843,7 +877,7 @@ build_installed_index() {
   fi
 
   local dir folder manifest_valid metadata id update installed_version images
-  local validation_error enabled_value
+  local validation_error enabled_value updated_at
   shopt -s nullglob
   for dir in "$PLUGINS_DIR"/*; do
     [[ -d $dir || -L $dir ]] || continue
@@ -872,6 +906,7 @@ build_installed_index() {
     [[ $id != "$OKOMART_ID" && $folder != "$OKOMART_ID" ]] || continue
 
     installed_version="$(jq -r '.version' <<<"$metadata")"
+    updated_at="$(installed_plugin_timestamp "$dir")"
     update="$(installed_update_json "$dir" "$manifest_valid" "$installed_version")"
     if jq -e --arg id "$id" 'index($id) != null' <<<"$enabled" >/dev/null; then
       enabled_value=true
@@ -887,12 +922,14 @@ build_installed_index() {
       --arg validationError "$validation_error" \
       --argjson manifestValid "$manifest_valid" \
       --argjson enabled "$enabled_value" \
+      --argjson updatedAt "$updated_at" \
       --argjson images "$images" \
       '$metadata + $update + {
         installed:true,
         installedVersion:$installedVersion,
         installedPath:$installedPath,
         enabled:$enabled,
+        updatedAt:$updatedAt,
         manifestValid:$manifestValid,
         validationError:$validationError,
         images:$images
@@ -961,6 +998,10 @@ merge_plugins_json() {
             images:$available.images,
             catalogCommit:$available.catalogCommit,
             catalogPath:$available.catalogPath,
+            updatedAt:([
+              ($available.updatedAt // 0),
+              ($local.updatedAt // 0)
+            ] | max),
             catalog:true,installed:true,removed:false,external:false,
             installedVersion:$local.installedVersion,
             installedSourceUrl:$local.sourceUrl,
@@ -994,6 +1035,10 @@ merge_plugins_json() {
             kinds:$old.kinds,
             sourceUrl:$old.sourceUrl,
             images:($local.images // []),
+            updatedAt:([
+              ($old.updatedAt // 0),
+              ($local.updatedAt // 0)
+            ] | max),
             catalog:false,installed:true,removed:true,external:false,
             installedVersion:$local.installedVersion,
             installedSourceUrl:$local.sourceUrl,
@@ -1005,7 +1050,7 @@ merge_plugins_json() {
         end
       ]
     )
-    | sort_by((.name | ascii_downcase), .id)
+    | sort_by(-(.updatedAt // 0), (.name | ascii_downcase), .id)
   ' >"$output"
 }
 
@@ -1094,7 +1139,7 @@ self_update_json() {
   fi
 
   if [[ $state == "catalog-current" ]]; then
-    status="Catalog refreshed; Okomart itself is up to date"
+    status="Okomart is up to date"
   else
     status="$(status_text_for "$state")"
   fi

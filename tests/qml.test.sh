@@ -96,6 +96,24 @@ run_entrypoint_load_test() {
 
 grep -Fq 'FloatingWindow {' "$ROOT_DIR/Okomart.qml" \
   || fail "Okomart is not hosted in a FloatingWindow"
+grep -Fq 'import Quickshell.Hyprland' "$ROOT_DIR/Okomart.qml" \
+  || fail "Okomart cannot request compositor floating state"
+grep -Fq 'Hyprland.dispatch("setfloating " + selector)' "$ROOT_DIR/Okomart.qml" \
+  || fail "Okomart does not open its own toplevel as floating"
+grep -Fq 'Hyprland.dispatch("resizewindowpixel exact " + side + " " + side + "," + selector)' \
+  "$ROOT_DIR/Okomart.qml" \
+  || fail "Okomart does not request square floating geometry"
+grep -Fq 'Hyprland.dispatch("centerwindow " + selector)' "$ROOT_DIR/Okomart.qml" \
+  || fail "Okomart does not center its floating window"
+grep -Fq 'var selector = "address:0x" + address' "$ROOT_DIR/Okomart.qml" \
+  || fail "Okomart floating dispatch is not scoped to its own toplevel"
+[[ $(grep -Fc 'implicitWidth: root.windowSide' "$ROOT_DIR/Okomart.qml") -eq 1 ]] \
+  || fail "Okomart does not declare a square initial width"
+[[ $(grep -Fc 'implicitHeight: root.windowSide' "$ROOT_DIR/Okomart.qml") -eq 1 ]] \
+  || fail "Okomart does not declare a square initial height"
+grep -Fq 'minimumSize: Qt.size(Style.space(560), Style.space(560))' \
+  "$ROOT_DIR/Okomart.qml" \
+  || fail "Okomart minimum geometry is not square"
 grep -Fq 'function open(payloadJson)' "$ROOT_DIR/Okomart.qml" \
   || fail "panel lifecycle is missing open(payloadJson)"
 grep -Fq 'function close()' "$ROOT_DIR/Okomart.qml" \
@@ -114,8 +132,10 @@ if grep -Eq 'readonly property real (left|right|bottom)[[:space:]]*:' \
     "$ROOT_DIR/StorefrontFrame.qml"; then
   fail "storefront overrides a final Item geometry property"
 fi
-grep -Fq 'wideLayout: window.width >= Style.space(820)' "$ROOT_DIR/Okomart.qml" \
+grep -Fq 'wideLayout: window.width >= Style.space(600)' "$ROOT_DIR/Okomart.qml" \
   || fail "responsive master-detail breakpoint is missing"
+grep -Fq 'toolbarSingleRow: window.width >= Style.space(420)' "$ROOT_DIR/Okomart.qml" \
+  || fail "responsive single-row toolbar breakpoint is missing"
 grep -Fq 'installedOnly ? "installed" : "all"' "$ROOT_DIR/Okomart.qml" \
   || fail "installed-only filter is not wired"
 grep -Fq 'OkomartModel.filterPlugins' "$ROOT_DIR/Okomart.qml" \
@@ -157,14 +177,14 @@ grep -Fq 'function focusFirstAction()' "$ROOT_DIR/PluginDetails.qml" \
   || fail "plugin details cannot focus their first available action"
 grep -Fq 'function firstActionButton()' "$ROOT_DIR/PluginDetails.qml" \
   || fail "plugin details cannot identify their first available action"
-grep -Fq 'function firstActionHasFocus()' "$ROOT_DIR/PluginDetails.qml" \
-  || fail "plugin details cannot identify focus on their first action"
 grep -Fq 'signal pluginListRequested()' "$ROOT_DIR/PluginDetails.qml" \
   || fail "plugin details do not expose their leftward list handoff"
-grep -Fq '&& firstActionHasFocus())' "$ROOT_DIR/PluginDetails.qml" \
-  || fail "left from the first plugin action does not return to the list"
-grep -Fq 'pluginListRequested()' "$ROOT_DIR/PluginDetails.qml" \
-  || fail "plugin details do not request the list at the left boundary"
+grep -Fq 'if (event.key === Qt.Key_Left || event.key === Qt.Key_H)' \
+  "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin details do not handle their leftward list boundary"
+[[ $(grep -Fc 'root.pluginListRequested()' \
+  "$ROOT_DIR/PluginDetails.qml") -eq 3 ]] \
+  || fail "every plugin action must directly return leftward focus to the list"
 grep -Fq 'function actionHasFocus()' "$ROOT_DIR/PluginDetails.qml" \
   || fail "plugin details cannot distinguish action focus from viewport focus"
 grep -Fq 'if (actionHasFocus()) searchRequested()' \
@@ -195,12 +215,16 @@ grep -Fq 'OkomartModel.pluginVersionText(plugin)' "$ROOT_DIR/PluginDetails.qml" 
   || fail "detail version does not use the tested formatter"
 grep -Fq 'OkomartModel.updateDetailText(plugin)' "$ROOT_DIR/PluginDetails.qml" \
   || fail "detail update status does not use the tested formatter"
-if grep -Fq 'badges.push("Available")' "$ROOT_DIR/PluginDetails.qml"; then
-  fail "plugin details still expose the Available badge"
+if grep -Eqi 'badge|detailBadges' "$ROOT_DIR/PluginDetails.qml" \
+    || grep -Fq 'statusText' "$ROOT_DIR/PluginList.qml" \
+    || grep -Fq 'return "New"' "$ROOT_DIR/PluginList.qml" \
+    || grep -Eq 'function (catalogChange|pluginBadges)' \
+      "$ROOT_DIR/OkomartModel.js"; then
+  fail "plugin badge feature is still present"
 fi
-if grep -Fq 'badges.push(root.plugin.enabled ? "Installed' \
-    "$ROOT_DIR/PluginDetails.qml"; then
-  fail "plugin details still expose the Installed badge"
+if grep -Fq 'modelData.enabled' "$ROOT_DIR/PluginList.qml" \
+    || grep -Eqi '"[^"]*enabled[^"]*"' "$ROOT_DIR/PluginList.qml"; then
+  fail "plugin list still renders an enabled-state indicator"
 fi
 grep -Fq 'if (state === "current") return ""' "$ROOT_DIR/OkomartModel.js" \
   || fail "plugin details still expose an up-to-date status snippet"
@@ -252,6 +276,13 @@ grep -Fq 'model: root.imageCount' "$ROOT_DIR/ScreenshotCarousel.qml" \
   || fail "screenshot page dots do not represent every image"
 grep -Fq 'function focusControls()' "$ROOT_DIR/ScreenshotCarousel.qml" \
   || fail "screenshot carousel does not expose its keyboard controls"
+if ! sed -n '/function focusControls()/,/^  }/p' \
+    "$ROOT_DIR/ScreenshotCarousel.qml" | grep -Fq 'root.forceActiveFocus()'; then
+  fail "screenshot carousel focuses an arrow instead of its neutral container"
+fi
+if grep -Fq 'focusable: true' "$ROOT_DIR/ScreenshotCarousel.qml"; then
+  fail "screenshot carousel arrows still expose an active focus treatment"
+fi
 grep -Fq 'visible: index === root.currentIndex' "$ROOT_DIR/ScreenshotCarousel.qml" \
   || fail "screenshot carousel does not switch between preloaded images"
 grep -Fq 'asynchronous: true' "$ROOT_DIR/ScreenshotCarousel.qml" \
@@ -346,9 +377,17 @@ grep -Fq 'onPluginListRequested: root.focusPluginListFromSearch()' \
   "$ROOT_DIR/Okomart.qml" \
   || fail "leftward detail navigation is not connected to the plugin list"
 if ! sed -n '/function open(payloadJson)/,/^  }/p' "$ROOT_DIR/Okomart.qml" \
-    | grep -Fq 'Qt.callLater(pluginList.forceActiveFocus)'; then
+    | grep -Fq 'Qt.callLater(focusInitialPluginList)'; then
   fail "Okomart does not open with the plugin list focused"
 fi
+grep -Fq 'function focusFirstItem()' "$ROOT_DIR/PluginList.qml" \
+  || fail "plugin list cannot focus its first item"
+grep -Fq 'function focusCurrentItem()' "$ROOT_DIR/PluginList.qml" \
+  || fail "directional navigation cannot focus the selected plugin"
+[[ $(grep -Fc 'focus: true' "$ROOT_DIR/PluginList.qml") -ge 1 ]] \
+  || fail "the actual plugin ListView is not the nested focus default"
+grep -Fq 'initialFocusTimer.restart()' "$ROOT_DIR/Okomart.qml" \
+  || fail "initial focus is not retried after the window becomes active"
 grep -Fq 'function focusPluginListFromSearch()' "$ROOT_DIR/Okomart.qml" \
   || fail "empty search cannot focus the plugin list"
 grep -Fq 'function focusPluginDetailsFromSearch()' "$ROOT_DIR/Okomart.qml" \
@@ -364,6 +403,11 @@ grep -Fq 'if (text.length === 0)' "$ROOT_DIR/Okomart.qml" \
 grep -Fq 'event.key === Qt.Key_Left || event.key === Qt.Key_H' \
   "$ROOT_DIR/Okomart.qml" \
   || fail "toolbar H navigation is missing"
+if grep -Fq 'Catalog refreshed' "$ROOT_DIR/Okomart.qml" \
+    || grep -Fq 'Catalog is current.' "$ROOT_DIR/Okomart.qml" \
+    || grep -Fq 'Refreshing catalog…' "$ROOT_DIR/Okomart.qml"; then
+  fail "catalog refreshes still show an affirmative or informational notice"
+fi
 grep -Fq 'emptyText: root.catalogLoaded' "$ROOT_DIR/Okomart.qml" \
   || fail "plugin list exposes an empty result before cache loading finishes"
 grep -Fq 'root.beginAction("update", plugin)' "$ROOT_DIR/Okomart.qml" \
@@ -372,17 +416,19 @@ grep -Fq 'import QtQuick.Layouts' "$ROOT_DIR/Okomart.qml" \
   || fail "responsive toolbar layout import is missing"
 grep -Fq 'GridLayout {' "$ROOT_DIR/Okomart.qml" \
   || fail "toolbar does not switch rows through a responsive grid"
-grep -Fq 'columns: root.wideLayout ? 3 : 2' "$ROOT_DIR/Okomart.qml" \
+grep -Fq 'columns: root.toolbarSingleRow ? 3 : 2' "$ROOT_DIR/Okomart.qml" \
   || fail "toolbar does not switch between wide and narrow arrangements"
+grep -Fq 'Layout.columnSpan: root.toolbarSingleRow ? 1 : 2' "$ROOT_DIR/Okomart.qml" \
+  || fail "toolbar search field does not wrap below its breakpoint"
 grep -Fq 'anchors.rightMargin: storefront.frameInset + root.headerEdgeInset' \
   "$ROOT_DIR/Okomart.qml" \
   || fail "toolbar does not mirror the signage edge inset"
 grep -Fq 'x: storefront.frameLeft + root.headerEdgeInset' "$ROOT_DIR/Okomart.qml" \
   || fail "signage does not use the shared edge inset"
-grep -Fq 'y: root.wideLayout ? root.bodyTop - Style.space(45) : root.bodyTop - Style.space(70)' \
+grep -Fq 'y: root.toolbarSingleRow ? root.bodyTop - Style.space(45) : root.bodyTop - Style.space(70)' \
   "$ROOT_DIR/Okomart.qml" \
   || fail "tested toolbar vertical adjustment was lost"
-grep -Fq 'Layout.preferredWidth: Style.space(240)' "$ROOT_DIR/Okomart.qml" \
+grep -Fq 'Layout.preferredWidth: Style.space(150)' "$ROOT_DIR/Okomart.qml" \
   || fail "tested search-field width adjustment was lost"
 if grep -Fq 'toolbar.controlSpacing' "$ROOT_DIR/Okomart.qml" \
     || grep -Fq 'updatedButton' "$ROOT_DIR/Okomart.qml"; then

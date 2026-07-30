@@ -1,7 +1,6 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
-import "OkomartModel.js" as OkomartModel
 
 FocusScope {
   id: root
@@ -12,7 +11,6 @@ FocusScope {
   property bool activateOnSingleClick: false
   property color foreground: Color.foreground
   property color accent: Color.accent
-  property color urgent: Color.urgent
 
   signal selected(string pluginId)
   signal activated(var plugin)
@@ -59,6 +57,22 @@ FocusScope {
     move(delta * rows)
   }
 
+  function focusCurrentItem() {
+    syncCurrentIndex()
+    list.forceActiveFocus()
+  }
+
+  function focusFirstItem() {
+    if (Array.isArray(plugins) && plugins.length > 0) {
+      list.currentIndex = 0
+      list.positionViewAtBeginning()
+      var plugin = selectedPlugin()
+      var id = idFor(plugin)
+      if (id !== selectedId) root.selected(id)
+    }
+    list.forceActiveFocus()
+  }
+
   onPluginsChanged: Qt.callLater(syncCurrentIndex)
   onSelectedIdChanged: {
     if (indexForId(selectedId) !== list.currentIndex)
@@ -98,6 +112,7 @@ FocusScope {
   ListView {
     id: list
     anchors.fill: parent
+    focus: true
     clip: true
     model: Array.isArray(root.plugins) ? root.plugins : []
     spacing: Style.space(5)
@@ -122,20 +137,6 @@ FocusScope {
       readonly property string pluginId: root.idFor(modelData)
       readonly property string title: String(modelData.name || modelData.id || "Unnamed plugin")
       readonly property string description: String(modelData.description || "No description provided.")
-      readonly property string normalizedUpdate: OkomartModel.updateState(modelData)
-      readonly property string status: {
-        if (modelData.removed) return "Removed from catalog"
-        if (normalizedUpdate === "available") return "Update available"
-        if ((normalizedUpdate === "dirty" || normalizedUpdate === "diverged")
-            && OkomartModel.hasVersionUpdate(modelData)
-            && (modelData.remoteRelation === "behind"
-              || modelData.remoteRelation === "diverged")) return "Update blocked"
-        if (modelData.external) return modelData.installed ? "External · Installed" : "External"
-        if (modelData.installed) return modelData.enabled ? "Installed · Enabled" : "Installed"
-        if (modelData.isNew || modelData.newCatalog) return "New"
-        if (modelData.catalogChanged) return "Catalog updated"
-        return ""
-      }
 
       width: list.width
       height: root.rowHeight
@@ -153,32 +154,15 @@ FocusScope {
         anchors.rightMargin: Style.space(12)
         spacing: Style.space(3)
 
-        Row {
+        Text {
           width: parent.width
-          spacing: Style.space(8)
-
-          Text {
-            width: Math.max(0, parent.width - (statusText.visible ? statusText.implicitWidth + parent.spacing : 0))
-            text: row.title
-            textFormat: Text.PlainText
-            color: root.foreground
-            font.family: Style.font.family
-            font.pixelSize: Style.font.title
-            font.bold: row.rowSelected
-            elide: Text.ElideRight
-          }
-
-          Text {
-            id: statusText
-            visible: text !== ""
-            text: row.status
-            textFormat: Text.PlainText
-            color: modelData.removed || row.normalizedUpdate === "dirty"
-              || row.normalizedUpdate === "diverged"
-              ? root.urgent : root.accent
-            font.family: Style.font.family
-            font.pixelSize: Style.font.caption
-          }
+          text: row.title
+          textFormat: Text.PlainText
+          color: root.foreground
+          font.family: Style.font.family
+          font.pixelSize: Style.font.title
+          font.bold: row.rowSelected
+          elide: Text.ElideRight
         }
 
         Text {
@@ -200,14 +184,14 @@ FocusScope {
         cursorShape: Qt.PointingHandCursor
         onClicked: function(mouse) {
           list.currentIndex = row.index
-          root.forceActiveFocus()
+          list.forceActiveFocus()
           if (root.activateOnSingleClick || (mouse.button === Qt.LeftButton && mouse.modifiers & Qt.ControlModifier))
             root.activated(row.modelData)
         }
         onDoubleClicked: root.activated(row.modelData)
       }
 
-      Accessible.name: row.title + (row.status ? ", " + row.status : "")
+      Accessible.name: row.title
       Accessible.description: row.description
       Accessible.role: Accessible.ListItem
     }

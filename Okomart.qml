@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls as QQC
 import QtQuick.Layouts
 import Quickshell
+import Quickshell.Hyprland
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
@@ -29,6 +30,9 @@ Item {
   property bool statusChecking: false
   property bool installedOnly: false
   property bool narrowShowingDetails: false
+  property bool initialListFocusPending: false
+  property int initialListFocusAttempts: 0
+  property int floatingWindowAttempts: 0
   property bool actionStarting: false
   property bool actionInProgress: false
   property string query: ""
@@ -46,7 +50,9 @@ Item {
   property var updateRows: []
   property var pendingActionPlugin: null
 
-  readonly property bool wideLayout: window.width >= Style.space(820)
+  readonly property bool wideLayout: window.width >= Style.space(600)
+  readonly property bool toolbarSingleRow: window.width >= Style.space(420)
+  readonly property int windowSide: Style.space(760)
   readonly property real bodyTop: Math.max(Style.space(164), Math.min(Style.space(205), window.height * 0.255))
   readonly property real headerEdgeInset:
     wideLayout ? Style.space(82) : Style.space(42)
@@ -74,25 +80,87 @@ Item {
 
   function open(payloadJson) {
     closingFromHost = false
+    initialListFocusPending = true
+    initialListFocusAttempts = 0
+    selectedId = ""
+    window.maximized = false
+    window.fullscreen = false
+    window.implicitWidth = windowSide
+    window.implicitHeight = windowSide
     window.visible = true
     narrowShowingDetails = false
     if (catalogLoaded) loadActionStatus()
     else loadCachedSnapshot()
-    Qt.callLater(pluginList.forceActiveFocus)
+    initialFocusTimer.restart()
+    requestFloatingWindow()
+    Qt.callLater(focusInitialPluginList)
   }
 
   function close() {
+    initialListFocusPending = false
+    initialFocusTimer.stop()
+    floatingWindowTimer.stop()
     closingFromHost = true
     window.visible = false
     closingFromHost = false
   }
 
+  function requestFloatingWindow() {
+    floatingWindowAttempts = 0
+    floatingWindowTimer.restart()
+    Qt.callLater(enforceFloatingWindow)
+  }
+
+  function enforceFloatingWindow() {
+    if (!window.visible) {
+      floatingWindowTimer.stop()
+      return
+    }
+
+    floatingWindowAttempts++
+    if (floatingWindowAttempts === 1 || floatingWindowAttempts % 5 === 0)
+      Hyprland.refreshToplevels()
+
+    var values = Hyprland.toplevels && Hyprland.toplevels.values
+      ? Hyprland.toplevels.values : []
+    for (var i = 0; i < values.length; i++) {
+      var toplevel = values[i]
+      if (!toplevel || String(toplevel.title || "") !== window.title) continue
+      var address = String(toplevel.address || "").replace(/^0x/, "")
+      if (!address) continue
+
+      var selector = "address:0x" + address
+      var side = Math.round(windowSide)
+      Hyprland.dispatch("setfloating " + selector)
+      Hyprland.dispatch("resizewindowpixel exact " + side + " " + side + "," + selector)
+      Hyprland.dispatch("centerwindow " + selector)
+      floatingWindowTimer.stop()
+      return
+    }
+
+    if (floatingWindowAttempts >= 40) floatingWindowTimer.stop()
+  }
+
+  function focusInitialPluginList() {
+    if (!initialListFocusPending || !window.visible) return
+    initialListFocusAttempts++
+    pluginList.focusFirstItem()
+    if (pluginList.activeFocus || initialListFocusAttempts >= 20) {
+      initialListFocusPending = false
+      initialFocusTimer.stop()
+    }
+  }
+
   function focusPluginListFromSearch() {
+    initialListFocusPending = false
+    initialFocusTimer.stop()
     if (!wideLayout) narrowShowingDetails = false
-    Qt.callLater(pluginList.forceActiveFocus)
+    Qt.callLater(pluginList.focusCurrentItem)
   }
 
   function focusPluginDetailsFromSearch() {
+    initialListFocusPending = false
+    initialFocusTimer.stop()
     if (!selectedPlugin) {
       focusPluginListFromSearch()
       return
@@ -113,7 +181,7 @@ Item {
     }
     if (!wideLayout && narrowShowingDetails) {
       narrowShowingDetails = false
-      Qt.callLater(pluginList.forceActiveFocus)
+      Qt.callLater(pluginList.focusCurrentItem)
       return
     }
     if (query !== "") {
@@ -177,17 +245,12 @@ Item {
   }
 
   function setSnapshotData(parsed) {
-    var changes = parsed.changes || {}
-    var addedIds = Array.isArray(changes.added) ? changes.added : []
-    var updatedIds = Array.isArray(changes.updated) ? changes.updated : []
     var displayPlugins = []
     for (var pluginIndex = 0; pluginIndex < parsed.plugins.length; pluginIndex++) {
       var plugin = parsed.plugins[pluginIndex]
       if (!plugin) continue
       var changedId = String(plugin.id || "")
       if (changedId === pluginId) continue
-      plugin.newCatalog = addedIds.indexOf(changedId) !== -1
-      plugin.catalogChanged = updatedIds.indexOf(changedId) !== -1
       if (Array.isArray(plugin.images))
         plugin.images = OkomartModel.supportedScreenshots(plugin.images)
       displayPlugins.push(plugin)
@@ -231,12 +294,6 @@ Item {
       bannerUrgent = true
     } else {
       setSnapshotData(parsed)
-      var changes = parsed.changes || {}
-      var addedIds = Array.isArray(changes.added) ? changes.added : []
-      var updatedIds = Array.isArray(changes.updated) ? changes.updated : []
-      var added = addedIds.length
-      var removed = Array.isArray(changes.removed) ? changes.removed.length : 0
-      var updated = updatedIds.length
       var catalogErrors = Array.isArray(parsed.catalogErrors) ? parsed.catalogErrors : []
       if (parsed.stale) {
         bannerText = parsed.error
@@ -248,18 +305,13 @@ Item {
           || "Catalog refresh failed.")
         bannerUrgent = true
       } else if (catalogErrors.length > 0) {
-        bannerText = "Catalog refreshed · " + catalogErrors.length
-          + " invalid " + (catalogErrors.length === 1 ? "entry" : "entries")
-          + " hidden"
+        bannerText = catalogErrors.length + " invalid catalog "
+          + (catalogErrors.length === 1 ? "entry was" : "entries were")
+          + " hidden."
         bannerUrgent = true
-      } else if (added || removed || updated) {
-        bannerText = "Catalog refreshed · " + added + " new · "
-          + removed + " removed · " + updated + " updated"
-        bannerUrgent = false
       } else {
-        bannerText = "Catalog is current."
+        bannerText = ""
         bannerUrgent = false
-        bannerTimer.restart()
       }
     }
 
@@ -284,7 +336,7 @@ Item {
     refreshing = true
     refreshOutput = ""
     refreshError = ""
-    bannerText = "Refreshing catalog…"
+    bannerText = ""
     bannerUrgent = false
     refreshProcess.command = [helperPath, "snapshot", sourceDir]
     refreshProcess.running = true
@@ -470,23 +522,38 @@ Item {
   }
 
   Timer {
-    id: bannerTimer
-    interval: 2400
-    repeat: false
-    onTriggered: if (!root.refreshing) root.bannerText = ""
+    id: initialFocusTimer
+    interval: 50
+    repeat: true
+    onTriggered: root.focusInitialPluginList()
+  }
+
+  Timer {
+    id: floatingWindowTimer
+    interval: 50
+    repeat: true
+    onTriggered: root.enforceFloatingWindow()
   }
 
   FloatingWindow {
     id: window
     title: "Okomart"
     color: Color.background
-    implicitWidth: Style.space(1120)
-    implicitHeight: Style.space(760)
-    minimumSize: Qt.size(Style.space(560), Style.space(520))
+    implicitWidth: root.windowSide
+    implicitHeight: root.windowSide
+    minimumSize: Qt.size(Style.space(560), Style.space(560))
+    maximized: false
+    fullscreen: false
 
     onVisibleChanged: {
-      if (!visible && !root.closingFromHost && root.shell && typeof root.shell.hide === "function")
-        root.shell.hide(root.pluginId)
+      if (visible) {
+        if (root.initialListFocusPending) initialFocusTimer.restart()
+        root.requestFloatingWindow()
+      } else {
+        floatingWindowTimer.stop()
+        if (!root.closingFromHost && root.shell && typeof root.shell.hide === "function")
+          root.shell.hide(root.pluginId)
+      }
     }
 
     FocusScope {
@@ -544,19 +611,19 @@ Item {
       GridLayout {
         id: toolbar
         enabled: !dialog.opened
-        columns: root.wideLayout ? 3 : 2
+        columns: root.toolbarSingleRow ? 3 : 2
         columnSpacing: Style.space(8)
         rowSpacing: Style.space(8)
         anchors.right: parent.right
         anchors.rightMargin: storefront.frameInset + root.headerEdgeInset
-        y: root.wideLayout ? root.bodyTop - Style.space(45) : root.bodyTop - Style.space(70)
+        y: root.toolbarSingleRow ? root.bodyTop - Style.space(45) : root.bodyTop - Style.space(70)
 
         TextField {
           id: searchField
-          Layout.columnSpan: root.wideLayout ? 1 : 2
-          Layout.preferredWidth: Style.space(240)
-          Layout.minimumWidth: Style.space(240)
-          Layout.maximumWidth: Style.space(240)
+          Layout.columnSpan: root.toolbarSingleRow ? 1 : 2
+          Layout.preferredWidth: Style.space(150)
+          Layout.minimumWidth: Style.space(150)
+          Layout.maximumWidth: Style.space(150)
           Layout.alignment: Qt.AlignVCenter
           placeholderText: "Search plugins…"
           text: root.query
@@ -604,7 +671,7 @@ Item {
               updatesButton.forceActiveFocus()
               event.accepted = true
             } else if (event.key === Qt.Key_Down || event.key === Qt.Key_J) {
-              pluginList.forceActiveFocus()
+              root.focusPluginListFromSearch()
               event.accepted = true
             }
           }
@@ -628,7 +695,7 @@ Item {
               filterButton.forceActiveFocus()
               event.accepted = true
             } else if (event.key === Qt.Key_Down || event.key === Qt.Key_J) {
-              pluginList.forceActiveFocus()
+              root.focusPluginListFromSearch()
               event.accepted = true
             }
           }
@@ -639,6 +706,7 @@ Item {
 
       PluginList {
         id: pluginList
+        focus: true
         enabled: !dialog.opened
         visible: root.wideLayout || !root.narrowShowingDetails
         x: storefront.frameLeft + Style.space(13)
@@ -685,7 +753,7 @@ Item {
           && !root.actionStarting && !root.actionInProgress
         onBackRequested: {
           root.narrowShowingDetails = false
-          Qt.callLater(pluginList.forceActiveFocus)
+          Qt.callLater(pluginList.focusCurrentItem)
         }
         onInstallRequested: function(plugin) { root.openActionDialog("install", plugin, []) }
         onRemoveRequested: function(plugin) { root.openActionDialog("remove", plugin, []) }
