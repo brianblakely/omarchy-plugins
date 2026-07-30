@@ -3,7 +3,13 @@
 set -euo pipefail
 
 ROOT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-OMARCHY_SOURCE=${OMARCHY_PATH:-/home/alex/Projects/omarchy}
+OMARCHY_SOURCE=""
+
+if [[ -n ${OMARCHY_PATH:-} && -d $OMARCHY_PATH/shell ]]; then
+  OMARCHY_SOURCE=$(realpath -m -- "$OMARCHY_PATH")
+elif [[ -d $ROOT_DIR/../omarchy/shell ]]; then
+  OMARCHY_SOURCE=$(realpath -m -- "$ROOT_DIR/../omarchy")
+fi
 
 fail() {
   printf 'qml.test.sh: %s\n' "$*" >&2
@@ -22,7 +28,12 @@ for file in \
 done
 
 if command -v qmllint >/dev/null 2>&1; then
-  qmllint -I "$OMARCHY_SOURCE/shell" \
+  QMLLINT_IMPORT_ARGS=()
+  if [[ -n $OMARCHY_SOURCE ]]; then
+    QMLLINT_IMPORT_ARGS=(-I "$OMARCHY_SOURCE/shell")
+  fi
+
+  qmllint "${QMLLINT_IMPORT_ARGS[@]}" \
     "$ROOT_DIR/Okomart.qml" \
     "$ROOT_DIR/StorefrontFrame.qml" \
     "$ROOT_DIR/PluginList.qml" \
