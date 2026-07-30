@@ -513,7 +513,7 @@ Item {
           ? storefront.frameLeft + Style.space(82)
           : storefront.frameLeft + Style.space(42)
         y: root.wideLayout
-          ? root.bodyTop - Style.space(70)
+          ? root.bodyTop - Style.space(50)
           : root.bodyTop - Style.space(124)
         width: root.wideLayout
           ? Math.max(Style.space(180), root.splitX - x - Style.space(28))
@@ -531,7 +531,7 @@ Item {
         readonly property real controlSpacing: Style.space(8)
         enabled: !dialog.opened
         x: root.wideLayout ? root.splitX + Style.space(24) : storefront.frameLeft + Style.space(28)
-        y: root.wideLayout ? root.bodyTop - Style.space(58) : root.bodyTop - Style.space(70)
+        y: root.wideLayout ? root.bodyTop - Style.space(50) : root.bodyTop - Style.space(70)
         width: root.wideLayout
           ? storefront.frameRight - x - Style.space(24)
           : storefront.frameRight - x - Style.space(28)
@@ -544,14 +544,7 @@ Item {
           id: searchField
           x: 0
           y: 0
-          width: root.wideLayout
-            ? Math.max(Style.space(120), Math.min(Style.space(420),
-              toolbar.width
-                - filterButton.implicitWidth
-                - (updatesButton.visible
-                  ? updatesButton.implicitWidth + toolbar.controlSpacing : 0)
-                - toolbar.controlSpacing))
-            : toolbar.width
+          width: Style.space(120)
           placeholderText: "Search plugins…"
           text: root.query
           activeFocusOnTab: true
