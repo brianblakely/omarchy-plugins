@@ -170,6 +170,93 @@ version_is_higher() {
   fi
 }
 
+hypr_dispatch() {
+  local lua_dispatch="$1"
+  local output="" status=0
+
+  output="$(hyprctl dispatch "$lua_dispatch" 2>&1)" || status=$?
+  (( status == 0 )) && [[ $output == "ok" ]]
+}
+
+position_window_command() {
+  local side="${1:-}"
+  (( $# == 1 )) || {
+    json_error "Usage: okomart position-window <square-size>"
+    return 2
+  }
+  [[ $side =~ ^[0-9]+$ ]] && (( side >= 320 && side <= 4096 )) || {
+    json_error "Window size must be an integer from 320 through 4096"
+    return 2
+  }
+  require_tool hyprctl
+
+  local clients record address selector
+  clients="$(hyprctl -j clients 2>/dev/null)" || {
+    json_error "Could not query Hyprland clients"
+    return 1
+  }
+  record="$(
+    jq -c '
+      [
+        .[]
+        | select(
+            ((.class // "") == "org.quickshell"
+              or (.initialClass // "") == "org.quickshell")
+            and ((.title // "") == "Okomart"
+              or (.initialTitle // "") == "Okomart")
+          )
+      ]
+      | last // empty
+    ' <<<"$clients" 2>/dev/null
+  )"
+  [[ -n $record ]] || {
+    json_error "The Okomart window is not mapped yet"
+    return 1
+  }
+  address="$(jq -r '.address // ""' <<<"$record")"
+  [[ $address =~ ^0x[0-9A-Fa-f]+$ ]] || {
+    json_error "Hyprland returned an invalid Okomart window address"
+    return 1
+  }
+  selector="address:$address"
+
+  hypr_dispatch \
+    "hl.dsp.window.float({ window = \"$selector\", action = \"set\" })" || {
+    json_error "Could not float the Okomart window"
+    return 1
+  }
+  hypr_dispatch \
+    "hl.dsp.window.resize({ window = \"$selector\", x = $side, y = $side })" || {
+    json_error "Could not resize the Okomart window"
+    return 1
+  }
+  hypr_dispatch \
+    "hl.dsp.window.center({ window = \"$selector\" })" || {
+    json_error "Could not center the Okomart window"
+    return 1
+  }
+
+  clients="$(hyprctl -j clients 2>/dev/null)" || {
+    json_error "Could not verify the Okomart window"
+    return 1
+  }
+  if ! jq -e --arg address "$address" '
+    any(.[];
+      .address == $address
+      and (.floating == true or .floating == 1)
+      and ((.class // "") == "org.quickshell"
+        or (.initialClass // "") == "org.quickshell")
+      and ((.title // "") == "Okomart"
+        or (.initialTitle // "") == "Okomart"))
+  ' <<<"$clients" >/dev/null 2>&1; then
+    json_error "Hyprland left the Okomart window tiled"
+    return 1
+  fi
+
+  jq -cn --arg address "$address" --argjson side "$side" \
+    '{ok:true,floating:true,address:$address,width:$side,height:$side}'
+}
+
 source_origin() {
   local source_dir="$1"
   if [[ -n ${OKOMART_CATALOG_URL:-} ]]; then
@@ -2137,11 +2224,19 @@ action_command() {
 usage_json() {
   jq -cn '{
     ok:false,
-    error:"Usage: okomart snapshot <source-dir> | cached | action <source-dir> <install|remove|update|update-all> <id-or-empty> <snapshot-id> | status | ack <action-id>"
+    error:"Usage: okomart snapshot <source-dir> | cached | position-window <square-size> | action <source-dir> <install|remove|update|update-all> <id-or-empty> <snapshot-id> | status | ack <action-id>"
   }'
 }
 
 main() {
+  local command="${1:-}"
+  if [[ $command == position-window ]]; then
+    require_tool jq
+    shift
+    position_window_command "$@"
+    return
+  fi
+
   require_tool git
   require_tool jq
   require_tool realpath
@@ -2152,7 +2247,6 @@ main() {
   require_tool sort
   init_paths
 
-  local command="${1:-}"
   case "$command" in
   snapshot)
     shift

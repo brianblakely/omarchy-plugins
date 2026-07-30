@@ -120,6 +120,93 @@ MOCK
 chmod +x "$TMP/bin/timeout" "$TMP/bin/tar"
 export PATH="$TMP/bin:$PATH"
 
+HYPRCTL_LOG="$TMP/hyprctl.log"
+HYPRCTL_STATE="$TMP/hyprctl-state.json"
+export HYPRCTL_LOG HYPRCTL_STATE
+cat >"$TMP/bin/hyprctl" <<'MOCK'
+#!/usr/bin/env bash
+set -u
+printf '%s\n' "$*" >>"$HYPRCTL_LOG"
+
+if [[ ${1:-} == -j && ${2:-} == clients ]]; then
+  cat "$HYPRCTL_STATE"
+  exit 0
+fi
+
+if [[ ${1:-} == dispatch ]]; then
+  request="${2:-}"
+  if [[ $request == hl.dsp.* ]]; then
+    if [[ ${MOCK_HYPR_FAIL:-0} == 1 ]]; then
+      printf 'Invalid dispatcher\n'
+      exit 0
+    fi
+    if [[ $request == hl.dsp.window.float* ]]; then
+      jq 'map(if .address=="0xabc123" then .floating=true else . end)' \
+        "$HYPRCTL_STATE" >"$HYPRCTL_STATE.next"
+      mv "$HYPRCTL_STATE.next" "$HYPRCTL_STATE"
+    fi
+    printf 'ok\n'
+    exit 0
+  fi
+fi
+
+exit 1
+MOCK
+chmod +x "$TMP/bin/hyprctl"
+
+reset_hypr_fixture() {
+  printf '%s\n' '[
+    {
+      "address":"0xdec0de",
+      "class":"org.quickshell",
+      "initialClass":"org.quickshell",
+      "title":"Another Quickshell window",
+      "initialTitle":"Another Quickshell window",
+      "floating":false
+    },
+    {
+      "address":"0xabc123",
+      "class":"",
+      "initialClass":"org.quickshell",
+      "title":"",
+      "initialTitle":"Okomart",
+      "floating":false
+    }
+  ]' >"$HYPRCTL_STATE"
+  : >"$HYPRCTL_LOG"
+}
+
+reset_hypr_fixture
+"$OKOMART" position-window 760 >"$TMP/window-position.json"
+assert_jq "$TMP/window-position.json" \
+  '.ok and .floating and .address=="0xabc123"
+    and .width==760 and .height==760' \
+  "target dispatchers float the exact Okomart window"
+grep -Fq 'hl.dsp.window.float({ window = "address:0xabc123", action = "set" })' \
+  "$HYPRCTL_LOG" ||
+  fail "Lua window placement did not request an idempotent floating state"
+grep -Fq 'hl.dsp.window.resize({ window = "address:0xabc123", x = 760, y = 760 })' \
+  "$HYPRCTL_LOG" ||
+  fail "Lua window placement did not request square geometry"
+grep -Fq 'hl.dsp.window.center({ window = "address:0xabc123" })' \
+  "$HYPRCTL_LOG" ||
+  fail "Lua window placement did not request centering"
+if grep -Eq \
+  'setfloating|togglefloating|resizewindowpixel|movewindowpixel|centerwindow' \
+  "$OKOMART"; then
+  fail "window placement still contains a legacy Hyprland dispatcher"
+fi
+pass "window placement supports only the target Lua dispatcher API"
+
+reset_hypr_fixture
+if MOCK_HYPR_FAIL=1 "$OKOMART" position-window 760 \
+  >"$TMP/window-position-failed.json"; then
+  fail "dispatcher errors should fail verified window placement"
+fi
+assert_jq "$TMP/window-position-failed.json" \
+  '(.ok|not) and .error=="Could not float the Okomart window"' \
+  "target dispatcher errors are rejected"
+
 write_plugin_manifest() {
   local target="$1"
   local id="$2"

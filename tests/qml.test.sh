@@ -96,30 +96,19 @@ run_entrypoint_load_test() {
 
 grep -Fq 'FloatingWindow {' "$ROOT_DIR/Okomart.qml" \
   || fail "Okomart is not hosted in a FloatingWindow"
-grep -Fq 'import Quickshell.Hyprland' "$ROOT_DIR/Okomart.qml" \
-  || fail "Okomart cannot request compositor floating state"
-grep -Fq 'windowProbe.command = ["hyprctl", "-j", "clients"]' \
+grep -Fq '[helperPath,' "$ROOT_DIR/Okomart.qml" \
+  || fail "Okomart cannot invoke its window-positioning helper"
+grep -Fq '"position-window",' "$ROOT_DIR/Okomart.qml" \
+  || fail "Okomart does not request verified floating placement"
+grep -Fq 'String(Math.round(windowSide))' \
   "$ROOT_DIR/Okomart.qml" \
-  || fail "Okomart does not query Hyprland's authoritative client list"
-grep -Fq 'String(client.class || "") !== "org.quickshell"' \
+  || fail "Okomart does not request its square window size"
+grep -Fq 'parsed.floating === true' \
   "$ROOT_DIR/Okomart.qml" \
-  || fail "Okomart floating discovery is not scoped to its application class"
-grep -Fq 'String(client.title || "") !== window.title' \
-  "$ROOT_DIR/Okomart.qml" \
-  || fail "Okomart floating discovery is not scoped to its own title"
-if grep -Fq 'Hyprland.toplevels' "$ROOT_DIR/Okomart.qml" \
-    || grep -Fq 'Hyprland.refreshToplevels()' "$ROOT_DIR/Okomart.qml"; then
-  fail "Okomart still relies on the incomplete in-process toplevel list"
+  || fail "Okomart does not verify compositor floating state"
+if grep -Fq 'Hyprland.dispatch(' "$ROOT_DIR/Okomart.qml"; then
+  fail "Okomart bypasses the compatible verified window helper"
 fi
-grep -Fq 'Hyprland.dispatch("setfloating " + selector)' "$ROOT_DIR/Okomart.qml" \
-  || fail "Okomart does not open its own toplevel as floating"
-grep -Fq 'Hyprland.dispatch("resizewindowpixel exact " + side + " " + side + "," + selector)' \
-  "$ROOT_DIR/Okomart.qml" \
-  || fail "Okomart does not request square floating geometry"
-grep -Fq 'Hyprland.dispatch("centerwindow " + selector)' "$ROOT_DIR/Okomart.qml" \
-  || fail "Okomart does not center its floating window"
-grep -Fq 'var selector = "address:0x" + address' "$ROOT_DIR/Okomart.qml" \
-  || fail "Okomart floating dispatch is not scoped to its own toplevel"
 [[ $(grep -Fc 'implicitWidth: root.windowSide' "$ROOT_DIR/Okomart.qml") -eq 1 ]] \
   || fail "Okomart does not declare a square initial width"
 [[ $(grep -Fc 'implicitHeight: root.windowSide' "$ROOT_DIR/Okomart.qml") -eq 1 ]] \

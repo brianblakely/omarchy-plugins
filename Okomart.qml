@@ -2,7 +2,6 @@ import QtQuick
 import QtQuick.Controls as QQC
 import QtQuick.Layouts
 import Quickshell
-import Quickshell.Hyprland
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
@@ -20,7 +19,7 @@ Item {
   readonly property string pluginId: manifest && manifest.id ? String(manifest.id) : "b.okomart"
   readonly property string sourceDir: manifest && manifest.__sourceDir
     ? String(manifest.__sourceDir) : ""
-  readonly property string helperPath: sourceDir + "/bin/okomart"
+  readonly property string helperPath: sourceDir ? sourceDir + "/bin/okomart" : ""
 
   property bool closingFromHost: false
   property bool cacheLoading: false
@@ -40,7 +39,7 @@ Item {
   property string cachedOutput: ""
   property string refreshOutput: ""
   property string refreshError: ""
-  property string windowProbeOutput: ""
+  property string windowPositionOutput: ""
   property string actionOutput: ""
   property string actionError: ""
   property string bannerText: ""
@@ -108,51 +107,38 @@ Item {
 
   function requestFloatingWindow() {
     floatingWindowAttempts = 0
-    windowProbeOutput = ""
+    windowPositionOutput = ""
     floatingWindowTimer.stop()
-    Qt.callLater(probeFloatingWindow)
+    Qt.callLater(enforceFloatingWindow)
   }
 
-  function probeFloatingWindow() {
+  function enforceFloatingWindow() {
     if (!window.visible) {
       floatingWindowTimer.stop()
       return
     }
-    if (windowProbe.running) return
+    if (!helperPath || windowPositionProcess.running) return
 
     floatingWindowAttempts++
-    windowProbeOutput = ""
-    windowProbe.command = ["hyprctl", "-j", "clients"]
-    windowProbe.running = true
+    windowPositionOutput = ""
+    windowPositionProcess.command = [
+      helperPath,
+      "position-window",
+      String(Math.round(windowSide))
+    ]
+    windowPositionProcess.running = true
   }
 
-  function applyWindowProbe(raw, exitCode) {
+  function applyWindowPosition(raw, exitCode) {
     if (!window.visible) {
       floatingWindowTimer.stop()
       return
     }
 
-    var clients = []
-    if (exitCode === 0) {
-      try {
-        var parsed = JSON.parse(String(raw || ""))
-        if (Array.isArray(parsed)) clients = parsed
-      } catch (e) {}
-    }
-
-    for (var i = 0; i < clients.length; i++) {
-      var client = clients[i]
-      if (!client
-          || String(client.class || "") !== "org.quickshell"
-          || String(client.title || "") !== window.title) continue
-      var address = String(client.address || "").replace(/^0x/, "")
-      if (!address) continue
-
-      var selector = "address:0x" + address
-      var side = Math.round(windowSide)
-      Hyprland.dispatch("setfloating " + selector)
-      Hyprland.dispatch("resizewindowpixel exact " + side + " " + side + "," + selector)
-      Hyprland.dispatch("centerwindow " + selector)
+    var parsed = null
+    try { parsed = JSON.parse(String(raw || "")) } catch (e) {}
+    if (exitCode === 0 && parsed && parsed.ok === true
+        && parsed.floating === true) {
       floatingWindowTimer.stop()
       return
     }
@@ -490,13 +476,13 @@ Item {
   }
 
   Process {
-    id: windowProbe
+    id: windowPositionProcess
     stdout: StdioCollector {
       waitForEnd: true
-      onStreamFinished: root.windowProbeOutput = text
+      onStreamFinished: root.windowPositionOutput = text
     }
     onExited: function(exitCode) {
-      root.applyWindowProbe(root.windowProbeOutput, exitCode)
+      root.applyWindowPosition(root.windowPositionOutput, exitCode)
     }
   }
 
@@ -563,7 +549,7 @@ Item {
     id: floatingWindowTimer
     interval: 50
     repeat: false
-    onTriggered: root.probeFloatingWindow()
+    onTriggered: root.enforceFloatingWindow()
   }
 
   FloatingWindow {
