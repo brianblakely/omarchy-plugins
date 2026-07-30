@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls as QQC
+import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
 import qs.Commons
@@ -47,6 +48,8 @@ Item {
 
   readonly property bool wideLayout: window.width >= Style.space(820)
   readonly property real bodyTop: Math.max(Style.space(164), Math.min(Style.space(205), window.height * 0.255))
+  readonly property real headerEdgeInset:
+    wideLayout ? Style.space(82) : Style.space(42)
   readonly property real splitX: storefront.frameLeft
     + Math.max(Style.space(292), Math.min(Style.space(420),
       (storefront.frameRight - storefront.frameLeft) * 0.405))
@@ -509,15 +512,13 @@ Item {
 
       Text {
         id: brand
-        x: root.wideLayout
-          ? storefront.frameLeft + Style.space(82)
-          : storefront.frameLeft + Style.space(42)
+        x: storefront.frameLeft + root.headerEdgeInset
         y: root.wideLayout
           ? root.bodyTop - Style.space(50)
           : root.bodyTop - Style.space(124)
         width: root.wideLayout
           ? Math.max(Style.space(180), root.splitX - x - Style.space(28))
-          : storefront.frameRight - x - Style.space(42)
+          : storefront.frameRight - x - root.headerEdgeInset
         text: "オコマート"
         color: Color.accent
         font.family: Style.font.family
@@ -526,25 +527,23 @@ Item {
         elide: Text.ElideRight
       }
 
-      Item {
+      GridLayout {
         id: toolbar
-        readonly property real controlSpacing: Style.space(8)
         enabled: !dialog.opened
-        x: root.wideLayout ? root.splitX + Style.space(24) : storefront.frameLeft + Style.space(28)
-        y: root.wideLayout ? root.bodyTop - Style.space(50) : root.bodyTop - Style.space(70)
-        width: root.wideLayout
-          ? storefront.frameRight - x - Style.space(24)
-          : storefront.frameRight - x - Style.space(28)
-        height: root.wideLayout
-          ? Math.max(searchField.height, filterButton.height, updatesButton.height)
-          : searchField.height + controlSpacing
-            + Math.max(filterButton.height, updatesButton.visible ? updatesButton.height : 0)
+        columns: root.wideLayout ? 3 : 2
+        columnSpacing: Style.space(8)
+        rowSpacing: Style.space(8)
+        anchors.right: parent.right
+        anchors.rightMargin: storefront.frameInset + root.headerEdgeInset
+        y: root.wideLayout ? root.bodyTop - Style.space(40) : root.bodyTop - Style.space(70)
 
         TextField {
           id: searchField
-          x: 0
-          y: 0
-          width: Style.space(120)
+          Layout.columnSpan: root.wideLayout ? 1 : 2
+          Layout.preferredWidth: Style.space(240)
+          Layout.minimumWidth: Style.space(240)
+          Layout.maximumWidth: Style.space(240)
+          Layout.alignment: Qt.AlignVCenter
           placeholderText: "Search plugins…"
           text: root.query
           activeFocusOnTab: true
@@ -565,9 +564,7 @@ Item {
 
         Button {
           id: filterButton
-          x: root.wideLayout
-            ? searchField.width + toolbar.controlSpacing : 0
-          y: root.wideLayout ? 0 : searchField.height + toolbar.controlSpacing
+          Layout.alignment: Qt.AlignVCenter
           focusable: true
           bordered: true
           selected: root.installedOnly
@@ -593,10 +590,7 @@ Item {
 
         Button {
           id: updatesButton
-          x: root.wideLayout
-            ? filterButton.x + filterButton.width + toolbar.controlSpacing
-            : filterButton.width + toolbar.controlSpacing
-          y: root.wideLayout ? 0 : searchField.height + toolbar.controlSpacing
+          Layout.alignment: Qt.AlignVCenter
           visible: root.hasDetectedUpdates
           focusable: true
           bordered: true

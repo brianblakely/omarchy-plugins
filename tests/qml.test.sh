@@ -286,8 +286,26 @@ grep -Fq 'emptyText: root.catalogLoaded' "$ROOT_DIR/Okomart.qml" \
   || fail "plugin list exposes an empty result before cache loading finishes"
 grep -Fq 'root.beginAction("update", plugin)' "$ROOT_DIR/Okomart.qml" \
   || fail "single-plugin update does not start a scoped backend action"
-grep -Fq 'Math.min(Style.space(420)' "$ROOT_DIR/Okomart.qml" \
-  || fail "wide-layout search field has no responsive width cap"
+grep -Fq 'import QtQuick.Layouts' "$ROOT_DIR/Okomart.qml" \
+  || fail "responsive toolbar layout import is missing"
+grep -Fq 'GridLayout {' "$ROOT_DIR/Okomart.qml" \
+  || fail "toolbar does not switch rows through a responsive grid"
+grep -Fq 'columns: root.wideLayout ? 3 : 2' "$ROOT_DIR/Okomart.qml" \
+  || fail "toolbar does not switch between wide and narrow arrangements"
+grep -Fq 'anchors.rightMargin: storefront.frameInset + root.headerEdgeInset' \
+  "$ROOT_DIR/Okomart.qml" \
+  || fail "toolbar does not mirror the signage edge inset"
+grep -Fq 'x: storefront.frameLeft + root.headerEdgeInset' "$ROOT_DIR/Okomart.qml" \
+  || fail "signage does not use the shared edge inset"
+grep -Fq 'y: root.wideLayout ? root.bodyTop - Style.space(40) : root.bodyTop - Style.space(70)' \
+  "$ROOT_DIR/Okomart.qml" \
+  || fail "tested toolbar vertical adjustment was lost"
+grep -Fq 'Layout.preferredWidth: Style.space(240)' "$ROOT_DIR/Okomart.qml" \
+  || fail "tested search-field width adjustment was lost"
+if grep -Fq 'toolbar.controlSpacing' "$ROOT_DIR/Okomart.qml" \
+    || grep -Fq 'updatedButton' "$ROOT_DIR/Okomart.qml"; then
+  fail "toolbar retains obsolete manual positioning"
+fi
 grep -Fq '[helperPath, "ack", actionId]' "$ROOT_DIR/Okomart.qml" \
   || fail "completed action status is not acknowledged"
 
