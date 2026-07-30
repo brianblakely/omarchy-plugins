@@ -515,6 +515,24 @@ function normalizedState(value) {
     .replace(/-+/g, "-")
 }
 
+function hasVersionUpdate(plugin) {
+  if (!isRecord(plugin) || !isInstalled(plugin)) return false
+  if (own(plugin, "versionUpdateAvailable"))
+    return plugin.versionUpdateAvailable === true
+
+  var installedVersion = firstText([
+    plugin.installedVersion,
+    plugin.currentVersion
+  ])
+  var availableVersion = firstText([
+    plugin.availableVersion,
+    plugin.remoteVersion,
+    recordField(plugin, "version")
+  ])
+  if (!installedVersion || !availableVersion) return false
+  return foldedNaturalCompare(availableVersion, installedVersion) > 0
+}
+
 function updateState(plugin) {
   if (!isRecord(plugin)) return "unknown"
 
@@ -532,7 +550,7 @@ function updateState(plugin) {
       || state === "behind"
       || state === "fast-forward"
       || state === "fast-forwardable") {
-    return "available"
+    return hasVersionUpdate(plugin) ? "available" : "current"
   }
   if (state === "current"
       || state === "up-to-date"
@@ -554,7 +572,7 @@ function updateState(plugin) {
   if (plugin.updateAvailable === true
       || plugin.hasUpdate === true
       || update.available === true) {
-    return "available"
+    return hasVersionUpdate(plugin) ? "available" : "current"
   }
   if (plugin.updateAvailable === false
       || plugin.hasUpdate === false
@@ -611,14 +629,7 @@ function updateDetailText(plugin) {
 }
 
 function hasUpdate(plugin) {
-  if (!isRecord(plugin)) return false
-  var update = isRecord(plugin.update) ? plugin.update : {}
-  if (plugin.updateAvailable === true
-      || plugin.hasUpdate === true
-      || update.available === true) {
-    return true
-  }
-  return updateState(plugin) === "available"
+  return hasVersionUpdate(plugin)
 }
 
 function updateLabel(plugin) {
@@ -668,7 +679,8 @@ function pluginBadges(plugin) {
   if (isInstalled(plugin)) {
     var state = updateState(plugin)
     if (state === "available") badges.push("Update available")
-    else if (state === "dirty" || state === "diverged" || state === "blocked")
+    else if ((state === "dirty" || state === "diverged" || state === "blocked")
+        && hasVersionUpdate(plugin))
       badges.push("Update blocked")
   }
 
@@ -757,6 +769,7 @@ if (typeof module !== "undefined") {
     comparePlugins: comparePlugins,
     filterPlugins: filterPlugins,
     hasUpdate: hasUpdate,
+    hasVersionUpdate: hasVersionUpdate,
     isInstalled: isInstalled,
     isSupportedScreenshot: isSupportedScreenshot,
     matchesSearch: matchesSearch,

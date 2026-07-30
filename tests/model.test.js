@@ -8,6 +8,7 @@ const {
   catalogChange,
   filterPlugins,
   hasUpdate,
+  hasVersionUpdate,
   isInstalled,
   isSupportedScreenshot,
   matchesSearch,
@@ -474,8 +475,18 @@ test("does not mutate any source record or array during a merge", () => {
 
 test("normalizes update states and labels safe, blocked, and unavailable cases", () => {
   const cases = [
-    [{ updateState: "update-available" }, "available", "Update available"],
-    [{ updateState: "fast_forward" }, "available", "Update available"],
+    [{
+      installed: true,
+      installedVersion: "1.0.0",
+      availableVersion: "2.0.0",
+      updateState: "update-available"
+    }, "available", "Update available"],
+    [{
+      installed: true,
+      installedVersion: "1.0.0",
+      availableVersion: "2.0.0",
+      updateState: "fast_forward"
+    }, "available", "Update available"],
     [{ updateState: "up-to-date" }, "current", "Up to date"],
     [{ updateStatus: "up to date" }, "current", "Up to date"],
     [{ update: { state: "local changes" } }, "dirty", "Update blocked: local changes"],
@@ -494,12 +505,52 @@ test("normalizes update states and labels safe, blocked, and unavailable cases",
   }
 })
 
-test("uses explicit update booleans as a fallback without hiding blocked states", () => {
-  assert.equal(updateState({ updateAvailable: true }), "available")
+test("requires a higher manifest version before exposing an update", () => {
+  const newer = {
+    installed: true,
+    installedVersion: "1.9.0",
+    availableVersion: "1.10.0"
+  }
+  assert.equal(hasVersionUpdate(newer), true)
+  assert.equal(hasVersionUpdate(Object.assign({}, newer, {
+    availableVersion: "1.9.0"
+  })), false)
+  assert.equal(hasVersionUpdate(Object.assign({}, newer, {
+    availableVersion: "1.8.9"
+  })), false)
+  assert.equal(hasVersionUpdate(Object.assign({}, newer, {
+    versionUpdateAvailable: false
+  })), false)
+  assert.equal(hasVersionUpdate({ installed: true, availableVersion: "2.0.0" }), false)
+  assert.equal(updateState(Object.assign({}, newer, {
+    updateState: "update-available"
+  })), "available")
+  assert.equal(updateState(Object.assign({}, newer, {
+    availableVersion: "1.9.0",
+    updateState: "update-available"
+  })), "current")
+})
+
+test("uses explicit update booleans only when a higher version exists", () => {
+  const versions = {
+    installed: true,
+    installedVersion: "1.0.0",
+    availableVersion: "2.0.0"
+  }
+  assert.equal(updateState(Object.assign({}, versions, {
+    updateAvailable: true
+  })), "available")
   assert.equal(updateState({ hasUpdate: false }), "current")
-  assert.equal(updateState({ update: { available: true } }), "available")
-  assert.equal(hasUpdate({ updateState: "available" }), true)
-  assert.equal(hasUpdate({ updateState: "dirty", updateAvailable: true }), true)
+  assert.equal(updateState(Object.assign({}, versions, {
+    update: { available: true }
+  })), "available")
+  assert.equal(hasUpdate(Object.assign({}, versions, {
+    updateState: "available"
+  })), true)
+  assert.equal(hasUpdate(Object.assign({}, versions, {
+    updateState: "dirty",
+    updateAvailable: true
+  })), true)
   assert.equal(hasUpdate({ updateState: "current" }), false)
   assert.equal(hasUpdate(null), false)
 })
@@ -533,10 +584,14 @@ test("omits update detail and badges for every uninstalled state", () => {
 
 test("retains detailed update status for installed plugins", () => {
   const cases = [
-    [{ updateState: "update-available", availableVersion: "2.0" },
+    [{
+      updateState: "update-available",
+      installedVersion: "1.0",
+      availableVersion: "2.0"
+    },
       "Update available: 2.0"],
     [{ updateState: "update-available", availableVersion: "" },
-      "Update available"],
+      "Up to date"],
     [{ updateState: "up-to-date" }, "Up to date"],
     [{ updateState: "diverged" },
       "Update blocked: local and remote histories diverged"],
@@ -638,6 +693,9 @@ test("blocks only dirty Git checkouts from removal", () => {
 test("derives catalog changes and ordered UI badges", () => {
   const item = {
     installed: true,
+    installedVersion: "1.0.0",
+    availableVersion: "2.0.0",
+    versionUpdateAvailable: true,
     external: true,
     catalogChange: "added",
     updateState: "available"
@@ -653,6 +711,9 @@ test("derives catalog changes and ordered UI badges", () => {
   ])
   assert.deepEqual(pluginBadges({
     installed: true,
+    installedVersion: "1.0.0",
+    availableVersion: "2.0.0",
+    versionUpdateAvailable: true,
     removed: true,
     catalogUpdated: true,
     updateState: "dirty"

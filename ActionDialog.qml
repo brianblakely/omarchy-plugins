@@ -28,6 +28,7 @@ FocusScope {
   readonly property string title: {
     if (mode === "install") return "Install and enable plugin?"
     if (mode === "remove") return "Remove plugin?"
+    if (mode === "update") return "Update plugin?"
     if (mode === "updates") return "Apply all safe updates?"
     if (mode === "results") return "Plugin operation results"
     return "Confirm action"
@@ -35,6 +36,7 @@ FocusScope {
   readonly property string confirmLabel: {
     if (mode === "install") return "Install & Enable"
     if (mode === "remove") return "Remove"
+    if (mode === "update") return "Update"
     if (mode === "updates") return "Update all"
     if (mode === "results") return "Close"
     return "Confirm"
@@ -53,7 +55,10 @@ FocusScope {
       if (updates[i] && updates[i].safeUpdate !== true) out.push(updates[i])
     return out
   }
-  readonly property bool canConfirm: !busy && (mode !== "updates" || safeUpdates.length > 0)
+  readonly property bool canConfirm: !busy
+    && (mode !== "updates" || safeUpdates.length > 0)
+    && (mode !== "update" || (plugin && plugin.safeUpdate === true
+      && plugin.versionUpdateAvailable === true))
   readonly property bool hasReviewList: mode === "updates" || mode === "results"
 
   function pluginName(item) {
@@ -143,6 +148,10 @@ FocusScope {
       if (kind === "local" || kind === "non-git")
         return pluginName(plugin) + " is a local folder. Omarchy will disable it and move it to a timestamped backup."
       return "Omarchy will disable and delete the installed checkout for " + pluginName(plugin) + "."
+    }
+    if (mode === "update") {
+      return "Okomart will update only " + pluginName(plugin) + ".\n\n"
+        + updateTransition(plugin)
     }
     return ""
   }
@@ -261,6 +270,7 @@ FocusScope {
       Text {
         id: detailText
         visible: root.mode === "install" || root.mode === "remove"
+          || root.mode === "update"
         height: visible ? implicitHeight : 0
         width: parent.width
         text: root.detailMessage()

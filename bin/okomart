@@ -154,6 +154,22 @@ git_with_timeout() {
   fi
 }
 
+version_is_higher() {
+  local available="${1:-}"
+  local installed="${2:-}"
+  [[ -n $available && -n $installed && $available != "$installed" ]] || return 1
+  [[ $available != *$'\n'* && $available != *$'\r'*
+    && $installed != *$'\n'* && $installed != *$'\r'* ]] || return 1
+
+  # Manifest versions are release metadata, so repository movement alone is
+  # not an update. GNU version ordering handles numeric runs without integer
+  # overflow; checking the reverse ordering makes the comparison strict.
+  printf '%s\n%s\n' "$installed" "$available" | sort -V -C || return 1
+  if printf '%s\n%s\n' "$available" "$installed" | sort -V -C; then
+    return 1
+  fi
+}
+
 source_origin() {
   local source_dir="$1"
   if [[ -n ${OKOMART_CATALOG_URL:-} ]]; then
@@ -699,8 +715,9 @@ plugin_owned_git_worktree() {
 installed_update_json() {
   local dir="$1"
   local manifest_valid="$2"
+  local installed_version="$3"
   local install_type state status safe=false origin="" current="" available=""
-  local available_version="" relation="" dirty=false
+  local available_version="" relation="" dirty=false version_update=false
 
   if [[ -L $dir ]]; then
     install_type="development-link"
@@ -725,6 +742,9 @@ installed_update_json() {
           jq -r 'if .version == null then "" else (.version|tostring) end' 2>/dev/null ||
           true
       )"
+      if version_is_higher "$available_version" "$installed_version"; then
+        version_update=true
+      fi
       if [[ $current == "$available" ]]; then
         relation="equal"
       elif git -C "$dir" merge-base --is-ancestor "$current" "$available" \
@@ -744,7 +764,14 @@ installed_update_json() {
       else
         case "$relation" in
         equal) state="up-to-date" ;;
-        behind) state="update-available"; safe=true ;;
+        behind)
+          if [[ $version_update == true ]]; then
+            state="update-available"
+            safe=true
+          else
+            state="up-to-date"
+          fi
+          ;;
         ahead) state="ahead" ;;
         *) state="diverged" ;;
         esac
@@ -768,6 +795,7 @@ installed_update_json() {
     --arg availableVersion "$available_version" \
     --arg remoteRelation "$relation" \
     --argjson dirty "$dirty" \
+    --argjson versionUpdateAvailable "$version_update" \
     --argjson safeUpdate "$safe" \
     '{
       installType:$installType,
@@ -777,6 +805,7 @@ installed_update_json() {
       currentCommit:$currentCommit,
       availableCommit:$availableCommit,
       availableVersion:$availableVersion,
+      versionUpdateAvailable:$versionUpdateAvailable,
       remoteRelation:$remoteRelation,
       dirty:$dirty,
       safeUpdate:$safeUpdate
@@ -826,8 +855,8 @@ build_installed_index() {
     [[ $id != omarchy.* && $folder != omarchy.* ]] || continue
     [[ $id != "$OKOMART_ID" && $folder != "$OKOMART_ID" ]] || continue
 
-    update="$(installed_update_json "$dir" "$manifest_valid")"
     installed_version="$(jq -r '.version' <<<"$metadata")"
+    update="$(installed_update_json "$dir" "$manifest_valid" "$installed_version")"
     if jq -e --arg id "$id" 'index($id) != null' <<<"$enabled" >/dev/null; then
       enabled_value=true
     else
@@ -899,6 +928,7 @@ merge_plugins_json() {
           $available + {
             catalog:true,installed:false,enabled:false,removed:false,external:false,
             installedVersion:"",availableVersion:$available.version,
+            versionUpdateAvailable:false,
             updateState:"not-installed",statusText:"Available",safeUpdate:false,
             installType:"none",installedPath:"",currentCommit:"",
             availableCommit:$available.catalogCommit,validationError:""
@@ -968,6 +998,7 @@ self_update_json() {
   local development_link="${2:-false}"
   local installed_version="" available_version="" current="" available=""
   local state="non-git" status safe=false dirty=false repository_dirty=false
+  local version_update=false
   local relation="" app_changed=false install_type="local"
   local -a runtime_paths=(manifest.json '*.qml' '*.js' bin assets)
 
@@ -1005,6 +1036,9 @@ self_update_json() {
           jq -r 'if .version == null then "" else (.version|tostring) end' 2>/dev/null ||
           true
       )"
+      if version_is_higher "$available_version" "$installed_version"; then
+        version_update=true
+      fi
       if [[ $current == "$available" ]]; then
         relation="equal"
       elif git -C "$source_dir" merge-base --is-ancestor "$current" "$available" \
@@ -1029,7 +1063,7 @@ self_update_json() {
         case "$relation" in
         equal) state="up-to-date" ;;
         behind)
-          if [[ $app_changed == true ]]; then
+          if [[ $app_changed == true && $version_update == true ]]; then
             state="update-available"
             safe=true
           else
@@ -1063,6 +1097,7 @@ self_update_json() {
     --argjson dirty "$dirty" \
     --argjson repositoryDirty "$repository_dirty" \
     --argjson appChanged "$app_changed" \
+    --argjson versionUpdateAvailable "$version_update" \
     --argjson safeUpdate "$safe" \
     --argjson developmentLink "$development_link" \
     '{
@@ -1078,6 +1113,7 @@ self_update_json() {
       dirty:$dirty,
       repositoryDirty:$repositoryDirty,
       appChanged:$appChanged,
+      versionUpdateAvailable:$versionUpdateAvailable,
       safeUpdate:$safeUpdate,
       developmentLink:$developmentLink
     }'
@@ -1746,6 +1782,22 @@ worker_command() {
       persistence_failed=true
     fi
     ;;
+  update)
+    if ! preflight_update "$id" "$confirmed_snapshot_file" "$source_dir"; then
+      status="$(append_action_message "$status" "$id" update false "$PREFLIGHT_ERROR")"
+      overall=false
+    else
+      local next_status rc=0
+      next_status="$(run_plugin_action "$status" update "$id" \
+        plugin update "$id" --yes)" || rc=$?
+      status="$next_status"
+      (( rc == 0 )) || overall=false
+    fi
+    if ! write_action_status "$status"; then
+      overall=false
+      persistence_failed=true
+    fi
+    ;;
   update-all)
     local -a targets=()
     mapfile -t targets < <(
@@ -1850,7 +1902,7 @@ action_command() {
     return 2
   }
   [[ -n $source_arg ]] || {
-    json_error "Usage: okomart action <source-dir> <install|remove|update-all> [id]"
+    json_error "Usage: okomart action <source-dir> <install|remove|update|update-all> [id]"
     return 2
   }
   local source_dir
@@ -1860,7 +1912,7 @@ action_command() {
     return 2
   }
   case "$operation" in
-  install | remove)
+  install | remove | update)
     valid_plugin_id "$id" || {
       json_error "A valid plugin id is required"
       return 2
@@ -2000,7 +2052,7 @@ action_command() {
 usage_json() {
   jq -cn '{
     ok:false,
-    error:"Usage: okomart snapshot <source-dir> | action <source-dir> <install|remove|update-all> <id-or-empty> <snapshot-id> | status | ack <action-id>"
+    error:"Usage: okomart snapshot <source-dir> | action <source-dir> <install|remove|update|update-all> <id-or-empty> <snapshot-id> | status | ack <action-id>"
   }'
 }
 
@@ -2012,6 +2064,7 @@ main() {
   require_tool sha256sum
   require_tool tar
   require_tool timeout
+  require_tool sort
   init_paths
 
   local command="${1:-}"

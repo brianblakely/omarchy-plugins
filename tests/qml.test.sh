@@ -104,6 +104,12 @@ grep -Fq 'import QtQuick.Shapes' "$ROOT_DIR/StorefrontFrame.qml" \
   || fail "storefront is not drawn with QtQuick.Shapes"
 grep -Fq 'PathSvg { path: root.roofPath() }' "$ROOT_DIR/StorefrontFrame.qml" \
   || fail "responsive roof path is missing"
+if sed -n '/function roofPath()/,/^  }/p' "$ROOT_DIR/StorefrontFrame.qml" \
+    | grep -Fq '+ " Z"'; then
+  fail "roof path closes across separate trim segments"
+fi
+grep -Fq '+ " M " + frameLeft + " " + eaveY' "$ROOT_DIR/StorefrontFrame.qml" \
+  || fail "left roof trim is not an independent vertical segment"
 if grep -Eq 'readonly property real (left|right|bottom)[[:space:]]*:' \
     "$ROOT_DIR/StorefrontFrame.qml"; then
   fail "storefront overrides a final Item geometry property"
@@ -114,8 +120,13 @@ grep -Fq 'installedOnly ? "installed" : "all"' "$ROOT_DIR/Okomart.qml" \
   || fail "installed-only filter is not wired"
 grep -Fq 'OkomartModel.filterPlugins' "$ROOT_DIR/Okomart.qml" \
   || fail "search/filter model is not wired"
+if grep -Fq 'onEntered: list.currentIndex' "$ROOT_DIR/PluginList.qml"; then
+  fail "mouse hover changes the active plugin"
+fi
 grep -Fq 'Qt.Key_PageDown' "$ROOT_DIR/PluginList.qml" \
   || fail "keyboard page navigation is missing"
+grep -Fq 'contentHeight: detailsColumn.implicitHeight' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin details do not expose their scrollable content height"
 grep -Fq 'scrollBy(detailsScroll.height * 0.8)' "$ROOT_DIR/PluginDetails.qml" \
   || fail "keyboard details scrolling is missing"
 grep -Fq 'OkomartModel.metadataValue(value, fallback)' "$ROOT_DIR/PluginDetails.qml" \
@@ -124,9 +135,27 @@ grep -Fq 'OkomartModel.pluginVersionText(plugin)' "$ROOT_DIR/PluginDetails.qml" 
   || fail "detail version does not use the tested formatter"
 grep -Fq 'OkomartModel.updateDetailText(plugin)' "$ROOT_DIR/PluginDetails.qml" \
   || fail "detail update status does not use the tested formatter"
-grep -Fq 'if (root.installed && root.normalizedUpdateState === "available")' \
-  "$ROOT_DIR/PluginDetails.qml" \
-  || fail "uninstalled plugins can expose an irrelevant update badge"
+if grep -Fq 'badges.push("Available")' "$ROOT_DIR/PluginDetails.qml"; then
+  fail "plugin details still expose the Available badge"
+fi
+if grep -Eq '\{ label: "(ID|Kinds|License|State)"' "$ROOT_DIR/PluginDetails.qml"; then
+  fail "plugin details expose internal or unwanted metadata"
+fi
+grep -Fq 'text: "Install"' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin details do not use the concise Install label"
+grep -Fq 'signal updateRequested(var plugin)' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin details do not expose a single-plugin update action"
+grep -Fq 'visible: root.updateAvailable' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "single-plugin Update is not gated by version availability"
+description_line=$(grep -n -F \
+  'text: root.hasPlugin ? root.value(root.plugin.description' \
+  "$ROOT_DIR/PluginDetails.qml" | cut -d: -f1)
+install_line=$(grep -n -F 'id: installButton' "$ROOT_DIR/PluginDetails.qml" | cut -d: -f1)
+metadata_line=$(grep -n -F 'id: metadata' "$ROOT_DIR/PluginDetails.qml" | cut -d: -f1)
+if [[ -z $description_line || -z $install_line || -z $metadata_line ]] \
+    || (( description_line >= install_line || install_line >= metadata_line )); then
+  fail "plugin actions are not directly below the description"
+fi
 grep -Fq 'OkomartModel.removalBlockReason(plugin)' "$ROOT_DIR/PluginDetails.qml" \
   || fail "dirty Git removal reason does not use the tested model"
 grep -Fq 'OkomartModel.canRemovePlugin(plugin)' "$ROOT_DIR/PluginDetails.qml" \
@@ -151,6 +180,8 @@ grep -Fq 'String(root.plugin.catalogCommit || root.catalogRevision)' \
   || fail "screenshot cache is not keyed by the plugin repository commit"
 grep -Fq 'mode === "updates"' "$ROOT_DIR/ActionDialog.qml" \
   || fail "update confirmation mode is missing"
+grep -Fq 'mode === "update"' "$ROOT_DIR/ActionDialog.qml" \
+  || fail "single-plugin update confirmation mode is missing"
 grep -Fq 'event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab' \
   "$ROOT_DIR/ActionDialog.qml" \
   || fail "modal keyboard focus is not trapped"
@@ -169,6 +200,14 @@ grep -Fq 'parsed.ok === false || exitCode !== 0' "$ROOT_DIR/Okomart.qml" \
   || fail "snapshot persistence failures are not surfaced as refresh errors"
 grep -Fq 'readonly property bool snapshotActionable' "$ROOT_DIR/Okomart.qml" \
   || fail "unpersisted snapshots are not blocked from plugin actions"
+grep -Fq 'p.versionUpdateAvailable === true' "$ROOT_DIR/Okomart.qml" \
+  || fail "global updates are not gated by manifest version"
+grep -Fq 'onUpdateRequested: function(plugin)' "$ROOT_DIR/Okomart.qml" \
+  || fail "single-plugin update is not connected to the storefront"
+grep -Fq 'root.beginAction("update", plugin)' "$ROOT_DIR/Okomart.qml" \
+  || fail "single-plugin update does not start a scoped backend action"
+grep -Fq 'Math.min(Style.space(420)' "$ROOT_DIR/Okomart.qml" \
+  || fail "wide-layout search field has no responsive width cap"
 grep -Fq '[helperPath, "ack", actionId]' "$ROOT_DIR/Okomart.qml" \
   || fail "completed action status is not acknowledged"
 

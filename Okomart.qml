@@ -126,21 +126,23 @@ Item {
   }
 
   function buildUpdates(data) {
-    if (data && Array.isArray(data.updates)) return data.updates
+    if (data && Array.isArray(data.updates)) {
+      var declaredRows = []
+      for (var declaredIndex = 0; declaredIndex < data.updates.length; declaredIndex++) {
+        var declared = data.updates[declaredIndex]
+        if (declared && declared.versionUpdateAvailable === true)
+          declaredRows.push(declared)
+      }
+      return declaredRows
+    }
     var rows = []
     var plugins = data && Array.isArray(data.plugins) ? data.plugins : []
     for (var i = 0; i < plugins.length; i++) {
       var p = plugins[i]
-      if (!p || !p.installed) continue
-      var relation = String(p.remoteRelation || "")
-      if (p.safeUpdate === true || relation === "behind" || relation === "diverged")
-        rows.push(p)
+      if (p && p.installed && p.versionUpdateAvailable === true) rows.push(p)
     }
     if (data && data.self) {
-      var selfRelation = String(data.self.remoteRelation || "")
-      if (data.self.safeUpdate === true
-          || selfRelation === "diverged"
-          || (selfRelation === "behind" && data.self.appChanged === true)) {
+      if (data.self.versionUpdateAvailable === true) {
         var selfRow = {}
         for (var key in data.self) selfRow[key] = data.self[key]
         selfRow.id = selfRow.id || pluginId
@@ -461,7 +463,7 @@ Item {
           ? storefront.frameLeft + Style.space(82)
           : storefront.frameLeft + Style.space(42)
         y: root.wideLayout
-          ? root.bodyTop - Style.space(86)
+          ? root.bodyTop - Style.space(70)
           : root.bodyTop - Style.space(124)
         width: root.wideLayout
           ? Math.max(Style.space(180), root.splitX - x - Style.space(28))
@@ -479,7 +481,7 @@ Item {
         readonly property real controlSpacing: Style.space(8)
         enabled: !dialog.opened
         x: root.wideLayout ? root.splitX + Style.space(24) : storefront.frameLeft + Style.space(28)
-        y: root.wideLayout ? root.bodyTop - Style.space(84) : root.bodyTop - Style.space(70)
+        y: root.wideLayout ? root.bodyTop - Style.space(58) : root.bodyTop - Style.space(70)
         width: root.wideLayout
           ? storefront.frameRight - x - Style.space(24)
           : storefront.frameRight - x - Style.space(28)
@@ -493,11 +495,12 @@ Item {
           x: 0
           y: 0
           width: root.wideLayout
-            ? Math.max(Style.space(120), toolbar.width
-              - filterButton.implicitWidth
-              - (updatesButton.visible
-                ? updatesButton.implicitWidth + toolbar.controlSpacing : 0)
-              - toolbar.controlSpacing)
+            ? Math.max(Style.space(120), Math.min(Style.space(420),
+              toolbar.width
+                - filterButton.implicitWidth
+                - (updatesButton.visible
+                  ? updatesButton.implicitWidth + toolbar.controlSpacing : 0)
+                - toolbar.controlSpacing))
             : toolbar.width
           placeholderText: "Search plugins…"
           text: root.query
@@ -587,6 +590,7 @@ Item {
         }
         onInstallRequested: function(plugin) { root.openActionDialog("install", plugin, []) }
         onRemoveRequested: function(plugin) { root.openActionDialog("remove", plugin, []) }
+        onUpdateRequested: function(plugin) { root.openActionDialog("update", plugin, []) }
       }
 
       BorderSurface {
@@ -631,6 +635,7 @@ Item {
           busy = true
           if (mode === "install") root.beginAction("install", plugin)
           else if (mode === "remove") root.beginAction("remove", plugin)
+          else if (mode === "update") root.beginAction("update", plugin)
           else if (mode === "updates") root.beginAction("update-all", null)
         }
       }

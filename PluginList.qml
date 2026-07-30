@@ -114,6 +114,7 @@ FocusScope {
         if (modelData.removed) return "Removed from catalog"
         if (normalizedUpdate === "available") return "Update available"
         if ((normalizedUpdate === "dirty" || normalizedUpdate === "diverged")
+            && OkomartModel.hasVersionUpdate(modelData)
             && (modelData.remoteRelation === "behind"
               || modelData.remoteRelation === "diverged")) return "Update blocked"
         if (modelData.external) return modelData.installed ? "External · Installed" : "External"
@@ -184,7 +185,6 @@ FocusScope {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onEntered: list.currentIndex = row.index
         onClicked: function(mouse) {
           list.currentIndex = row.index
           root.forceActiveFocus()

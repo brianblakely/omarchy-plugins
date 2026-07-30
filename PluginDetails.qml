@@ -18,6 +18,7 @@ FocusScope {
   signal backRequested()
   signal installRequested(var plugin)
   signal removeRequested(var plugin)
+  signal updateRequested(var plugin)
 
   readonly property bool hasPlugin: plugin !== null && plugin !== undefined
   readonly property bool installed: hasPlugin && plugin.installed === true
@@ -28,6 +29,10 @@ FocusScope {
     hasPlugin ? OkomartModel.removalBlockReason(plugin) : ""
   readonly property bool removalAllowed:
     hasPlugin && OkomartModel.canRemovePlugin(plugin)
+  readonly property bool updateAvailable:
+    installed && plugin.safeUpdate === true
+      && OkomartModel.hasVersionUpdate(plugin)
+      && normalizedUpdateState === "available"
 
   activeFocusOnTab: true
 
@@ -80,21 +85,6 @@ FocusScope {
     return OkomartModel.metadataValue(value)
   }
 
-  function kindsText() {
-    if (!hasPlugin || !Array.isArray(plugin.kinds) || plugin.kinds.length === 0)
-      return "Not declared"
-    return plugin.kinds.join(", ")
-  }
-
-  function installedState() {
-    if (!hasPlugin) return ""
-    if (!installed) return plugin.catalog ? "Available" : "Not installed"
-    var parts = [plugin.enabled ? "Installed and enabled" : "Installed"]
-    if (plugin.external) parts.push("external to catalog")
-    if (plugin.removed) parts.push("removed from catalog")
-    return parts.join(" · ")
-  }
-
   function versionText() {
     return hasPlugin ? OkomartModel.pluginVersionText(plugin) : ""
   }
@@ -134,6 +124,7 @@ FocusScope {
     anchors.fill: parent
     clip: true
     contentWidth: availableWidth
+    contentHeight: detailsColumn.implicitHeight
     QQC.ScrollBar.horizontal.policy: QQC.ScrollBar.AlwaysOff
     QQC.ScrollBar.vertical.policy: QQC.ScrollBar.AsNeeded
 
@@ -185,6 +176,75 @@ FocusScope {
         wrapMode: Text.WordWrap
       }
 
+      Row {
+        visible: root.hasPlugin && (root.installed
+          || (root.plugin.catalog && !root.plugin.invalid))
+        spacing: Style.space(10)
+
+        Button {
+          id: installButton
+          visible: root.hasPlugin && !root.installed && root.plugin.catalog && !root.plugin.invalid
+          enabled: root.actionsEnabled
+          focusable: true
+          bordered: true
+          text: "Install"
+          onClicked: root.installRequested(root.plugin)
+          onActiveFocusChanged: if (activeFocus) Qt.callLater(function() {
+            root.ensureVisible(installButton)
+          })
+          Accessible.name: root.hasPlugin
+            ? "Install " + root.value(root.plugin.name || root.plugin.id, "plugin")
+            : "Install plugin"
+          Accessible.role: Accessible.Button
+        }
+
+        Button {
+          id: removeButton
+          visible: root.hasPlugin && root.installed
+          enabled: root.actionsEnabled && root.removalAllowed
+          focusable: root.removalAllowed
+          bordered: true
+          foreground: root.urgent
+          accent: root.urgent
+          tooltipText: root.removalBlockReason
+          text: {
+            if (!root.hasPlugin) return "Remove"
+            if (root.plugin.installType === "development-link"
+                || root.plugin.installType === "symlink") return "Unlink"
+            if (root.plugin.installType === "local" || root.plugin.installType === "non-git")
+              return "Remove (backup)"
+            return "Uninstall"
+          }
+          onClicked: root.removeRequested(root.plugin)
+          onActiveFocusChanged: if (activeFocus) Qt.callLater(function() {
+            root.ensureVisible(removeButton)
+          })
+          Accessible.name: root.hasPlugin
+            ? "Remove " + root.value(root.plugin.name || root.plugin.id, "plugin")
+            : "Remove plugin"
+          Accessible.description: root.removalBlockReason
+          Accessible.role: Accessible.Button
+        }
+
+        Button {
+          id: updateButton
+          visible: root.updateAvailable
+          enabled: root.actionsEnabled
+          focusable: true
+          bordered: true
+          selected: true
+          text: "Update"
+          onClicked: root.updateRequested(root.plugin)
+          onActiveFocusChanged: if (activeFocus) Qt.callLater(function() {
+            root.ensureVisible(updateButton)
+          })
+          Accessible.name: root.hasPlugin
+            ? "Update " + root.value(root.plugin.name || root.plugin.id, "plugin")
+            : "Update plugin"
+          Accessible.role: Accessible.Button
+        }
+      }
+
       Flow {
         visible: root.hasPlugin
         width: parent.width
@@ -195,7 +255,6 @@ FocusScope {
             if (!root.hasPlugin) return []
             var badges = []
             if (root.plugin.installed) badges.push(root.plugin.enabled ? "Installed · Enabled" : "Installed")
-            else if (root.plugin.catalog) badges.push("Available")
             if (root.plugin.external) badges.push("External")
             if (root.plugin.removed) badges.push("Removed from catalog")
             if (root.plugin.isNew || root.plugin.newCatalog) badges.push("New")
@@ -247,10 +306,6 @@ FocusScope {
             model: root.hasPlugin ? [
               { label: "Author", value: root.value(root.plugin.author) },
               { label: "Version", value: root.versionText() },
-              { label: "ID", value: root.value(root.plugin.id, "Unknown") },
-              { label: "Kinds", value: root.kindsText() },
-              { label: "License", value: root.value(root.plugin.license) },
-              { label: "State", value: root.installedState() },
               { label: "Source", value: root.sourceText() }
             ] : []
 
@@ -306,56 +361,6 @@ FocusScope {
         font.family: Style.font.family
         font.pixelSize: Style.font.bodySmall
         wrapMode: Text.WordWrap
-      }
-
-      Row {
-        visible: root.hasPlugin
-        spacing: Style.space(10)
-
-        Button {
-          id: installButton
-          visible: root.hasPlugin && !root.installed && root.plugin.catalog && !root.plugin.invalid
-          enabled: root.actionsEnabled
-          focusable: true
-          bordered: true
-          text: "Install & Enable"
-          onClicked: root.installRequested(root.plugin)
-          onActiveFocusChanged: if (activeFocus) Qt.callLater(function() {
-            root.ensureVisible(installButton)
-          })
-          Accessible.name: root.hasPlugin
-            ? "Install and enable " + root.value(root.plugin.name || root.plugin.id, "plugin")
-            : "Install and enable plugin"
-          Accessible.role: Accessible.Button
-        }
-
-        Button {
-          id: removeButton
-          visible: root.hasPlugin && root.installed
-          enabled: root.actionsEnabled && root.removalAllowed
-          focusable: root.removalAllowed
-          bordered: true
-          foreground: root.urgent
-          accent: root.urgent
-          tooltipText: root.removalBlockReason
-          text: {
-            if (!root.hasPlugin) return "Remove"
-            if (root.plugin.installType === "development-link"
-                || root.plugin.installType === "symlink") return "Unlink"
-            if (root.plugin.installType === "local" || root.plugin.installType === "non-git")
-              return "Remove (backup)"
-            return "Uninstall"
-          }
-          onClicked: root.removeRequested(root.plugin)
-          onActiveFocusChanged: if (activeFocus) Qt.callLater(function() {
-            root.ensureVisible(removeButton)
-          })
-          Accessible.name: root.hasPlugin
-            ? "Remove " + root.value(root.plugin.name || root.plugin.id, "plugin")
-            : "Remove plugin"
-          Accessible.description: root.removalBlockReason
-          Accessible.role: Accessible.Button
-        }
       }
 
       Column {

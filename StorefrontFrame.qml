@@ -25,16 +25,18 @@ Item {
   function roofPath() {
     var shoulder = Style.space(48)
     var apexX = width / 2
+    var trimY = eaveY + Style.space(7)
     return "M " + frameLeft + " " + eaveY
       + " L " + apexX + " " + roofTop
       + " L " + frameRight + " " + eaveY
-      + " L " + frameRight + " " + (eaveY + Style.space(7))
-      + " L " + (frameRight - shoulder) + " " + (eaveY + Style.space(7))
+      + " M " + frameLeft + " " + eaveY
+      + " L " + frameLeft + " " + trimY
+      + " L " + (frameLeft + shoulder) + " " + trimY
+      + " L " + (frameLeft + shoulder) + " " + bodyTop
+      + " M " + frameRight + " " + eaveY
+      + " L " + frameRight + " " + trimY
+      + " L " + (frameRight - shoulder) + " " + trimY
       + " L " + (frameRight - shoulder) + " " + bodyTop
-      + " M " + (frameLeft + shoulder) + " " + bodyTop
-      + " L " + (frameLeft + shoulder) + " " + (eaveY + Style.space(7))
-      + " L " + frameLeft + " " + (eaveY + Style.space(7))
-      + " Z"
   }
 
   function facadePath() {

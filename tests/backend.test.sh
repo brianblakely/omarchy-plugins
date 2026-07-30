@@ -164,6 +164,15 @@ advance_plugin() {
   git -C "$work" push -q origin main
 }
 
+advance_plugin_without_version() {
+  local slug="$1"
+  local work="$TMP/$slug-work"
+  printf '// same manifest version\n' >>"$work/Panel.qml"
+  git -C "$work" add Panel.qml
+  git -C "$work" commit -qm "$slug code-only change"
+  git -C "$work" push -q origin main
+}
+
 make_plugin_repo alpha b.alpha Alpha 1.0.0
 # Give the fixture enough reachable history to catch an accidental unshallow
 # mirror fetch without making the checked-out HEAD tree itself large.
@@ -200,6 +209,7 @@ make_plugin_repo dirty b.dirty Dirty 1.0.0
 make_plugin_repo ahead b.ahead Ahead 1.0.0
 make_plugin_repo split b.split Split 1.0.0
 make_plugin_repo linked b.linked Linked 1.0.0
+make_plugin_repo samever b.samever SameVersion 1.0.0
 
 mkdir -p "$TMP/invalid-work"
 git -C "$TMP/invalid-work" init -q
@@ -630,11 +640,22 @@ for DEV_LINK_ARG in "${DEV_LINK_VARIANTS[@]}"; do
     fail "development-link source spelling $DEV_LINK_INDEX invoked self-update"
   pass "development-link source spelling $DEV_LINK_INDEX is excluded from update-all"
 done
+SAME_VERSION_SELF_SNAPSHOT="$TMP/snapshot-self-same-version.json"
+"$OKOMART" snapshot "$SOURCE" >"$SAME_VERSION_SELF_SNAPSHOT"
+assert_jq "$SAME_VERSION_SELF_SNAPSHOT" \
+  '.self.updateState=="catalog-current"
+    and .self.appChanged
+    and (.self.versionUpdateAvailable|not)
+    and (.self.safeUpdate|not)
+    and .self.installedVersion==.self.availableVersion' \
+  "Okomart ignores application commits without a manifest version bump"
 git -C "$SOURCE" pull -q --ff-only
 
 git clone -q "$TMP/alpha.git" "$OKOMART_PLUGINS_DIR/b.alpha"
 git -C "$OKOMART_PLUGINS_DIR/b.alpha" checkout -q "$ALPHA_V1"
 git clone -q "$TMP/beta.git" "$OKOMART_PLUGINS_DIR/b.beta"
+git clone -q "$TMP/samever.git" "$OKOMART_PLUGINS_DIR/b.samever"
+advance_plugin_without_version samever
 git clone -q "$TMP/dirty.git" "$OKOMART_PLUGINS_DIR/b.dirty"
 printf '// dirty\n' >>"$OKOMART_PLUGINS_DIR/b.dirty/Panel.qml"
 git clone -q "$TMP/ahead.git" "$OKOMART_PLUGINS_DIR/b.ahead"
@@ -680,9 +701,19 @@ assert_jq "$SNAP2" \
   '[.plugins[]|select(.id=="b.alpha")][0]
     | .installed and .enabled and .safeUpdate
       and .updateState=="update-available"
+      and .versionUpdateAvailable
       and .installedVersion=="1.0.0"
       and .availableVersion=="2.0.0"' \
   "installed Git plugin detects a clean fast-forward update"
+assert_jq "$SNAP2" \
+  '[.plugins[]|select(.id=="b.samever")][0]
+    | .installed and .remoteRelation=="behind"
+      and .updateState=="up-to-date"
+      and (.versionUpdateAvailable|not)
+      and (.safeUpdate|not)
+      and .installedVersion=="1.0.0"
+      and .availableVersion=="1.0.0"' \
+  "code-only commits do not become plugin updates without a version bump"
 assert_jq "$SNAP2" \
   '[.plugins[]|select(.id=="b.dev")][0]
     | .external and .installType=="development-link"
@@ -982,7 +1013,10 @@ export OKOMART_ACTION_FOREGROUND=1
 mv "$TMP/catalog-offline.git" "$CATALOG_REMOTE"
 advance_plugin beta 2.0.0
 printf '// Okomart application update fixture\n' >>"$CATALOG_WORK/Panel.qml"
-git -C "$CATALOG_WORK" add Panel.qml
+jq '.version="0.0.2"' "$CATALOG_WORK/manifest.json" \
+  >"$CATALOG_WORK/manifest.json.next"
+mv "$CATALOG_WORK/manifest.json.next" "$CATALOG_WORK/manifest.json"
+git -C "$CATALOG_WORK" add Panel.qml manifest.json
 git -C "$CATALOG_WORK" commit -qm "application update"
 git -C "$CATALOG_WORK" push -q origin main
 
@@ -993,8 +1027,25 @@ CONFIRMED_SNAPSHOT_ID="$(
 assert_jq "$TMP/snapshot-safe-updates.json" \
   '([.plugins[]|select(.id=="b.alpha")][0].safeUpdate)
     and ([.plugins[]|select(.id=="b.beta")][0].safeUpdate)
-    and .self.safeUpdate' \
+    and .self.safeUpdate
+    and .self.versionUpdateAvailable
+    and .self.installedVersion=="0.0.1"
+    and .self.availableVersion=="0.0.2"' \
   "update fixture contains real confirmed fast-forward commits"
+
+: >"$MOCK_LOG"
+"$OKOMART" action "$SOURCE" update b.alpha "$CONFIRMED_SNAPSHOT_ID" \
+  >"$TMP/action-update-one.json"
+assert_eq \
+  "plugin update b.alpha --yes" \
+  "$(grep '^plugin update ' "$MOCK_LOG")" \
+  "single-plugin update uses the official confirmed CLI form"
+assert_jq "$TMP/action-update-one.json" \
+  '.ok and (.running|not) and (.results|length)==1
+    and .results[0].id=="b.alpha"
+    and .results[0].operation=="update"
+    and .results[0].ok' \
+  "single-plugin update changes only the selected plugin"
 
 advance_plugin alpha 4.0.0
 : >"$MOCK_LOG"
