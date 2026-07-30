@@ -159,14 +159,16 @@ FocusScope {
           width: parent.width
           spacing: Style.space(7)
 
-          Rectangle {
+          Text {
             id: installedIndicator
             visible: row.installed
-            width: Style.space(7)
-            height: width
-            radius: width / 2
+            text: "󰏗"
+            textFormat: Text.PlainText
             y: Math.round((parent.height - height) / 2)
             color: root.accent
+            font.family: Style.font.family
+            font.pixelSize: Style.font.body
+            Accessible.ignored: true
           }
 
           Text {

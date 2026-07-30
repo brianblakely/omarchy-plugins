@@ -190,6 +190,12 @@ grep -Fq 'id: installedIndicator' "$ROOT_DIR/PluginList.qml" \
   || fail "plugin-list rows do not expose an installed marker"
 grep -Fq 'visible: row.installed' "$ROOT_DIR/PluginList.qml" \
   || fail "plugin-list installed marker is not gated by installation state"
+grep -Fq 'text: "󰏗"' "$ROOT_DIR/PluginList.qml" \
+  || fail "plugin-list installed marker is not a descriptive package glyph"
+if sed -n '/id: installedIndicator/,+10p' "$ROOT_DIR/PluginList.qml" \
+    | grep -Fq 'radius:'; then
+  fail "plugin-list installed marker is still rendered as a dot"
+fi
 grep -Fq 'modelData.installed === true' "$ROOT_DIR/PluginList.qml" \
   || fail "plugin-list installed marker does not use the catalog installation state"
 grep -Fq 'contentHeight: detailsColumn.implicitHeight' "$ROOT_DIR/PluginDetails.qml" \
