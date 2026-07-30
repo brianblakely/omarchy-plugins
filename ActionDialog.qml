@@ -345,42 +345,29 @@ FocusScope {
           Repeater {
             model: root.mode === "updates" ? root.safeUpdates : []
 
-            delegate: BorderSurface {
+            delegate: Column {
               required property var modelData
               width: reviewColumn.width
-              implicitHeight: safeRow.implicitHeight + Style.space(12)
-              color: Util.alpha(root.accent, 0.07)
-              borderSpec: Border.flat(Util.alpha(root.accent, 0.28), Math.max(1, Style.normalBorderWidth))
-              radius: Style.cornerRadius
+              spacing: Style.space(2)
 
-              Column {
-                id: safeRow
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.leftMargin: Style.space(10)
-                anchors.rightMargin: Style.space(10)
-                spacing: Style.space(2)
-
-                Text {
-                  width: parent.width
-                  text: root.pluginName(modelData)
-                  textFormat: Text.PlainText
-                  color: root.foreground
-                  font.family: Style.font.family
-                  font.pixelSize: Style.font.body
-                  font.bold: true
-                  elide: Text.ElideRight
-                }
-                Text {
-                  width: parent.width
-                  text: root.updateTransition(modelData)
-                  textFormat: Text.PlainText
-                  color: root.accent
-                  font.family: Style.font.family
-                  font.pixelSize: Style.font.caption
-                  elide: Text.ElideRight
-                }
+              Text {
+                width: parent.width
+                text: root.pluginName(modelData)
+                textFormat: Text.PlainText
+                color: root.foreground
+                font.family: Style.font.family
+                font.pixelSize: Style.font.body
+                font.bold: true
+                elide: Text.ElideRight
+              }
+              Text {
+                width: parent.width
+                text: root.updateTransition(modelData)
+                textFormat: Text.PlainText
+                color: root.accent
+                font.family: Style.font.family
+                font.pixelSize: Style.font.caption
+                elide: Text.ElideRight
               }
             }
           }

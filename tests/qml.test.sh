@@ -350,6 +350,11 @@ grep -Fq 'mode === "updates"' "$ROOT_DIR/ActionDialog.qml" \
   || fail "update confirmation mode is missing"
 grep -Fq 'mode === "update"' "$ROOT_DIR/ActionDialog.qml" \
   || fail "single-plugin update confirmation mode is missing"
+if sed -n \
+    '/model: root.mode === "updates" ? root.safeUpdates : \[\]/,/model: root.mode === "updates" ? root.blockedUpdates : \[\]/p' \
+    "$ROOT_DIR/ActionDialog.qml" | grep -Fq 'BorderSurface {'; then
+  fail "updateable confirmation items still have individual frames"
+fi
 grep -Fq 'event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab' \
   "$ROOT_DIR/ActionDialog.qml" \
   || fail "modal keyboard focus is not trapped"
