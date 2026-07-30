@@ -142,15 +142,32 @@ grep -Fq 'maximumLineCount: 2' "$ROOT_DIR/PluginList.qml" \
   || fail "plugin-list descriptions are not limited to two lines"
 grep -Fq 'contentHeight: detailsColumn.implicitHeight' "$ROOT_DIR/PluginDetails.qml" \
   || fail "plugin details do not expose their scrollable content height"
-grep -Fq 'scrollBy(detailsScroll.height * 0.8)' "$ROOT_DIR/PluginDetails.qml" \
+grep -Fq 'scrollDownAndMaybeFocus(detailsScroll.height * 0.8)' \
+  "$ROOT_DIR/PluginDetails.qml" \
   || fail "keyboard details scrolling is missing"
 grep -Fq 'function focusFirstAction()' "$ROOT_DIR/PluginDetails.qml" \
   || fail "plugin details cannot focus their first available action"
+grep -Fq 'function actionHasFocus()' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin details cannot distinguish action focus from viewport focus"
+grep -Fq 'if (actionHasFocus()) searchRequested()' \
+  "$ROOT_DIR/PluginDetails.qml" \
+  || fail "up from a topmost focused action does not return to search"
+grep -Fq 'else if (!focusFirstAction()) searchRequested()' \
+  "$ROOT_DIR/PluginDetails.qml" \
+  || fail "up from the topmost detail viewport does not focus its first action"
 grep -Fq 'onActionsEnabledChanged: if (actionsEnabled && actionFocusPending)' \
   "$ROOT_DIR/PluginDetails.qml" \
   || fail "detail focus handoff is lost during a background refresh"
-grep -Fq 'currentFlick.contentY <= 0.5' "$ROOT_DIR/PluginDetails.qml" \
-  || fail "top-of-details navigation does not return to search"
+grep -Fq 'function itemFullyVisible(item)' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin details cannot detect a fully visible screenshot carousel"
+grep -Fq 'screenshots.length <= 1 || !itemFullyVisible(screenshotsView)' \
+  "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin details focus an incomplete or single-image carousel"
+grep -Fq 'screenshotsView.focusControls()' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "fully visible screenshots do not receive keyboard control focus"
+grep -Fq 'scrollDownAndMaybeFocus(Style.space(42))' \
+  "$ROOT_DIR/PluginDetails.qml" \
+  || fail "downward detail scrolling does not consider carousel focus"
 grep -Fq 'event.key === Qt.Key_Up || event.key === Qt.Key_K' \
   "$ROOT_DIR/PluginDetails.qml" \
   || fail "plugin-details K navigation is missing"
@@ -215,6 +232,24 @@ grep -Fq 'id: pageDots' "$ROOT_DIR/ScreenshotCarousel.qml" \
   || fail "screenshot carousel does not use page dots"
 grep -Fq 'model: root.imageCount' "$ROOT_DIR/ScreenshotCarousel.qml" \
   || fail "screenshot page dots do not represent every image"
+grep -Fq 'function focusControls()' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot carousel does not expose its keyboard controls"
+grep -Fq 'visible: index === root.currentIndex' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot carousel does not switch between preloaded images"
+grep -Fq 'asynchronous: false' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot carousel still flashes during asynchronous image swaps"
+grep -Fq 'cache: true' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot carousel does not retain decoded images"
+if grep -Fq 'asynchronous: true' "$ROOT_DIR/ScreenshotCarousel.qml" \
+    || grep -Fq 'cache: false' "$ROOT_DIR/ScreenshotCarousel.qml"; then
+  fail "screenshot carousel retains its flashing single-image loader"
+fi
+[[ $(grep -Fc 'background: Color.background' \
+  "$ROOT_DIR/ScreenshotCarousel.qml") -eq 2 ]] \
+  || fail "screenshot arrow controls do not both have a background"
+[[ $(grep -Fc 'foreground: root.foreground' \
+  "$ROOT_DIR/ScreenshotCarousel.qml") -eq 2 ]] \
+  || fail "screenshot arrows do not both use the configured foreground"
 grep -Fq 'width: Style.space(24)' "$ROOT_DIR/ScreenshotCarousel.qml" \
   || fail "screenshot carousel arrows are not compact"
 previous_line=$(grep -n -F 'id: previousButton' \
@@ -277,6 +312,16 @@ grep -Fq 'Qt.callLater(pluginDetails.focusFirstAction)' "$ROOT_DIR/Okomart.qml" 
 grep -Fq 'onSearchRequested: searchField.forceActiveFocus()' \
   "$ROOT_DIR/Okomart.qml" \
   || fail "top-of-details navigation is not connected to search"
+grep -Fq 'function focusPluginListFromSearch()' "$ROOT_DIR/Okomart.qml" \
+  || fail "empty search cannot focus the plugin list"
+grep -Fq 'function focusPluginDetailsFromSearch()' "$ROOT_DIR/Okomart.qml" \
+  || fail "search cannot focus plugin details"
+grep -Fq 'Qt.callLater(pluginDetails.focusViewport)' "$ROOT_DIR/Okomart.qml" \
+  || fail "down from search incorrectly focuses a detail action"
+grep -Fq 'Keys.onLeftPressed: function(event)' "$ROOT_DIR/Okomart.qml" \
+  || fail "search has no empty-left navigation"
+[[ $(grep -Fc 'event.accepted = false' "$ROOT_DIR/Okomart.qml") -ge 2 ]] \
+  || fail "nonempty search intercepts normal left/right cursor movement"
 grep -Fq 'if (text.length === 0)' "$ROOT_DIR/Okomart.qml" \
   || fail "empty-search rightward navigation is missing"
 grep -Fq 'event.key === Qt.Key_Left || event.key === Qt.Key_H' \
@@ -297,7 +342,7 @@ grep -Fq 'anchors.rightMargin: storefront.frameInset + root.headerEdgeInset' \
   || fail "toolbar does not mirror the signage edge inset"
 grep -Fq 'x: storefront.frameLeft + root.headerEdgeInset' "$ROOT_DIR/Okomart.qml" \
   || fail "signage does not use the shared edge inset"
-grep -Fq 'y: root.wideLayout ? root.bodyTop - Style.space(40) : root.bodyTop - Style.space(70)' \
+grep -Fq 'y: root.wideLayout ? root.bodyTop - Style.space(45) : root.bodyTop - Style.space(70)' \
   "$ROOT_DIR/Okomart.qml" \
   || fail "tested toolbar vertical adjustment was lost"
 grep -Fq 'Layout.preferredWidth: Style.space(240)' "$ROOT_DIR/Okomart.qml" \

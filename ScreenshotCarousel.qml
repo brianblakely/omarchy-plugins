@@ -13,9 +13,6 @@ FocusScope {
   property color accent: Color.accent
 
   readonly property int imageCount: Array.isArray(images) ? images.length : 0
-  readonly property string currentPath: imageCount > 0
-    ? String(images[Math.max(0, Math.min(currentIndex, imageCount - 1))] || "")
-    : ""
 
   visible: imageCount > 0
   implicitHeight: visible ? Math.max(Style.space(230), width * 0.56) : 0
@@ -24,6 +21,11 @@ FocusScope {
   function select(index) {
     if (imageCount < 1) return
     currentIndex = (index + imageCount) % imageCount
+  }
+
+  function focusControls() {
+    if (imageCount > 1) previousButton.forceActiveFocus()
+    else root.forceActiveFocus()
   }
 
   function versionedSource(path) {
@@ -55,20 +57,26 @@ FocusScope {
     id: carouselContent
     anchors.fill: parent
 
-    Image {
-      id: preview
-      anchors.fill: parent
-      source: root.versionedSource(root.currentPath)
-      fillMode: Image.PreserveAspectFit
-      asynchronous: true
-      cache: false
-      smooth: true
-      sourceSize.width: Math.max(1, Math.round(width * Screen.devicePixelRatio))
-      sourceSize.height: Math.max(1, Math.round(height * Screen.devicePixelRatio))
+    Repeater {
+      model: root.imageCount
+
+      delegate: Image {
+        required property int index
+        anchors.fill: parent
+        visible: index === root.currentIndex
+        source: root.versionedSource(String(root.images[index] || ""))
+        fillMode: Image.PreserveAspectFit
+        asynchronous: false
+        cache: true
+        smooth: true
+        sourceSize.width: Math.max(1, Math.round(width * Screen.devicePixelRatio))
+        sourceSize.height: Math.max(1, Math.round(height * Screen.devicePixelRatio))
+      }
     }
 
     Row {
       id: paginationControls
+      z: 1
       visible: root.imageCount > 1
       anchors.horizontalCenter: parent.horizontalCenter
       anchors.bottom: parent.bottom
@@ -81,6 +89,8 @@ FocusScope {
         height: Style.space(24)
         focusable: true
         bordered: true
+        background: Color.background
+        foreground: root.foreground
         horizontalPadding: 0
         verticalPadding: 0
         text: "‹"
@@ -130,6 +140,8 @@ FocusScope {
         height: Style.space(24)
         focusable: true
         bordered: true
+        background: Color.background
+        foreground: root.foreground
         horizontalPadding: 0
         verticalPadding: 0
         text: "›"

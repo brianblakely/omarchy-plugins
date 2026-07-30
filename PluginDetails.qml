@@ -66,6 +66,32 @@ FocusScope {
     scrollTo(flick.contentY + delta)
   }
 
+  function itemFullyVisible(item) {
+    var flick = detailsFlickable()
+    if (!item || !item.visible || !flick || flick.contentY === undefined)
+      return false
+    var target = flick.contentItem || flick
+    var point = item.mapToItem(target, 0, 0)
+    var viewportTop = flick.contentY
+    var viewportBottom = viewportTop + flick.height
+    return point.y >= viewportTop - 0.5
+      && point.y + item.height <= viewportBottom + 0.5
+  }
+
+  function focusScreenshotControlsIfVisible() {
+    if (screenshots.length <= 1 || !itemFullyVisible(screenshotsView))
+      return false
+    screenshotsView.focusControls()
+    return true
+  }
+
+  function scrollDownAndMaybeFocus(delta) {
+    scrollBy(delta)
+    Qt.callLater(function() {
+      root.focusScreenshotControlsIfVisible()
+    })
+  }
+
   function ensureVisible(item) {
     var flick = detailsFlickable()
     if (!item || !flick || flick.contentY === undefined) return
@@ -93,20 +119,32 @@ FocusScope {
     root.forceActiveFocus()
   }
 
+  function focusViewport() {
+    actionFocusPending = false
+    root.forceActiveFocus()
+  }
+
+  function actionHasFocus() {
+    return installButton.activeFocus
+      || removeButton.activeFocus
+      || updateButton.activeFocus
+  }
+
   function focusFirstAction() {
     var actions = [installButton, removeButton, updateButton]
     for (var i = 0; i < actions.length; i++) {
       if (actions[i].visible && actions[i].enabled) {
         actionFocusPending = false
         actions[i].forceActiveFocus()
-        return
+        return true
       }
     }
-    actionFocusPending = !actionsEnabled
-      && ((installButton.visible)
-        || (removeButton.visible && removalAllowed)
-        || updateButton.visible)
+    var hasAction = installButton.visible
+      || (removeButton.visible && removalAllowed)
+      || updateButton.visible
+    actionFocusPending = !actionsEnabled && hasAction
     root.forceActiveFocus()
+    return hasAction
   }
 
   function value(value, fallback) {
@@ -136,15 +174,19 @@ FocusScope {
   Keys.priority: Keys.AfterItem
   Keys.onPressed: function(event) {
     if (event.key === Qt.Key_Down || event.key === Qt.Key_J) {
-      scrollBy(Style.space(42))
+      scrollDownAndMaybeFocus(Style.space(42))
       event.accepted = true
     } else if (event.key === Qt.Key_Up || event.key === Qt.Key_K) {
       var currentFlick = detailsFlickable()
-      if (!currentFlick || currentFlick.contentY <= 0.5) searchRequested()
-      else scrollBy(-Style.space(42))
+      if (!currentFlick || currentFlick.contentY <= 0.5) {
+        if (actionHasFocus()) searchRequested()
+        else if (!focusFirstAction()) searchRequested()
+      } else {
+        scrollBy(-Style.space(42))
+      }
       event.accepted = true
     } else if (event.key === Qt.Key_PageDown) {
-      scrollBy(detailsScroll.height * 0.8)
+      scrollDownAndMaybeFocus(detailsScroll.height * 0.8)
       event.accepted = true
     } else if (event.key === Qt.Key_PageUp) {
       scrollBy(-detailsScroll.height * 0.8)
@@ -154,7 +196,12 @@ FocusScope {
       event.accepted = true
     } else if (event.key === Qt.Key_End) {
       var flick = detailsFlickable()
-      if (flick) scrollTo(flick.contentHeight)
+      if (flick) {
+        scrollTo(flick.contentHeight)
+        Qt.callLater(function() {
+          root.focusScreenshotControlsIfVisible()
+        })
+      }
       event.accepted = true
     }
   }

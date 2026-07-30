@@ -87,6 +87,20 @@ Item {
     closingFromHost = false
   }
 
+  function focusPluginListFromSearch() {
+    if (!wideLayout) narrowShowingDetails = false
+    Qt.callLater(pluginList.forceActiveFocus)
+  }
+
+  function focusPluginDetailsFromSearch() {
+    if (!selectedPlugin) {
+      focusPluginListFromSearch()
+      return
+    }
+    if (!wideLayout) narrowShowingDetails = true
+    Qt.callLater(pluginDetails.focusViewport)
+  }
+
   function requestClose() {
     if (shell && typeof shell.hide === "function") shell.hide(pluginId)
     else window.visible = false
@@ -551,13 +565,23 @@ Item {
           Accessible.role: Accessible.EditableText
           onTextChanged: if (text !== root.query) root.query = text
           Keys.onDownPressed: function(event) {
-            pluginList.forceActiveFocus()
+            root.focusPluginDetailsFromSearch()
             event.accepted = true
+          }
+          Keys.onLeftPressed: function(event) {
+            if (text.length === 0) {
+              root.focusPluginListFromSearch()
+              event.accepted = true
+            } else {
+              event.accepted = false
+            }
           }
           Keys.onRightPressed: function(event) {
             if (text.length === 0) {
               filterButton.forceActiveFocus()
               event.accepted = true
+            } else {
+              event.accepted = false
             }
           }
         }
