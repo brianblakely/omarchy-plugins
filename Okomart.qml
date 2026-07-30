@@ -35,6 +35,7 @@ Item {
   property bool windowRulePrepared: false
   property bool actionStarting: false
   property bool actionInProgress: false
+  property bool actionReplacesOkomart: false
   property string query: ""
   property string selectedId: ""
   property string cachedOutput: ""
@@ -446,10 +447,18 @@ Item {
     dialog.openFor(mode, plugin, updates)
   }
 
+  function actionIncludesSelf(kind, plugin) {
+    if (kind === "update")
+      return !!(plugin && String(plugin.id || "") === pluginId)
+    return kind === "update-all" && !!(snapshot && snapshot.self
+      && snapshot.self.safeUpdate === true)
+  }
+
   function beginAction(kind, plugin) {
     if (actionStarting || actionInProgress || statusChecking || refreshing || !helperPath
         || !snapshotActionable) return
     actionStarting = true
+    actionReplacesOkomart = actionIncludesSelf(kind, plugin)
     pendingActionPlugin = plugin || null
     actionOutput = ""
     actionError = ""
@@ -467,6 +476,7 @@ Item {
     try { parsed = JSON.parse(String(raw || "")) } catch (e) {}
     if (exitCode !== 0 || !parsed || parsed.ok === false) {
       actionInProgress = false
+      actionReplacesOkomart = false
       var startError = (parsed && (parsed.error || parsed.message))
         ? String(parsed.error || parsed.message)
         : (actionError.trim() || "Could not start plugin operation.")
@@ -475,8 +485,16 @@ Item {
       bannerUrgent = true
       return
     }
+    var replaceOkomart = actionReplacesOkomart
+    actionReplacesOkomart = false
     dialog.closeDialog()
     actionInProgress = true
+    if (replaceOkomart) {
+      // The worker is detached now. Retire this loaded component so the
+      // worker's final summon cannot reopen the pre-update panel instance.
+      requestClose()
+      return
+    }
     bannerText = "Plugin operation started…"
     bannerUrgent = false
     actionPoll.restart()

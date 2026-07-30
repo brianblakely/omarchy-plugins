@@ -375,6 +375,16 @@ grep -Fq 'p.versionUpdateAvailable === true' "$ROOT_DIR/Okomart.qml" \
   || fail "global updates are not gated by manifest version"
 grep -Fq 'onUpdateRequested: function(plugin)' "$ROOT_DIR/Okomart.qml" \
   || fail "single-plugin update is not connected to the storefront"
+if ! sed -n '/function actionIncludesSelf(kind, plugin)/,/^  }/p' \
+    "$ROOT_DIR/Okomart.qml" \
+    | grep -Fq 'snapshot.self.safeUpdate === true'; then
+  fail "confirmed batch updates do not detect when Okomart replaces itself"
+fi
+if ! sed -n '/function actionStarted(raw, exitCode)/,/^  }/p' \
+    "$ROOT_DIR/Okomart.qml" \
+    | grep -Fq 'requestClose()'; then
+  fail "a queued self-update leaves the old Okomart panel loaded"
+fi
 grep -Fq '[helperPath, "cached"]' "$ROOT_DIR/Okomart.qml" \
   || fail "storefront does not load its persisted snapshot first"
 grep -Fq 'parsed && parsed.ok !== false && Array.isArray(parsed.plugins)' \
