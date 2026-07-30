@@ -564,22 +564,38 @@ manifest_metadata() {
 images_json() {
   local plugin_dir="$1"
   local public_dir="${2:-$plugin_dir}"
+  local -a image_records=()
   local -a images=()
   local -a public_images=()
-  if [[ -d $plugin_dir/images && ! -L $plugin_dir/images ]]; then
-    mapfile -d '' -t images < <(
-      find "$plugin_dir/images" -mindepth 1 -maxdepth 1 -type f \
+  local screenshot_dir record image relative_image
+
+  mapfile -d '' -t image_records < <(
+    {
+      find -H "$plugin_dir" -mindepth 1 -maxdepth 1 -type f \
         \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \
         -o -iname '*.gif' -o -iname '*.bmp' -o -iname '*.webp' \) \
-        -print0 2>/dev/null | sort -z -fV
-    )
-  fi
+        -printf '%f/%p\0' 2>/dev/null
+      for screenshot_dir in "$plugin_dir/images" "$plugin_dir/screenshots"; do
+        if [[ -d $screenshot_dir && ! -L $screenshot_dir ]]; then
+          find "$screenshot_dir" -mindepth 1 -maxdepth 1 -type f \
+            \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \
+            -o -iname '*.gif' -o -iname '*.bmp' -o -iname '*.webp' \) \
+            -printf '%f/%p\0' 2>/dev/null
+        fi
+      done
+    } | sort -z -fV
+  )
+
+  for record in "${image_records[@]}"; do
+    images+=("${record#*/}")
+  done
+
   if (( ${#images[@]} == 0 )); then
     printf '[]\n'
   else
-    local image
     for image in "${images[@]}"; do
-      public_images+=("$public_dir/images/$(basename -- "$image")")
+      relative_image="${image#"$plugin_dir"/}"
+      public_images+=("$public_dir/$relative_image")
     done
     printf '%s\0' "${public_images[@]}" | jq -Rs 'split("\u0000")[:-1]'
   fi

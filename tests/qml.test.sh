@@ -136,6 +136,14 @@ grep -Fq 'event.key === Qt.Key_Right || event.key === Qt.Key_L' \
   || fail "plugin-list detail handoff is missing its L alias"
 grep -Fq 'signal detailsRequested(var plugin)' "$ROOT_DIR/PluginList.qml" \
   || fail "plugin list does not expose directional detail focus"
+grep -Fq 'signal searchRequested()' "$ROOT_DIR/PluginList.qml" \
+  || fail "plugin list does not expose its top-boundary search handoff"
+grep -Fq 'if (list.currentIndex <= 0) root.searchRequested()' \
+  "$ROOT_DIR/PluginList.qml" \
+  || fail "up from the first plugin does not focus search"
+grep -Fq 'if (indexForId(selectedId) !== list.currentIndex)' \
+  "$ROOT_DIR/PluginList.qml" \
+  || fail "list navigation still queues redundant selection resynchronization"
 grep -Fq 'height: root.rowHeight' "$ROOT_DIR/PluginList.qml" \
   || fail "plugin-list rows do not share a fixed height"
 grep -Fq 'maximumLineCount: 2' "$ROOT_DIR/PluginList.qml" \
@@ -147,6 +155,16 @@ grep -Fq 'scrollDownAndMaybeFocus(detailsScroll.height * 0.8)' \
   || fail "keyboard details scrolling is missing"
 grep -Fq 'function focusFirstAction()' "$ROOT_DIR/PluginDetails.qml" \
   || fail "plugin details cannot focus their first available action"
+grep -Fq 'function firstActionButton()' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin details cannot identify their first available action"
+grep -Fq 'function firstActionHasFocus()' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin details cannot identify focus on their first action"
+grep -Fq 'signal pluginListRequested()' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin details do not expose their leftward list handoff"
+grep -Fq '&& firstActionHasFocus())' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "left from the first plugin action does not return to the list"
+grep -Fq 'pluginListRequested()' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin details do not request the list at the left boundary"
 grep -Fq 'function actionHasFocus()' "$ROOT_DIR/PluginDetails.qml" \
   || fail "plugin details cannot distinguish action focus from viewport focus"
 grep -Fq 'if (actionHasFocus()) searchRequested()' \
@@ -236,17 +254,29 @@ grep -Fq 'function focusControls()' "$ROOT_DIR/ScreenshotCarousel.qml" \
   || fail "screenshot carousel does not expose its keyboard controls"
 grep -Fq 'visible: index === root.currentIndex' "$ROOT_DIR/ScreenshotCarousel.qml" \
   || fail "screenshot carousel does not switch between preloaded images"
-grep -Fq 'asynchronous: false' "$ROOT_DIR/ScreenshotCarousel.qml" \
-  || fail "screenshot carousel still flashes during asynchronous image swaps"
+grep -Fq 'asynchronous: true' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot decoding still blocks plugin-list navigation"
 grep -Fq 'cache: true' "$ROOT_DIR/ScreenshotCarousel.qml" \
   || fail "screenshot carousel does not retain decoded images"
-if grep -Fq 'asynchronous: true' "$ROOT_DIR/ScreenshotCarousel.qml" \
+if grep -Fq 'asynchronous: false' "$ROOT_DIR/ScreenshotCarousel.qml" \
     || grep -Fq 'cache: false' "$ROOT_DIR/ScreenshotCarousel.qml"; then
-  fail "screenshot carousel retains its flashing single-image loader"
+  fail "screenshot carousel uses blocking or uncached image loading"
 fi
-[[ $(grep -Fc 'background: Color.background' \
+grep -Fq 'id: imageRepeater' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot carousel cannot inspect its preloaded images"
+grep -Fq 'imageRepeater.itemAt(targetIndex)' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot selection does not wait for its decoded image"
+grep -Fq '!targetImage || targetImage.status !== Image.Ready' \
+  "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot carousel exposes an image before it is ready"
+grep -Fq 'root.imageBecameReady(index)' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "pending screenshot selection is not completed after decoding"
+[[ $(grep -Fc 'color: Color.background' \
   "$ROOT_DIR/ScreenshotCarousel.qml") -eq 2 ]] \
-  || fail "screenshot arrow controls do not both have a background"
+  || fail "screenshot arrows do not both retain a persistent background"
+[[ $(grep -Fc 'background: "transparent"' \
+  "$ROOT_DIR/ScreenshotCarousel.qml") -eq 2 ]] \
+  || fail "screenshot arrow state fills do not reveal their base backgrounds"
 [[ $(grep -Fc 'foreground: root.foreground' \
   "$ROOT_DIR/ScreenshotCarousel.qml") -eq 2 ]] \
   || fail "screenshot arrows do not both use the configured foreground"
@@ -309,9 +339,16 @@ grep -Fq 'onDetailsRequested: function(plugin)' "$ROOT_DIR/Okomart.qml" \
   || fail "plugin-list directional focus is not connected"
 grep -Fq 'Qt.callLater(pluginDetails.focusFirstAction)' "$ROOT_DIR/Okomart.qml" \
   || fail "rightward list navigation does not focus the first detail action"
-grep -Fq 'onSearchRequested: searchField.forceActiveFocus()' \
+[[ $(grep -Fc 'onSearchRequested: searchField.forceActiveFocus()' \
+  "$ROOT_DIR/Okomart.qml") -eq 2 ]] \
+  || fail "list and detail top-boundary navigation are not connected to search"
+grep -Fq 'onPluginListRequested: root.focusPluginListFromSearch()' \
   "$ROOT_DIR/Okomart.qml" \
-  || fail "top-of-details navigation is not connected to search"
+  || fail "leftward detail navigation is not connected to the plugin list"
+if ! sed -n '/function open(payloadJson)/,/^  }/p' "$ROOT_DIR/Okomart.qml" \
+    | grep -Fq 'Qt.callLater(pluginList.forceActiveFocus)'; then
+  fail "Okomart does not open with the plugin list focused"
+fi
 grep -Fq 'function focusPluginListFromSearch()' "$ROOT_DIR/Okomart.qml" \
   || fail "empty search cannot focus the plugin list"
 grep -Fq 'function focusPluginDetailsFromSearch()' "$ROOT_DIR/Okomart.qml" \

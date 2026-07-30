@@ -78,7 +78,7 @@ Item {
     narrowShowingDetails = false
     if (catalogLoaded) loadActionStatus()
     else loadCachedSnapshot()
-    Qt.callLater(function() { searchField.forceActiveFocus() })
+    Qt.callLater(pluginList.forceActiveFocus)
   }
 
   function close() {
@@ -667,6 +667,7 @@ Item {
           if (!root.wideLayout) root.narrowShowingDetails = true
           Qt.callLater(pluginDetails.focusFirstAction)
         }
+        onSearchRequested: searchField.forceActiveFocus()
       }
 
       PluginDetails {
@@ -689,6 +690,7 @@ Item {
         onInstallRequested: function(plugin) { root.openActionDialog("install", plugin, []) }
         onRemoveRequested: function(plugin) { root.openActionDialog("remove", plugin, []) }
         onUpdateRequested: function(plugin) { root.openActionDialog("update", plugin, []) }
+        onPluginListRequested: root.focusPluginListFromSearch()
         onSearchRequested: searchField.forceActiveFocus()
       }
 

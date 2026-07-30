@@ -60,7 +60,7 @@ assert_stale_cache_integrity() {
   local expected_image_sha="$3"
   local label="$4"
   local snapshot_commit cache_commit image_path image_sha
-  local plugin_commit plugin_dir plugin_cache_commit
+  local plugin_commit plugin_path plugin_dir plugin_cache_commit
   snapshot_commit="$(jq -r '.catalogCommit' "$snapshot")"
   cache_commit="$(
     jq -r '.catalogCommit' \
@@ -78,7 +78,10 @@ assert_stale_cache_integrity() {
   plugin_commit="$(
     jq -r '[.plugins[]|select(.id=="b.alpha")][0].catalogCommit' "$snapshot"
   )"
-  plugin_dir="$(dirname -- "$(dirname -- "$image_path")")"
+  plugin_path="$(
+    jq -r '[.plugins[]|select(.id=="b.alpha")][0].catalogPath' "$snapshot"
+  )"
+  plugin_dir="$XDG_CACHE_HOME/okomart/catalog/$plugin_path"
   plugin_cache_commit="$(
     jq -r '[.entries[]|select(.id=="b.alpha")][0].catalogCommit' \
       "$XDG_CACHE_HOME/okomart/catalog/.okomart-index.json"
@@ -183,11 +186,14 @@ for history_revision in $(seq 1 80); do
   git -C "$TMP/alpha-work" commit -qm \
     "alpha deep history fixture $history_revision"
 done
-mkdir -p "$TMP/alpha-work/images"
+mkdir -p "$TMP/alpha-work/images" "$TMP/alpha-work/screenshots/nested"
+printf 'jpg' >"$TMP/alpha-work/shot1.jpg"
 printf 'png' >"$TMP/alpha-work/images/shot10.png"
-printf 'png' >"$TMP/alpha-work/images/shot2.PNG"
+printf 'png' >"$TMP/alpha-work/screenshots/shot2.PNG"
 printf 'ignored' >"$TMP/alpha-work/images/readme.txt"
-git -C "$TMP/alpha-work" add images
+printf 'ignored' >"$TMP/alpha-work/screenshots/nested/shot0.png"
+printf 'ignored' >"$TMP/alpha-work/root-image.svg"
+git -C "$TMP/alpha-work" add shot1.jpg images screenshots root-image.svg
 git -C "$TMP/alpha-work" commit -qm "alpha screenshots"
 git -C "$TMP/alpha-work" push -q origin main
 ALPHA_V1="$(git -C "$TMP/alpha-work" rev-parse HEAD)"
@@ -403,9 +409,11 @@ assert_jq "$SNAP1" \
 assert_jq "$SNAP1" \
   '[.plugins[]|select(.id=="b.alpha")][0]
     | .version=="1.0.0"
-      and (.images[0]|endswith("shot2.PNG"))
-      and (.images[1]|endswith("shot10.png"))' \
-  "screenshots are filtered and naturally ordered"
+      and (.images|length)==3
+      and (.images[0]|endswith("/shot1.jpg"))
+      and (.images[1]|endswith("/screenshots/shot2.PNG"))
+      and (.images[2]|endswith("/images/shot10.png"))' \
+  "root, images, and screenshots files are filtered and naturally ordered"
 assert_jq "$SNAP1" \
   '([.plugins[]|select(.id=="b.beta")][0].images|length)==1' \
   "a single supported screenshot is exposed without carousel padding"
@@ -704,11 +712,13 @@ git -C "$TMP/linked-work" worktree add -q --detach \
 mkdir -p "$TMP/dev-target"
 write_plugin_manifest "$TMP/dev-target" b.dev Development 0.1.0
 printf 'import QtQuick\nItem {}\n' >"$TMP/dev-target/Panel.qml"
-mkdir -p "$TMP/dev-target/images/nested"
+mkdir -p "$TMP/dev-target/images/nested" "$TMP/dev-target/screenshots/nested"
+printf 'webp' >"$TMP/dev-target/shot1.webp"
 printf 'png' >"$TMP/dev-target/images/shot10.png"
-printf 'jpg' >"$TMP/dev-target/images/shot2.JPG"
+printf 'jpg' >"$TMP/dev-target/screenshots/shot2.JPG"
 printf 'ignored' >"$TMP/dev-target/images/readme.txt"
 printf 'ignored' >"$TMP/dev-target/images/nested/shot1.png"
+printf 'ignored' >"$TMP/dev-target/screenshots/nested/shot0.png"
 ln -s "$TMP/dev-target" "$OKOMART_PLUGINS_DIR/b.dev"
 mkdir -p "$OKOMART_PLUGINS_DIR/b.broken"
 printf '{}\n' >"$OKOMART_PLUGINS_DIR/b.broken/manifest.json"
@@ -753,10 +763,11 @@ assert_jq "$SNAP2" \
   "development links remain visible with restricted updates"
 assert_jq "$SNAP2" \
   '[.plugins[]|select(.id=="b.dev")][0].images
-    | length==2
-      and (.[0]|endswith("shot2.JPG"))
-      and (.[1]|endswith("shot10.png"))' \
-  "installed-only plugins expose immediate screenshots in natural order"
+    | length==3
+      and (.[0]|endswith("/shot1.webp"))
+      and (.[1]|endswith("/screenshots/shot2.JPG"))
+      and (.[2]|endswith("/images/shot10.png"))' \
+  "installed-only plugins scan every supported screenshot location"
 assert_jq "$SNAP2" \
   '[.plugins[]|select(.id=="b.broken")][0]
     | .external and (.manifestValid|not) and .updateState=="invalid"' \

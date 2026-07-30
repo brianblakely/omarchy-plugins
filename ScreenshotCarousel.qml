@@ -9,6 +9,7 @@ FocusScope {
   property var images: []
   property string revision: ""
   property int currentIndex: 0
+  property int pendingIndex: -1
   property color foreground: Color.foreground
   property color accent: Color.accent
 
@@ -20,7 +21,20 @@ FocusScope {
 
   function select(index) {
     if (imageCount < 1) return
-    currentIndex = (index + imageCount) % imageCount
+    var targetIndex = (index + imageCount) % imageCount
+    var targetImage = imageRepeater.itemAt(targetIndex)
+    if (!targetImage || targetImage.status !== Image.Ready) {
+      pendingIndex = targetIndex
+      return
+    }
+    pendingIndex = -1
+    currentIndex = targetIndex
+  }
+
+  function imageBecameReady(index) {
+    if (pendingIndex !== index) return
+    pendingIndex = -1
+    currentIndex = index
   }
 
   function focusControls() {
@@ -34,7 +48,10 @@ FocusScope {
     return revision ? base + "?revision=" + encodeURIComponent(revision) : base
   }
 
-  onImagesChanged: currentIndex = 0
+  onImagesChanged: {
+    pendingIndex = -1
+    currentIndex = 0
+  }
 
   Keys.onPressed: function(event) {
     if (imageCount <= 1) return
@@ -45,10 +62,10 @@ FocusScope {
       select(currentIndex + 1)
       event.accepted = true
     } else if (event.key === Qt.Key_Home) {
-      currentIndex = 0
+      select(0)
       event.accepted = true
     } else if (event.key === Qt.Key_End) {
-      currentIndex = imageCount - 1
+      select(imageCount - 1)
       event.accepted = true
     }
   }
@@ -58,6 +75,7 @@ FocusScope {
     anchors.fill: parent
 
     Repeater {
+      id: imageRepeater
       model: root.imageCount
 
       delegate: Image {
@@ -66,11 +84,13 @@ FocusScope {
         visible: index === root.currentIndex
         source: root.versionedSource(String(root.images[index] || ""))
         fillMode: Image.PreserveAspectFit
-        asynchronous: false
+        asynchronous: true
         cache: true
         smooth: true
         sourceSize.width: Math.max(1, Math.round(width * Screen.devicePixelRatio))
         sourceSize.height: Math.max(1, Math.round(height * Screen.devicePixelRatio))
+        onStatusChanged: if (status === Image.Ready)
+          root.imageBecameReady(index)
       }
     }
 
@@ -83,21 +103,27 @@ FocusScope {
       anchors.bottomMargin: Style.space(8)
       spacing: Style.space(6)
 
-      Button {
-        id: previousButton
+      Rectangle {
         width: Style.space(24)
         height: Style.space(24)
-        focusable: true
-        bordered: true
-        background: Color.background
-        foreground: root.foreground
-        horizontalPadding: 0
-        verticalPadding: 0
-        text: "‹"
-        fontSize: Style.font.title
-        onClicked: root.select(root.currentIndex - 1)
-        Accessible.name: "Previous plugin screenshot"
-        Accessible.role: Accessible.Button
+        radius: Style.cornerRadius
+        color: Color.background
+
+        Button {
+          id: previousButton
+          anchors.fill: parent
+          focusable: true
+          bordered: true
+          background: "transparent"
+          foreground: root.foreground
+          horizontalPadding: 0
+          verticalPadding: 0
+          text: "‹"
+          fontSize: Style.font.title
+          onClicked: root.select(root.currentIndex - 1)
+          Accessible.name: "Previous plugin screenshot"
+          Accessible.role: Accessible.Button
+        }
       }
 
       Row {
@@ -134,21 +160,27 @@ FocusScope {
         }
       }
 
-      Button {
-        id: nextButton
+      Rectangle {
         width: Style.space(24)
         height: Style.space(24)
-        focusable: true
-        bordered: true
-        background: Color.background
-        foreground: root.foreground
-        horizontalPadding: 0
-        verticalPadding: 0
-        text: "›"
-        fontSize: Style.font.title
-        onClicked: root.select(root.currentIndex + 1)
-        Accessible.name: "Next plugin screenshot"
-        Accessible.role: Accessible.Button
+        radius: Style.cornerRadius
+        color: Color.background
+
+        Button {
+          id: nextButton
+          anchors.fill: parent
+          focusable: true
+          bordered: true
+          background: "transparent"
+          foreground: root.foreground
+          horizontalPadding: 0
+          verticalPadding: 0
+          text: "›"
+          fontSize: Style.font.title
+          onClicked: root.select(root.currentIndex + 1)
+          Accessible.name: "Next plugin screenshot"
+          Accessible.role: Accessible.Button
+        }
       }
     }
   }

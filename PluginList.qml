@@ -17,6 +17,7 @@ FocusScope {
   signal selected(string pluginId)
   signal activated(var plugin)
   signal detailsRequested(var plugin)
+  signal searchRequested()
 
   activeFocusOnTab: true
   readonly property real rowHeight: Style.space(76)
@@ -59,13 +60,18 @@ FocusScope {
   }
 
   onPluginsChanged: Qt.callLater(syncCurrentIndex)
-  onSelectedIdChanged: Qt.callLater(syncCurrentIndex)
+  onSelectedIdChanged: {
+    if (indexForId(selectedId) !== list.currentIndex)
+      Qt.callLater(syncCurrentIndex)
+  }
 
   Keys.onPressed: function(event) {
     if (event.key === Qt.Key_Down || event.key === Qt.Key_J) {
       move(1); event.accepted = true
     } else if (event.key === Qt.Key_Up || event.key === Qt.Key_K) {
-      move(-1); event.accepted = true
+      if (list.currentIndex <= 0) root.searchRequested()
+      else move(-1)
+      event.accepted = true
     } else if (event.key === Qt.Key_Right || event.key === Qt.Key_L) {
       var detailsPlugin = selectedPlugin()
       if (detailsPlugin) root.detailsRequested(detailsPlugin)

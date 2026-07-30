@@ -7,3 +7,4 @@ https://github.com/brianblakely/omanote.git
 https://github.com/brianblakely/omasnap.git
 https://github.com/brianblakely/omastonk.git
 https://github.com/brianblakely/peek.git
+https://github.com/mwikala/omarchy-world-time.git

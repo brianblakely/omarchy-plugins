@@ -20,6 +20,7 @@ FocusScope {
   signal installRequested(var plugin)
   signal removeRequested(var plugin)
   signal updateRequested(var plugin)
+  signal pluginListRequested()
   signal searchRequested()
 
   readonly property bool hasPlugin: plugin !== null && plugin !== undefined
@@ -130,14 +131,24 @@ FocusScope {
       || updateButton.activeFocus
   }
 
-  function focusFirstAction() {
+  function firstActionButton() {
     var actions = [installButton, removeButton, updateButton]
-    for (var i = 0; i < actions.length; i++) {
-      if (actions[i].visible && actions[i].enabled) {
-        actionFocusPending = false
-        actions[i].forceActiveFocus()
-        return true
-      }
+    for (var i = 0; i < actions.length; i++)
+      if (actions[i].visible && actions[i].enabled) return actions[i]
+    return null
+  }
+
+  function firstActionHasFocus() {
+    var action = firstActionButton()
+    return action !== null && action.activeFocus
+  }
+
+  function focusFirstAction() {
+    var action = firstActionButton()
+    if (action !== null) {
+      actionFocusPending = false
+      action.forceActiveFocus()
+      return true
     }
     var hasAction = installButton.visible
       || (removeButton.visible && removalAllowed)
@@ -173,7 +184,11 @@ FocusScope {
 
   Keys.priority: Keys.AfterItem
   Keys.onPressed: function(event) {
-    if (event.key === Qt.Key_Down || event.key === Qt.Key_J) {
+    if ((event.key === Qt.Key_Left || event.key === Qt.Key_H)
+        && firstActionHasFocus()) {
+      pluginListRequested()
+      event.accepted = true
+    } else if (event.key === Qt.Key_Down || event.key === Qt.Key_J) {
       scrollDownAndMaybeFocus(Style.space(42))
       event.accepted = true
     } else if (event.key === Qt.Key_Up || event.key === Qt.Key_K) {
