@@ -2,14 +2,11 @@
   "schemaVersion": 1,
   "id": "b.okomart",
   "name": "Okomart",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "author": "Brian Blakely",
   "description": "Browse, install, update, and remove Omarchy plugins from a storefront interface",
   "license": "MIT",
-  "kinds": [
-    "service",
-    "panel"
-  ],
+  "kinds": ["service", "panel"],
   "entryPoints": {
     "service": "Service.qml",
     "panel": "Okomart.qml"
