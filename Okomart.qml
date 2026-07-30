@@ -40,6 +40,7 @@ Item {
   property string cachedOutput: ""
   property string refreshOutput: ""
   property string refreshError: ""
+  property string windowProbeOutput: ""
   property string actionOutput: ""
   property string actionError: ""
   property string bannerText: ""
@@ -107,26 +108,44 @@ Item {
 
   function requestFloatingWindow() {
     floatingWindowAttempts = 0
-    floatingWindowTimer.restart()
-    Qt.callLater(enforceFloatingWindow)
+    windowProbeOutput = ""
+    floatingWindowTimer.stop()
+    Qt.callLater(probeFloatingWindow)
   }
 
-  function enforceFloatingWindow() {
+  function probeFloatingWindow() {
+    if (!window.visible) {
+      floatingWindowTimer.stop()
+      return
+    }
+    if (windowProbe.running) return
+
+    floatingWindowAttempts++
+    windowProbeOutput = ""
+    windowProbe.command = ["hyprctl", "-j", "clients"]
+    windowProbe.running = true
+  }
+
+  function applyWindowProbe(raw, exitCode) {
     if (!window.visible) {
       floatingWindowTimer.stop()
       return
     }
 
-    floatingWindowAttempts++
-    if (floatingWindowAttempts === 1 || floatingWindowAttempts % 5 === 0)
-      Hyprland.refreshToplevels()
+    var clients = []
+    if (exitCode === 0) {
+      try {
+        var parsed = JSON.parse(String(raw || ""))
+        if (Array.isArray(parsed)) clients = parsed
+      } catch (e) {}
+    }
 
-    var values = Hyprland.toplevels && Hyprland.toplevels.values
-      ? Hyprland.toplevels.values : []
-    for (var i = 0; i < values.length; i++) {
-      var toplevel = values[i]
-      if (!toplevel || String(toplevel.title || "") !== window.title) continue
-      var address = String(toplevel.address || "").replace(/^0x/, "")
+    for (var i = 0; i < clients.length; i++) {
+      var client = clients[i]
+      if (!client
+          || String(client.class || "") !== "org.quickshell"
+          || String(client.title || "") !== window.title) continue
+      var address = String(client.address || "").replace(/^0x/, "")
       if (!address) continue
 
       var selector = "address:0x" + address
@@ -139,6 +158,7 @@ Item {
     }
 
     if (floatingWindowAttempts >= 40) floatingWindowTimer.stop()
+    else floatingWindowTimer.restart()
   }
 
   function focusInitialPluginList() {
@@ -470,6 +490,17 @@ Item {
   }
 
   Process {
+    id: windowProbe
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.windowProbeOutput = text
+    }
+    onExited: function(exitCode) {
+      root.applyWindowProbe(root.windowProbeOutput, exitCode)
+    }
+  }
+
+  Process {
     id: cacheProcess
     stdout: StdioCollector {
       waitForEnd: true
@@ -531,8 +562,8 @@ Item {
   Timer {
     id: floatingWindowTimer
     interval: 50
-    repeat: true
-    onTriggered: root.enforceFloatingWindow()
+    repeat: false
+    onTriggered: root.probeFloatingWindow()
   }
 
   FloatingWindow {

@@ -98,6 +98,19 @@ grep -Fq 'FloatingWindow {' "$ROOT_DIR/Okomart.qml" \
   || fail "Okomart is not hosted in a FloatingWindow"
 grep -Fq 'import Quickshell.Hyprland' "$ROOT_DIR/Okomart.qml" \
   || fail "Okomart cannot request compositor floating state"
+grep -Fq 'windowProbe.command = ["hyprctl", "-j", "clients"]' \
+  "$ROOT_DIR/Okomart.qml" \
+  || fail "Okomart does not query Hyprland's authoritative client list"
+grep -Fq 'String(client.class || "") !== "org.quickshell"' \
+  "$ROOT_DIR/Okomart.qml" \
+  || fail "Okomart floating discovery is not scoped to its application class"
+grep -Fq 'String(client.title || "") !== window.title' \
+  "$ROOT_DIR/Okomart.qml" \
+  || fail "Okomart floating discovery is not scoped to its own title"
+if grep -Fq 'Hyprland.toplevels' "$ROOT_DIR/Okomart.qml" \
+    || grep -Fq 'Hyprland.refreshToplevels()' "$ROOT_DIR/Okomart.qml"; then
+  fail "Okomart still relies on the incomplete in-process toplevel list"
+fi
 grep -Fq 'Hyprland.dispatch("setfloating " + selector)' "$ROOT_DIR/Okomart.qml" \
   || fail "Okomart does not open its own toplevel as floating"
 grep -Fq 'Hyprland.dispatch("resizewindowpixel exact " + side + " " + side + "," + selector)' \
@@ -168,6 +181,12 @@ grep -Fq 'height: root.rowHeight' "$ROOT_DIR/PluginList.qml" \
   || fail "plugin-list rows do not share a fixed height"
 grep -Fq 'maximumLineCount: 2' "$ROOT_DIR/PluginList.qml" \
   || fail "plugin-list descriptions are not limited to two lines"
+grep -Fq 'id: installedIndicator' "$ROOT_DIR/PluginList.qml" \
+  || fail "plugin-list rows do not expose an installed marker"
+grep -Fq 'visible: row.installed' "$ROOT_DIR/PluginList.qml" \
+  || fail "plugin-list installed marker is not gated by installation state"
+grep -Fq 'modelData.installed === true' "$ROOT_DIR/PluginList.qml" \
+  || fail "plugin-list installed marker does not use the catalog installation state"
 grep -Fq 'contentHeight: detailsColumn.implicitHeight' "$ROOT_DIR/PluginDetails.qml" \
   || fail "plugin details do not expose their scrollable content height"
 grep -Fq 'scrollDownAndMaybeFocus(detailsScroll.height * 0.8)' \

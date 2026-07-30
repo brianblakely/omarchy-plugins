@@ -134,6 +134,7 @@ FocusScope {
       required property var modelData
 
       readonly property bool rowSelected: index === list.currentIndex
+      readonly property bool installed: !!(modelData && modelData.installed === true)
       readonly property string pluginId: root.idFor(modelData)
       readonly property string title: String(modelData.name || modelData.id || "Unnamed plugin")
       readonly property string description: String(modelData.description || "No description provided.")
@@ -154,15 +155,32 @@ FocusScope {
         anchors.rightMargin: Style.space(12)
         spacing: Style.space(3)
 
-        Text {
+        Row {
           width: parent.width
-          text: row.title
-          textFormat: Text.PlainText
-          color: root.foreground
-          font.family: Style.font.family
-          font.pixelSize: Style.font.title
-          font.bold: row.rowSelected
-          elide: Text.ElideRight
+          spacing: Style.space(7)
+
+          Rectangle {
+            id: installedIndicator
+            visible: row.installed
+            width: Style.space(7)
+            height: width
+            radius: width / 2
+            y: Math.round((parent.height - height) / 2)
+            color: root.accent
+          }
+
+          Text {
+            width: Math.max(0, parent.width
+              - (installedIndicator.visible
+                ? installedIndicator.width + parent.spacing : 0))
+            text: row.title
+            textFormat: Text.PlainText
+            color: root.foreground
+            font.family: Style.font.family
+            font.pixelSize: Style.font.title
+            font.bold: row.rowSelected
+            elide: Text.ElideRight
+          }
         }
 
         Text {
@@ -191,7 +209,7 @@ FocusScope {
         onDoubleClicked: root.activated(row.modelData)
       }
 
-      Accessible.name: row.title
+      Accessible.name: row.title + (row.installed ? ", installed" : "")
       Accessible.description: row.description
       Accessible.role: Accessible.ListItem
     }
