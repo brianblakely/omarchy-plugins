@@ -42,13 +42,15 @@ FocusScope {
     if (imageCount > 1) select(currentIndex + 1)
     event.accepted = imageCount > 1
   }
-  Keys.onHomePressed: function(event) {
-    if (imageCount > 1) currentIndex = 0
-    event.accepted = imageCount > 1
-  }
-  Keys.onEndPressed: function(event) {
-    if (imageCount > 1) currentIndex = imageCount - 1
-    event.accepted = imageCount > 1
+  Keys.onPressed: function(event) {
+    if (imageCount <= 1) return
+    if (event.key === Qt.Key_Home) {
+      currentIndex = 0
+      event.accepted = true
+    } else if (event.key === Qt.Key_End) {
+      currentIndex = imageCount - 1
+      event.accepted = true
+    }
   }
 
   BorderSurface {

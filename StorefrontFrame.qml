@@ -14,55 +14,55 @@ Item {
   property color strokeColor: Color.accent
   property real strokeWidth: Math.max(1, Style.spaceReal(2))
 
-  readonly property real left: frameInset
-  readonly property real right: width - frameInset
-  readonly property real bottom: height - frameInset
+  readonly property real frameLeft: frameInset
+  readonly property real frameRight: width - frameInset
+  readonly property real frameBottom: height - frameInset
   readonly property real eaveY: bodyTop - Style.space(42)
   readonly property real supportDepth: Style.space(38)
   readonly property real awningY: bodyTop + Style.space(18)
-  readonly property real awningRight: wideLayout ? splitX : right
+  readonly property real awningRight: wideLayout ? splitX : frameRight
 
   function roofPath() {
     var shoulder = Style.space(48)
     var apexX = width / 2
-    return "M " + left + " " + eaveY
+    return "M " + frameLeft + " " + eaveY
       + " L " + apexX + " " + roofTop
-      + " L " + right + " " + eaveY
-      + " L " + right + " " + (eaveY + Style.space(7))
-      + " L " + (right - shoulder) + " " + (eaveY + Style.space(7))
-      + " L " + (right - shoulder) + " " + bodyTop
-      + " M " + (left + shoulder) + " " + bodyTop
-      + " L " + (left + shoulder) + " " + (eaveY + Style.space(7))
-      + " L " + left + " " + (eaveY + Style.space(7))
+      + " L " + frameRight + " " + eaveY
+      + " L " + frameRight + " " + (eaveY + Style.space(7))
+      + " L " + (frameRight - shoulder) + " " + (eaveY + Style.space(7))
+      + " L " + (frameRight - shoulder) + " " + bodyTop
+      + " M " + (frameLeft + shoulder) + " " + bodyTop
+      + " L " + (frameLeft + shoulder) + " " + (eaveY + Style.space(7))
+      + " L " + frameLeft + " " + (eaveY + Style.space(7))
       + " Z"
   }
 
   function facadePath() {
-    var path = "M " + left + " " + bodyTop
-      + " L " + right + " " + bodyTop
-      + " L " + right + " " + bottom
-      + " L " + left + " " + bottom
+    var path = "M " + frameLeft + " " + bodyTop
+      + " L " + frameRight + " " + bodyTop
+      + " L " + frameRight + " " + frameBottom
+      + " L " + frameLeft + " " + frameBottom
       + " Z"
     if (wideLayout)
-      path += " M " + splitX + " " + bodyTop + " L " + splitX + " " + bottom
+      path += " M " + splitX + " " + bodyTop + " L " + splitX + " " + frameBottom
     return path
   }
 
   function awningPath() {
-    if (!awningVisible || awningRight <= left) return ""
-    var span = awningRight - left
+    if (!awningVisible || awningRight <= frameLeft) return ""
+    var span = awningRight - frameLeft
     var targetWidth = Math.max(Style.space(38), span / 10)
     var count = Math.max(3, Math.round(span / targetWidth))
     var step = span / count
     var depth = Style.space(14)
-    var path = "M " + left + " " + bodyTop + " L " + left + " " + awningY
+    var path = "M " + frameLeft + " " + bodyTop + " L " + frameLeft + " " + awningY
     for (var i = 0; i < count; i++) {
-      var start = left + i * step
+      var start = frameLeft + i * step
       var middle = start + step / 2
       var end = start + step
       path += " Q " + middle + " " + (awningY + depth) + " " + end + " " + awningY
     }
-    path += " L " + awningRight + " " + bottom
+    path += " L " + awningRight + " " + frameBottom
     return path
   }
 

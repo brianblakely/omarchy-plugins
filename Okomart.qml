@@ -43,8 +43,9 @@ Item {
 
   readonly property bool wideLayout: window.width >= Style.space(820)
   readonly property real bodyTop: Math.max(Style.space(164), Math.min(Style.space(205), window.height * 0.255))
-  readonly property real splitX: storefront.left
-    + Math.max(Style.space(292), Math.min(Style.space(420), (storefront.right - storefront.left) * 0.405))
+  readonly property real splitX: storefront.frameLeft
+    + Math.max(Style.space(292), Math.min(Style.space(420),
+      (storefront.frameRight - storefront.frameLeft) * 0.405))
   readonly property var selectedPlugin: {
     for (var i = 0; i < visiblePlugins.length; i++)
       if (String(visiblePlugins[i].id || "") === selectedId) return visiblePlugins[i]
@@ -457,14 +458,14 @@ Item {
       Text {
         id: brand
         x: root.wideLayout
-          ? storefront.left + Style.space(82)
-          : storefront.left + Style.space(42)
+          ? storefront.frameLeft + Style.space(82)
+          : storefront.frameLeft + Style.space(42)
         y: root.wideLayout
           ? root.bodyTop - Style.space(86)
           : root.bodyTop - Style.space(124)
         width: root.wideLayout
           ? Math.max(Style.space(180), root.splitX - x - Style.space(28))
-          : storefront.right - x - Style.space(42)
+          : storefront.frameRight - x - Style.space(42)
         text: "オコマート"
         color: Color.accent
         font.family: Style.font.family
@@ -477,11 +478,11 @@ Item {
         id: toolbar
         readonly property real controlSpacing: Style.space(8)
         enabled: !dialog.opened
-        x: root.wideLayout ? root.splitX + Style.space(24) : storefront.left + Style.space(28)
+        x: root.wideLayout ? root.splitX + Style.space(24) : storefront.frameLeft + Style.space(28)
         y: root.wideLayout ? root.bodyTop - Style.space(84) : root.bodyTop - Style.space(70)
         width: root.wideLayout
-          ? storefront.right - x - Style.space(24)
-          : storefront.right - x - Style.space(28)
+          ? storefront.frameRight - x - Style.space(24)
+          : storefront.frameRight - x - Style.space(28)
         height: root.wideLayout
           ? Math.max(searchField.height, filterButton.height, updatesButton.height)
           : searchField.height + controlSpacing
@@ -548,12 +549,12 @@ Item {
         id: pluginList
         enabled: !dialog.opened
         visible: root.wideLayout || !root.narrowShowingDetails
-        x: storefront.left + Style.space(13)
+        x: storefront.frameLeft + Style.space(13)
         y: storefront.awningY + Style.space(20)
         width: root.wideLayout
           ? root.splitX - x - Style.space(13)
-          : storefront.right - x - Style.space(13)
-        height: storefront.bottom - y - Style.space(10)
+          : storefront.frameRight - x - Style.space(13)
+        height: storefront.frameBottom - y - Style.space(10)
         plugins: root.visiblePlugins
         selectedId: root.selectedId
         activateOnSingleClick: !root.wideLayout
@@ -571,10 +572,10 @@ Item {
         id: pluginDetails
         enabled: !dialog.opened
         visible: root.wideLayout || root.narrowShowingDetails
-        x: root.wideLayout ? root.splitX + Style.space(18) : storefront.left + Style.space(18)
+        x: root.wideLayout ? root.splitX + Style.space(18) : storefront.frameLeft + Style.space(18)
         y: root.bodyTop + Style.space(16)
-        width: (root.wideLayout ? storefront.right : storefront.right) - x - Style.space(18)
-        height: storefront.bottom - y - Style.space(12)
+        width: storefront.frameRight - x - Style.space(18)
+        height: storefront.frameBottom - y - Style.space(12)
         plugin: root.selectedPlugin
         catalogRevision: String(root.snapshot.catalogCommit || "")
         narrowLayout: !root.wideLayout

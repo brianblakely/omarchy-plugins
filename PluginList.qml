@@ -90,7 +90,7 @@ FocusScope {
     spacing: Style.space(5)
     boundsBehavior: Flickable.StopAtBounds
     reuseItems: true
-    cacheBuffer: height
+    cacheBuffer: Math.max(0, height)
     currentIndex: -1
 
     onCurrentIndexChanged: {
