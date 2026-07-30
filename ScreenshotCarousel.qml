@@ -34,17 +34,15 @@ FocusScope {
 
   onImagesChanged: currentIndex = 0
 
-  Keys.onLeftPressed: function(event) {
-    if (imageCount > 1) select(currentIndex - 1)
-    event.accepted = imageCount > 1
-  }
-  Keys.onRightPressed: function(event) {
-    if (imageCount > 1) select(currentIndex + 1)
-    event.accepted = imageCount > 1
-  }
   Keys.onPressed: function(event) {
     if (imageCount <= 1) return
-    if (event.key === Qt.Key_Home) {
+    if (event.key === Qt.Key_Left || event.key === Qt.Key_H) {
+      select(currentIndex - 1)
+      event.accepted = true
+    } else if (event.key === Qt.Key_Right || event.key === Qt.Key_L) {
+      select(currentIndex + 1)
+      event.accepted = true
+    } else if (event.key === Qt.Key_Home) {
       currentIndex = 0
       event.accepted = true
     } else if (event.key === Qt.Key_End) {
@@ -53,16 +51,13 @@ FocusScope {
     }
   }
 
-  BorderSurface {
+  Item {
+    id: carouselContent
     anchors.fill: parent
-    color: Util.alpha(Color.background, 0.38)
-    borderSpec: Border.flat(Util.alpha(root.activeFocus ? root.accent : root.foreground, root.activeFocus ? 0.9 : 0.24), Math.max(1, Style.normalBorderWidth))
-    radius: Style.cornerRadius
 
     Image {
       id: preview
       anchors.fill: parent
-      anchors.margins: Style.space(10)
       source: root.versionedSource(root.currentPath)
       fillMode: Image.PreserveAspectFit
       asynchronous: true
@@ -72,54 +67,76 @@ FocusScope {
       sourceSize.height: Math.max(1, Math.round(height * Screen.devicePixelRatio))
     }
 
-    Button {
-      id: previousButton
-      visible: root.imageCount > 1
-      focusable: true
-      bordered: true
-      text: "‹"
-      fontSize: Style.font.display
-      anchors.left: parent.left
-      anchors.leftMargin: Style.space(10)
-      anchors.verticalCenter: parent.verticalCenter
-      onClicked: root.select(root.currentIndex - 1)
-      Accessible.name: "Previous plugin screenshot"
-      Accessible.role: Accessible.Button
-    }
-
-    Button {
-      id: nextButton
-      visible: root.imageCount > 1
-      focusable: true
-      bordered: true
-      text: "›"
-      fontSize: Style.font.display
-      anchors.right: parent.right
-      anchors.rightMargin: Style.space(10)
-      anchors.verticalCenter: parent.verticalCenter
-      onClicked: root.select(root.currentIndex + 1)
-      Accessible.name: "Next plugin screenshot"
-      Accessible.role: Accessible.Button
-    }
-
-    BorderSurface {
+    Row {
+      id: paginationControls
       visible: root.imageCount > 1
       anchors.horizontalCenter: parent.horizontalCenter
       anchors.bottom: parent.bottom
-      anchors.bottomMargin: Style.space(10)
-      width: counter.implicitWidth + Style.space(14)
-      height: counter.implicitHeight + Style.space(6)
-      color: Util.alpha(Color.background, 0.82)
-      borderSpec: Border.flat(Util.alpha(root.foreground, 0.25), Math.max(1, Style.normalBorderWidth))
-      radius: Style.cornerRadius
+      anchors.bottomMargin: Style.space(8)
+      spacing: Style.space(6)
 
-      Text {
-        id: counter
-        anchors.centerIn: parent
-        text: (root.currentIndex + 1) + " / " + root.imageCount
-        color: root.foreground
-        font.family: Style.font.family
-        font.pixelSize: Style.font.caption
+      Button {
+        id: previousButton
+        width: Style.space(24)
+        height: Style.space(24)
+        focusable: true
+        bordered: true
+        horizontalPadding: 0
+        verticalPadding: 0
+        text: "‹"
+        fontSize: Style.font.title
+        onClicked: root.select(root.currentIndex - 1)
+        Accessible.name: "Previous plugin screenshot"
+        Accessible.role: Accessible.Button
+      }
+
+      Row {
+        id: pageDots
+        height: Style.space(24)
+        spacing: Style.space(3)
+
+        Repeater {
+          model: root.imageCount
+
+          delegate: Item {
+            required property int index
+            width: Style.space(12)
+            height: Style.space(24)
+
+            Rectangle {
+              anchors.centerIn: parent
+              width: index === root.currentIndex ? Style.space(8) : Style.space(6)
+              height: width
+              radius: width / 2
+              color: index === root.currentIndex
+                ? root.accent : Util.alpha(root.foreground, 0.52)
+            }
+
+            MouseArea {
+              anchors.fill: parent
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.select(index)
+            }
+
+            Accessible.name: "Show plugin screenshot " + (index + 1)
+            Accessible.role: Accessible.RadioButton
+          }
+        }
+      }
+
+      Button {
+        id: nextButton
+        width: Style.space(24)
+        height: Style.space(24)
+        focusable: true
+        bordered: true
+        horizontalPadding: 0
+        verticalPadding: 0
+        text: "›"
+        fontSize: Style.font.title
+        onClicked: root.select(root.currentIndex + 1)
+        Accessible.name: "Next plugin screenshot"
+        Accessible.role: Accessible.Button
       }
     }
   }

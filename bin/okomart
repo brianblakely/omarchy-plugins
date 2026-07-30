@@ -1289,6 +1289,30 @@ snapshot_command() {
   [[ $ok == true ]]
 }
 
+cached_command() {
+  (( $# == 0 )) || {
+    json_error "cached does not take arguments"
+    return 2
+  }
+
+  if [[ -f $SNAPSHOT_STATE && ! -L $SNAPSHOT_STATE ]] &&
+    jq -e '
+      type == "object"
+      and (.ok != false)
+      and (.plugins | type == "array")
+      and (.snapshotId | type == "string" and length > 0)
+    ' "$SNAPSHOT_STATE" >/dev/null 2>&1; then
+    jq -c '. + {cached:true}' "$SNAPSHOT_STATE"
+    return
+  fi
+
+  jq -cn '{
+    ok:false,
+    cached:false,
+    error:"No valid cached Okomart snapshot is available."
+  }'
+}
+
 default_action_status() {
   jq -cn '{
     ok:true,running:false,action:"",actionId:"",pid:null,
@@ -2052,7 +2076,7 @@ action_command() {
 usage_json() {
   jq -cn '{
     ok:false,
-    error:"Usage: okomart snapshot <source-dir> | action <source-dir> <install|remove|update|update-all> <id-or-empty> <snapshot-id> | status | ack <action-id>"
+    error:"Usage: okomart snapshot <source-dir> | cached | action <source-dir> <install|remove|update|update-all> <id-or-empty> <snapshot-id> | status | ack <action-id>"
   }'
 }
 
@@ -2072,6 +2096,10 @@ main() {
   snapshot)
     shift
     snapshot_command "$@"
+    ;;
+  cached)
+    shift
+    cached_command "$@"
     ;;
   action)
     shift

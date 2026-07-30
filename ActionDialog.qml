@@ -199,10 +199,12 @@ FocusScope {
       var flick = root.reviewFlickable()
       if (flick) root.scrollReviewTo(flick.contentHeight)
       event.accepted = true
-    } else if (reviewScroll.activeFocus && event.key === Qt.Key_Down) {
+    } else if (reviewScroll.activeFocus
+        && (event.key === Qt.Key_Down || event.key === Qt.Key_J)) {
       root.scrollReviewBy(Style.space(42))
       event.accepted = true
-    } else if (reviewScroll.activeFocus && event.key === Qt.Key_Up) {
+    } else if (reviewScroll.activeFocus
+        && (event.key === Qt.Key_Up || event.key === Qt.Key_K)) {
       root.scrollReviewBy(-Style.space(42))
       event.accepted = true
     }

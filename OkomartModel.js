@@ -617,7 +617,7 @@ function updateDetailText(plugin) {
     return "Update unavailable: Git checkout has no origin"
   if (state === "offline") return "Update status unavailable"
   if (state === "blocked") return "Update blocked"
-  if (state === "current") return "Up to date"
+  if (state === "current") return ""
 
   var raw = normalizedState(plugin.updateState)
   if (raw === "non-git") return "Local plugin; no Git update source"

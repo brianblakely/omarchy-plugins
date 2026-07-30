@@ -125,10 +125,35 @@ if grep -Fq 'onEntered: list.currentIndex' "$ROOT_DIR/PluginList.qml"; then
 fi
 grep -Fq 'Qt.Key_PageDown' "$ROOT_DIR/PluginList.qml" \
   || fail "keyboard page navigation is missing"
+grep -Fq 'event.key === Qt.Key_Down || event.key === Qt.Key_J' \
+  "$ROOT_DIR/PluginList.qml" \
+  || fail "plugin-list J navigation is missing"
+grep -Fq 'event.key === Qt.Key_Up || event.key === Qt.Key_K' \
+  "$ROOT_DIR/PluginList.qml" \
+  || fail "plugin-list K navigation is missing"
+grep -Fq 'event.key === Qt.Key_Right || event.key === Qt.Key_L' \
+  "$ROOT_DIR/PluginList.qml" \
+  || fail "plugin-list detail handoff is missing its L alias"
+grep -Fq 'signal detailsRequested(var plugin)' "$ROOT_DIR/PluginList.qml" \
+  || fail "plugin list does not expose directional detail focus"
+grep -Fq 'height: root.rowHeight' "$ROOT_DIR/PluginList.qml" \
+  || fail "plugin-list rows do not share a fixed height"
+grep -Fq 'maximumLineCount: 2' "$ROOT_DIR/PluginList.qml" \
+  || fail "plugin-list descriptions are not limited to two lines"
 grep -Fq 'contentHeight: detailsColumn.implicitHeight' "$ROOT_DIR/PluginDetails.qml" \
   || fail "plugin details do not expose their scrollable content height"
 grep -Fq 'scrollBy(detailsScroll.height * 0.8)' "$ROOT_DIR/PluginDetails.qml" \
   || fail "keyboard details scrolling is missing"
+grep -Fq 'function focusFirstAction()' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin details cannot focus their first available action"
+grep -Fq 'onActionsEnabledChanged: if (actionsEnabled && actionFocusPending)' \
+  "$ROOT_DIR/PluginDetails.qml" \
+  || fail "detail focus handoff is lost during a background refresh"
+grep -Fq 'currentFlick.contentY <= 0.5' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "top-of-details navigation does not return to search"
+grep -Fq 'event.key === Qt.Key_Up || event.key === Qt.Key_K' \
+  "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin-details K navigation is missing"
 grep -Fq 'OkomartModel.metadataValue(value, fallback)' "$ROOT_DIR/PluginDetails.qml" \
   || fail "detail metadata does not use the tested formatter"
 grep -Fq 'OkomartModel.pluginVersionText(plugin)' "$ROOT_DIR/PluginDetails.qml" \
@@ -138,6 +163,12 @@ grep -Fq 'OkomartModel.updateDetailText(plugin)' "$ROOT_DIR/PluginDetails.qml" \
 if grep -Fq 'badges.push("Available")' "$ROOT_DIR/PluginDetails.qml"; then
   fail "plugin details still expose the Available badge"
 fi
+if grep -Fq 'badges.push(root.plugin.enabled ? "Installed' \
+    "$ROOT_DIR/PluginDetails.qml"; then
+  fail "plugin details still expose the Installed badge"
+fi
+grep -Fq 'if (state === "current") return ""' "$ROOT_DIR/OkomartModel.js" \
+  || fail "plugin details still expose an up-to-date status snippet"
 if grep -Eq '\{ label: "(ID|Kinds|License|State)"' "$ROOT_DIR/PluginDetails.qml"; then
   fail "plugin details expose internal or unwanted metadata"
 fi
@@ -169,10 +200,33 @@ grep -Fq 'tooltipText: root.removalBlockReason' \
 grep -Fq 'Accessible.description: root.removalBlockReason' \
   "$ROOT_DIR/PluginDetails.qml" \
   || fail "dirty Git removal guard has no accessible explanation"
-grep -Fq 'Keys.onLeftPressed' "$ROOT_DIR/ScreenshotCarousel.qml" \
+grep -Fq 'event.key === Qt.Key_Left || event.key === Qt.Key_H' \
+  "$ROOT_DIR/ScreenshotCarousel.qml" \
   || fail "keyboard carousel navigation is missing"
+grep -Fq 'event.key === Qt.Key_Right || event.key === Qt.Key_L' \
+  "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "keyboard carousel L navigation is missing"
 grep -Fq 'event.key === Qt.Key_End' "$ROOT_DIR/ScreenshotCarousel.qml" \
   || fail "keyboard carousel end navigation is missing"
+if grep -Fq 'BorderSurface {' "$ROOT_DIR/ScreenshotCarousel.qml"; then
+  fail "plugin screenshots still have a surrounding frame"
+fi
+grep -Fq 'id: pageDots' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot carousel does not use page dots"
+grep -Fq 'model: root.imageCount' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot page dots do not represent every image"
+grep -Fq 'width: Style.space(24)' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot carousel arrows are not compact"
+previous_line=$(grep -n -F 'id: previousButton' \
+  "$ROOT_DIR/ScreenshotCarousel.qml" | cut -d: -f1)
+dots_line=$(grep -n -F 'id: pageDots' \
+  "$ROOT_DIR/ScreenshotCarousel.qml" | cut -d: -f1)
+next_line=$(grep -n -F 'id: nextButton' \
+  "$ROOT_DIR/ScreenshotCarousel.qml" | cut -d: -f1)
+if [[ -z $previous_line || -z $dots_line || -z $next_line ]] \
+    || (( previous_line >= dots_line || dots_line >= next_line )); then
+  fail "screenshot arrows do not flank the page dots"
+fi
 grep -Fq 'visible: root.screenshots.length > 0' "$ROOT_DIR/PluginDetails.qml" \
   || fail "zero-image omission is missing"
 grep -Fq 'String(root.plugin.catalogCommit || root.catalogRevision)' \
@@ -188,6 +242,9 @@ grep -Fq 'event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab' \
 grep -Fq 'root.scrollReviewBy(reviewScroll.height * 0.8)' \
   "$ROOT_DIR/ActionDialog.qml" \
   || fail "keyboard update-list scrolling is missing"
+grep -Fq 'event.key === Qt.Key_Down || event.key === Qt.Key_J' \
+  "$ROOT_DIR/ActionDialog.qml" \
+  || fail "update-review J navigation is missing"
 grep -Fq 'readonly property real reviewHeightBudget' \
   "$ROOT_DIR/ActionDialog.qml" \
   || fail "minimum-height review budgeting is missing"
@@ -204,6 +261,29 @@ grep -Fq 'p.versionUpdateAvailable === true' "$ROOT_DIR/Okomart.qml" \
   || fail "global updates are not gated by manifest version"
 grep -Fq 'onUpdateRequested: function(plugin)' "$ROOT_DIR/Okomart.qml" \
   || fail "single-plugin update is not connected to the storefront"
+grep -Fq '[helperPath, "cached"]' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront does not load its persisted snapshot first"
+grep -Fq 'parsed && parsed.ok !== false && Array.isArray(parsed.plugins)' \
+  "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront accepts a failed snapshot as cached catalog data"
+grep -Fq 'statusChecking = true' "$ROOT_DIR/Okomart.qml" \
+  || fail "cached actions are enabled before action status is reconciled"
+grep -Fq 'if (catalogLoaded) loadActionStatus()' "$ROOT_DIR/Okomart.qml" \
+  || fail "reopening the storefront does not preserve loaded catalog data"
+grep -Fq 'onDetailsRequested: function(plugin)' "$ROOT_DIR/Okomart.qml" \
+  || fail "plugin-list directional focus is not connected"
+grep -Fq 'Qt.callLater(pluginDetails.focusFirstAction)' "$ROOT_DIR/Okomart.qml" \
+  || fail "rightward list navigation does not focus the first detail action"
+grep -Fq 'onSearchRequested: searchField.forceActiveFocus()' \
+  "$ROOT_DIR/Okomart.qml" \
+  || fail "top-of-details navigation is not connected to search"
+grep -Fq 'if (text.length === 0)' "$ROOT_DIR/Okomart.qml" \
+  || fail "empty-search rightward navigation is missing"
+grep -Fq 'event.key === Qt.Key_Left || event.key === Qt.Key_H' \
+  "$ROOT_DIR/Okomart.qml" \
+  || fail "toolbar H navigation is missing"
+grep -Fq 'emptyText: root.catalogLoaded' "$ROOT_DIR/Okomart.qml" \
+  || fail "plugin list exposes an empty result before cache loading finishes"
 grep -Fq 'root.beginAction("update", plugin)' "$ROOT_DIR/Okomart.qml" \
   || fail "single-plugin update does not start a scoped backend action"
 grep -Fq 'Math.min(Style.space(420)' "$ROOT_DIR/Okomart.qml" \

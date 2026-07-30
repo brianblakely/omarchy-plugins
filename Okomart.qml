@@ -21,14 +21,18 @@ Item {
   readonly property string helperPath: sourceDir + "/bin/okomart"
 
   property bool closingFromHost: false
+  property bool cacheLoading: false
+  property bool catalogLoaded: false
   property bool refreshing: false
   property bool refreshQueued: false
+  property bool statusChecking: false
   property bool installedOnly: false
   property bool narrowShowingDetails: false
   property bool actionStarting: false
   property bool actionInProgress: false
   property string query: ""
   property string selectedId: ""
+  property string cachedOutput: ""
   property string refreshOutput: ""
   property string refreshError: ""
   property string actionOutput: ""
@@ -69,7 +73,8 @@ Item {
     closingFromHost = false
     window.visible = true
     narrowShowingDetails = false
-    loadActionStatus()
+    if (catalogLoaded) loadActionStatus()
+    else loadCachedSnapshot()
     Qt.callLater(function() { searchField.forceActiveFocus() })
   }
 
@@ -154,6 +159,51 @@ Item {
     return rows
   }
 
+  function setSnapshotData(parsed) {
+    var changes = parsed.changes || {}
+    var addedIds = Array.isArray(changes.added) ? changes.added : []
+    var updatedIds = Array.isArray(changes.updated) ? changes.updated : []
+    var displayPlugins = []
+    for (var pluginIndex = 0; pluginIndex < parsed.plugins.length; pluginIndex++) {
+      var plugin = parsed.plugins[pluginIndex]
+      if (!plugin) continue
+      var changedId = String(plugin.id || "")
+      if (changedId === pluginId) continue
+      plugin.newCatalog = addedIds.indexOf(changedId) !== -1
+      plugin.catalogChanged = updatedIds.indexOf(changedId) !== -1
+      if (Array.isArray(plugin.images))
+        plugin.images = OkomartModel.supportedScreenshots(plugin.images)
+      displayPlugins.push(plugin)
+    }
+    snapshot = parsed
+    allPlugins = displayPlugins
+    updateRows = buildUpdates(parsed)
+    catalogLoaded = true
+    rebuildView()
+  }
+
+  function loadCachedSnapshot() {
+    if (!helperPath) {
+      bannerText = "Okomart could not determine its source directory."
+      bannerUrgent = true
+      return
+    }
+    if (cacheProcess.running) return
+    cacheLoading = true
+    cachedOutput = ""
+    cacheProcess.command = [helperPath, "cached"]
+    cacheProcess.running = true
+  }
+
+  function applyCachedSnapshot(raw) {
+    cacheLoading = false
+    var parsed = null
+    try { parsed = JSON.parse(String(raw || "")) } catch (e) {}
+    if (parsed && parsed.ok !== false && Array.isArray(parsed.plugins))
+      setSnapshotData(parsed)
+    loadActionStatus()
+  }
+
   function applySnapshot(raw, exitCode) {
     refreshing = false
     var parsed = null
@@ -163,26 +213,10 @@ Item {
       bannerText = refreshError.trim() || "Catalog refresh failed."
       bannerUrgent = true
     } else {
+      setSnapshotData(parsed)
       var changes = parsed.changes || {}
       var addedIds = Array.isArray(changes.added) ? changes.added : []
       var updatedIds = Array.isArray(changes.updated) ? changes.updated : []
-      var displayPlugins = []
-      for (var pluginIndex = 0; pluginIndex < parsed.plugins.length; pluginIndex++) {
-        var plugin = parsed.plugins[pluginIndex]
-        if (!plugin) continue
-        var changedId = String(plugin.id || "")
-        if (changedId === pluginId) continue
-        plugin.newCatalog = addedIds.indexOf(changedId) !== -1
-        plugin.catalogChanged = updatedIds.indexOf(changedId) !== -1
-        if (Array.isArray(plugin.images))
-          plugin.images = OkomartModel.supportedScreenshots(plugin.images)
-        displayPlugins.push(plugin)
-      }
-      snapshot = parsed
-      allPlugins = displayPlugins
-      updateRows = buildUpdates(parsed)
-      rebuildView()
-
       var added = addedIds.length
       var removed = Array.isArray(changes.removed) ? changes.removed.length : 0
       var updated = updatedIds.length
@@ -241,12 +275,14 @@ Item {
 
   function loadActionStatus() {
     if (!helperPath || statusProcess.running) return
+    statusChecking = true
     statusProcess.output = ""
     statusProcess.command = [helperPath, "status"]
     statusProcess.running = true
   }
 
   function applyActionStatus(raw) {
+    statusChecking = false
     var parsed = null
     try { parsed = JSON.parse(String(raw || "")) } catch (e) {}
     if (!parsed) {
@@ -308,6 +344,11 @@ Item {
       bannerUrgent = true
       return
     }
+    if (statusChecking) {
+      bannerText = "Checking for an existing plugin operation…"
+      bannerUrgent = false
+      return
+    }
     if (refreshing) {
       bannerText = "Wait for the catalog refresh to finish before changing plugins."
       bannerUrgent = true
@@ -324,7 +365,7 @@ Item {
   }
 
   function beginAction(kind, plugin) {
-    if (actionStarting || actionInProgress || refreshing || !helperPath
+    if (actionStarting || actionInProgress || statusChecking || refreshing || !helperPath
         || !snapshotActionable) return
     actionStarting = true
     pendingActionPlugin = plugin || null
@@ -357,6 +398,15 @@ Item {
     bannerText = "Plugin operation started…"
     bannerUrgent = false
     actionPoll.restart()
+  }
+
+  Process {
+    id: cacheProcess
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.cachedOutput = text
+    }
+    onExited: root.applyCachedSnapshot(root.cachedOutput)
   }
 
   Process {
@@ -512,6 +562,12 @@ Item {
             pluginList.forceActiveFocus()
             event.accepted = true
           }
+          Keys.onRightPressed: function(event) {
+            if (text.length === 0) {
+              filterButton.forceActiveFocus()
+              event.accepted = true
+            }
+          }
         }
 
         Button {
@@ -525,6 +581,19 @@ Item {
           text: root.installedOnly ? "Installed" : "All"
           tooltipText: root.installedOnly ? "Show all plugins" : "Show installed plugins only"
           onClicked: root.installedOnly = !root.installedOnly
+          Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Left || event.key === Qt.Key_H) {
+              searchField.forceActiveFocus()
+              event.accepted = true
+            } else if ((event.key === Qt.Key_Right || event.key === Qt.Key_L)
+                && updatesButton.visible) {
+              updatesButton.forceActiveFocus()
+              event.accepted = true
+            } else if (event.key === Qt.Key_Down || event.key === Qt.Key_J) {
+              pluginList.forceActiveFocus()
+              event.accepted = true
+            }
+          }
           Accessible.name: root.installedOnly ? "Installed filter on" : "Installed filter off"
           Accessible.role: Accessible.Button
         }
@@ -540,9 +609,18 @@ Item {
           bordered: true
           selected: true
           enabled: root.snapshotActionable
-            && !root.refreshing && !root.actionInProgress
+            && !root.statusChecking && !root.refreshing && !root.actionInProgress
           text: root.safeUpdateCount > 0 ? "Updates " + root.safeUpdateCount : "Updates !"
           onClicked: root.openActionDialog("updates", null, root.updateRows)
+          Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Left || event.key === Qt.Key_H) {
+              filterButton.forceActiveFocus()
+              event.accepted = true
+            } else if (event.key === Qt.Key_Down || event.key === Qt.Key_J) {
+              pluginList.forceActiveFocus()
+              event.accepted = true
+            }
+          }
           Accessible.name: root.safeUpdateCount + " safe plugin updates available"
           Accessible.role: Accessible.Button
         }
@@ -560,6 +638,10 @@ Item {
         height: storefront.frameBottom - y - Style.space(10)
         plugins: root.visiblePlugins
         selectedId: root.selectedId
+        emptyText: root.catalogLoaded
+          ? "No plugins match this search."
+          : (root.cacheLoading || root.refreshing
+            ? "Loading plugins…" : "No cached plugins available.")
         activateOnSingleClick: !root.wideLayout
         onSelected: function(pluginId) { root.selectedId = pluginId }
         onActivated: function(plugin) {
@@ -568,6 +650,11 @@ Item {
             root.narrowShowingDetails = true
             Qt.callLater(pluginDetails.focusFirstControl)
           }
+        }
+        onDetailsRequested: function(plugin) {
+          root.selectedId = String(plugin.id || "")
+          if (!root.wideLayout) root.narrowShowingDetails = true
+          Qt.callLater(pluginDetails.focusFirstAction)
         }
       }
 
@@ -582,7 +669,7 @@ Item {
         plugin: root.selectedPlugin
         catalogRevision: String(root.snapshot.catalogCommit || "")
         narrowLayout: !root.wideLayout
-        actionsEnabled: root.snapshotActionable && !root.refreshing
+        actionsEnabled: root.snapshotActionable && !root.statusChecking && !root.refreshing
           && !root.actionStarting && !root.actionInProgress
         onBackRequested: {
           root.narrowShowingDetails = false
@@ -591,6 +678,7 @@ Item {
         onInstallRequested: function(plugin) { root.openActionDialog("install", plugin, []) }
         onRemoveRequested: function(plugin) { root.openActionDialog("remove", plugin, []) }
         onUpdateRequested: function(plugin) { root.openActionDialog("update", plugin, []) }
+        onSearchRequested: searchField.forceActiveFocus()
       }
 
       BorderSurface {

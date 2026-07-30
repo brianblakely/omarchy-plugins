@@ -240,6 +240,26 @@ git -C "$CATALOG_WORK" push -q -u origin main
 SOURCE="$TMP/source"
 git clone -q --no-recurse-submodules "$CATALOG_REMOTE" "$SOURCE"
 
+COLD_CACHE="$TMP/cached-empty.json"
+"$OKOMART" cached >"$COLD_CACHE"
+assert_jq "$COLD_CACHE" \
+  '(.ok|not) and (.cached|not)
+    and .error=="No valid cached Okomart snapshot is available."' \
+  "cache lookup reports an empty state without refreshing"
+
+INVALID_CACHE_STATE="$TMP/invalid-cache-state"
+mkdir -p -- "$INVALID_CACHE_STATE/okomart"
+printf '%s\n' \
+  '{"ok":false,"snapshotId":"failed-snapshot","plugins":[]}' \
+  >"$INVALID_CACHE_STATE/okomart/snapshot.json"
+XDG_STATE_HOME="$INVALID_CACHE_STATE" \
+  XDG_CACHE_HOME="$TMP/invalid-cache-root" \
+  "$OKOMART" cached >"$TMP/cached-invalid.json"
+assert_jq "$TMP/cached-invalid.json" \
+  '(.ok|not) and (.cached|not)
+    and .error=="No valid cached Okomart snapshot is available."' \
+  "cache lookup rejects a persisted failed snapshot"
+
 MOCK_LOG="$TMP/omarchy.log"
 MOCK_LIST="$TMP/plugin-list.json"
 printf '[]\n' >"$MOCK_LIST"
@@ -389,6 +409,18 @@ assert_jq "$SNAP1" \
 assert_jq "$SNAP1" \
   '([.plugins[]|select(.id=="b.beta")][0].images|length)==1' \
   "a single supported screenshot is exposed without carousel padding"
+
+: >"$TIMEOUT_LOG"
+CACHED1="$TMP/cached-1.json"
+"$OKOMART" cached >"$CACHED1"
+assert_jq "$CACHED1" \
+  '.ok and .cached and (.plugins|length)==2
+    and .snapshotId=="'"$(jq -r .snapshotId "$SNAP1")"'"
+    and .catalogCommit=="'"$(jq -r .catalogCommit "$SNAP1")"'"' \
+  "cache lookup returns the persisted actionable snapshot"
+[[ ! -s $TIMEOUT_LOG ]] ||
+  fail "cache lookup performed network work"
+pass "cache lookup performs no network work"
 
 ALPHA_CACHE_KEY="$(printf '%s' "$TMP/alpha.git" | sha256sum | awk '{print $1}')"
 ALPHA_CACHE_MIRROR="$XDG_CACHE_HOME/okomart/repositories/$ALPHA_CACHE_KEY.git"

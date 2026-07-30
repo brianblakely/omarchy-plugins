@@ -582,7 +582,7 @@ test("omits update detail and badges for every uninstalled state", () => {
   }
 })
 
-test("retains detailed update status for installed plugins", () => {
+test("shows only actionable or exceptional update detail for installed plugins", () => {
   const cases = [
     [{
       updateState: "update-available",
@@ -591,8 +591,8 @@ test("retains detailed update status for installed plugins", () => {
     },
       "Update available: 2.0"],
     [{ updateState: "update-available", availableVersion: "" },
-      "Up to date"],
-    [{ updateState: "up-to-date" }, "Up to date"],
+      ""],
+    [{ updateState: "up-to-date" }, ""],
     [{ updateState: "diverged" },
       "Update blocked: local and remote histories diverged"],
     [{ updateState: "ahead" }, "Installed checkout is ahead of its remote"],

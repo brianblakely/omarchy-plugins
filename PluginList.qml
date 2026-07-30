@@ -8,6 +8,7 @@ FocusScope {
 
   property var plugins: []
   property string selectedId: ""
+  property string emptyText: "No plugins match this search."
   property bool activateOnSingleClick: false
   property color foreground: Color.foreground
   property color accent: Color.accent
@@ -15,8 +16,10 @@ FocusScope {
 
   signal selected(string pluginId)
   signal activated(var plugin)
+  signal detailsRequested(var plugin)
 
   activeFocusOnTab: true
+  readonly property real rowHeight: Style.space(76)
 
   function idFor(plugin) {
     return plugin && plugin.id !== undefined ? String(plugin.id) : ""
@@ -51,7 +54,7 @@ FocusScope {
   }
 
   function movePage(delta) {
-    var rows = Math.max(1, Math.floor(list.height / Style.space(76)))
+    var rows = Math.max(1, Math.floor(list.height / (rowHeight + list.spacing)))
     move(delta * rows)
   }
 
@@ -59,10 +62,14 @@ FocusScope {
   onSelectedIdChanged: Qt.callLater(syncCurrentIndex)
 
   Keys.onPressed: function(event) {
-    if (event.key === Qt.Key_Down) {
+    if (event.key === Qt.Key_Down || event.key === Qt.Key_J) {
       move(1); event.accepted = true
-    } else if (event.key === Qt.Key_Up) {
+    } else if (event.key === Qt.Key_Up || event.key === Qt.Key_K) {
       move(-1); event.accepted = true
+    } else if (event.key === Qt.Key_Right || event.key === Qt.Key_L) {
+      var detailsPlugin = selectedPlugin()
+      if (detailsPlugin) root.detailsRequested(detailsPlugin)
+      event.accepted = detailsPlugin !== null
     } else if (event.key === Qt.Key_PageDown) {
       movePage(1); event.accepted = true
     } else if (event.key === Qt.Key_PageUp) {
@@ -125,7 +132,7 @@ FocusScope {
       }
 
       width: list.width
-      height: content.implicitHeight + Style.space(18)
+      height: root.rowHeight
       current: rowSelected
       hasCursor: rowSelected && root.activeFocus
       foreground: root.foreground
@@ -176,7 +183,7 @@ FocusScope {
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
           wrapMode: Text.WordWrap
-          maximumLineCount: 3
+          maximumLineCount: 2
           elide: Text.ElideRight
         }
       }
@@ -203,7 +210,7 @@ FocusScope {
       visible: list.count === 0
       anchors.centerIn: parent
       width: Math.max(0, parent.width - Style.space(32))
-      text: "No plugins match this search."
+      text: root.emptyText
       color: Util.alpha(root.foreground, 0.68)
       font.family: Style.font.family
       font.pixelSize: Style.font.body

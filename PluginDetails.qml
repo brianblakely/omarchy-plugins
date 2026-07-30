@@ -11,6 +11,7 @@ FocusScope {
   property string catalogRevision: ""
   property bool narrowLayout: false
   property bool actionsEnabled: true
+  property bool actionFocusPending: false
   property color foreground: Color.foreground
   property color accent: Color.accent
   property color urgent: Color.urgent
@@ -19,6 +20,7 @@ FocusScope {
   signal installRequested(var plugin)
   signal removeRequested(var plugin)
   signal updateRequested(var plugin)
+  signal searchRequested()
 
   readonly property bool hasPlugin: plugin !== null && plugin !== undefined
   readonly property bool installed: hasPlugin && plugin.installed === true
@@ -33,6 +35,17 @@ FocusScope {
     installed && plugin.safeUpdate === true
       && OkomartModel.hasVersionUpdate(plugin)
       && normalizedUpdateState === "available"
+  readonly property var detailBadges: {
+    if (!hasPlugin) return []
+    var badges = []
+    if (plugin.external) badges.push("External")
+    if (plugin.removed) badges.push("Removed from catalog")
+    if (plugin.isNew || plugin.newCatalog) badges.push("New")
+    if (plugin.catalogChanged) badges.push("Catalog updated")
+    if (installed && normalizedUpdateState === "available")
+      badges.push("Update available")
+    return badges
+  }
 
   activeFocusOnTab: true
 
@@ -80,6 +93,22 @@ FocusScope {
     root.forceActiveFocus()
   }
 
+  function focusFirstAction() {
+    var actions = [installButton, removeButton, updateButton]
+    for (var i = 0; i < actions.length; i++) {
+      if (actions[i].visible && actions[i].enabled) {
+        actionFocusPending = false
+        actions[i].forceActiveFocus()
+        return
+      }
+    }
+    actionFocusPending = !actionsEnabled
+      && ((installButton.visible)
+        || (removeButton.visible && removalAllowed)
+        || updateButton.visible)
+    root.forceActiveFocus()
+  }
+
   function value(value, fallback) {
     if (arguments.length >= 2) return OkomartModel.metadataValue(value, fallback)
     return OkomartModel.metadataValue(value)
@@ -100,10 +129,21 @@ FocusScope {
   }
 
   onPluginChanged: Qt.callLater(resetScroll)
+  onActionsEnabledChanged: if (actionsEnabled && actionFocusPending)
+    Qt.callLater(focusFirstAction)
+  onActiveFocusChanged: if (!activeFocus) actionFocusPending = false
 
   Keys.priority: Keys.AfterItem
   Keys.onPressed: function(event) {
-    if (event.key === Qt.Key_PageDown) {
+    if (event.key === Qt.Key_Down || event.key === Qt.Key_J) {
+      scrollBy(Style.space(42))
+      event.accepted = true
+    } else if (event.key === Qt.Key_Up || event.key === Qt.Key_K) {
+      var currentFlick = detailsFlickable()
+      if (!currentFlick || currentFlick.contentY <= 0.5) searchRequested()
+      else scrollBy(-Style.space(42))
+      event.accepted = true
+    } else if (event.key === Qt.Key_PageDown) {
       scrollBy(detailsScroll.height * 0.8)
       event.accepted = true
     } else if (event.key === Qt.Key_PageUp) {
@@ -246,23 +286,12 @@ FocusScope {
       }
 
       Flow {
-        visible: root.hasPlugin
+        visible: root.detailBadges.length > 0
         width: parent.width
         spacing: Style.space(8)
 
         Repeater {
-          model: {
-            if (!root.hasPlugin) return []
-            var badges = []
-            if (root.plugin.installed) badges.push(root.plugin.enabled ? "Installed · Enabled" : "Installed")
-            if (root.plugin.external) badges.push("External")
-            if (root.plugin.removed) badges.push("Removed from catalog")
-            if (root.plugin.isNew || root.plugin.newCatalog) badges.push("New")
-            if (root.plugin.catalogChanged) badges.push("Catalog updated")
-            if (root.installed && root.normalizedUpdateState === "available")
-              badges.push("Update available")
-            return badges
-          }
+          model: root.detailBadges
 
           delegate: BorderSurface {
             required property string modelData
