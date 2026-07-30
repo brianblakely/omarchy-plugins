@@ -6,31 +6,43 @@ Use this reference when creating or changing plugin folders, entry points, manif
 
 An installable Omarchy plugin is one Git repository with `manifest.json` at the repository root. `omarchy plugin add <git-url>` clones that repository and validates its root as one plugin.
 
-This repository is a development/catalog monorepo. Each immediate child of `plugins/` is kept self-contained so it can be validated here and published or mirrored as the root of its own Git repository:
+This repository deliberately has two layers. Its root is the installable
+`b.okomart` plugin and the repository also acts as Okomart's catalog.
+`plugins.txt` lists independently installable plugin repositories by URL:
 
 ```text
 omarchy-plugins/
+  manifest.json
+  Service.qml
+  Okomart.qml
+  plugins.txt
   README.md
   AGENTS.md
-
-  plugins/
-    cool-clock/
-      manifest.json
-      Widget.qml
-
-    quick-notes/
-      manifest.json
-      Panel.qml
-
-    media-helper/
-      manifest.json
-      Service.qml
-      BarWidget.qml
+  scripts/
+    generate-plugin-catalog.mjs
 ```
 
-The monorepo itself is not a valid argument to `omarchy plugin add`: its root intentionally has no `manifest.json`, and the current installer does not select a subdirectory from a remote repository. Public releases therefore need one real Git repository per plugin, with the contents of the corresponding folder under `plugins/` placed at that repository's root. Do not document a per-plugin URL until that repository actually exists.
+The root repository is a valid argument to `omarchy plugin add` because it is
+exactly one plugin: Okomart. Installing it does not install the catalog entries.
+The installer still cannot select a subdirectory from a remote repository.
+Every catalog entry therefore needs its own real Git URL in `plugins.txt`, and
+its manifest must remain at that repository's root. Do not add or document a
+per-plugin URL until that standalone repository actually exists.
 
-Installed plugins live at `~/.config/omarchy/plugins/<id>/`. The destination name is determined by `manifest.id`, not by the remote repository name or this monorepo's source-folder name. Prefer source-folder and repository names that clearly correspond to the plugin, but do not rely on them as identity.
+The registry format is deliberately small and strict: one canonical public
+HTTPS URL ending in `.git` per line, no blank lines, and no duplicates. Okomart
+checks the registered repositories and actual installation uses the exact
+standalone URL from `plugins.txt`.
+
+The marker-owned README catalog is documentation derived from the registry.
+`node scripts/generate-plugin-catalog.mjs` clones each URL, reads the root
+manifest's `name`, `author`, and `description`, validates those fields, escapes
+them for a Markdown table, and replaces only the generated region.
+
+Installed plugins live at `~/.config/omarchy/plugins/<id>/`. The destination
+name is determined by `manifest.id`, not by the remote repository or local
+checkout directory name. Prefer repository names that clearly correspond to
+the plugin, but do not rely on them as identity.
 
 ## Filesystem Safety
 

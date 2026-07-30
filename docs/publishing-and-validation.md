@@ -16,9 +16,18 @@ cool-clock/
 
 `omarchy plugin add <git-url>` clones that repository and validates its root. The command cannot select a plugin subdirectory from a remote monorepo.
 
-This repository is a development/catalog monorepo, not an installable plugin repository. Each immediate child of `plugins/` must remain self-contained and be published or mirrored as the root of its own Git repository. The public repository should contain the plugin folder's contents, not the catalog folder wrapped around them.
+This repository is the one intentional dual-purpose case:
 
-Do not publish an installation command until that per-plugin repository and its actual URL exist. Do not substitute a monorepo URL, sparse-checkout recipe, synthetic source id, or undocumented subdirectory syntax.
+- The root is the installable `b.okomart` plugin, published at
+  `https://github.com/brianblakely/omarchy-plugins.git`.
+- `plugins.txt` lists separate installable plugin repositories by their
+  canonical public HTTPS `.git` URLs.
+
+Installing Okomart does not install or embed a catalog repository. The current
+CLI still cannot select a plugin subdirectory from a remote repository. Publish
+catalog installation commands only with the real standalone URL recorded in
+`plugins.txt`; do not substitute the Okomart catalog URL, sparse-checkout
+recipe, synthetic source id, or undocumented subdirectory syntax.
 
 ## Install And Enable
 
@@ -125,16 +134,16 @@ Validate a published repository from its root:
 omarchy plugin validate .
 ```
 
-Validate every plugin in this development/catalog monorepo from its root:
+Validate Okomart from this repository root:
 
 ```bash
-set -euo pipefail
-
-for manifest in ./plugins/*/manifest.json; do
-  plugin_dir="$(dirname "$manifest")"
-  omarchy plugin validate "$plugin_dir"
-done
+omarchy plugin validate .
 ```
+
+Validate each catalog plugin from the root of its standalone repository before
+adding its URL to `plugins.txt`. The README generator requires nonblank
+`name`, `author`, and `description` strings, but that metadata check is not a
+substitute for `omarchy plugin validate .`.
 
 The current validator checks:
 
@@ -152,8 +161,11 @@ When validating against a source checkout instead of the installed Omarchy versi
 ```bash
 PATH=/path/to/omarchy/bin:$PATH \
   OMARCHY_PATH=/path/to/omarchy \
-  /path/to/omarchy/bin/omarchy-plugin validate ./plugins/<plugin-folder>
+  /path/to/omarchy/bin/omarchy-plugin validate .
 ```
+
+Use the same command from a catalog plugin's standalone checkout when validating
+that plugin against a source Omarchy checkout.
 
 ## Recommended README Install Section
 
@@ -202,15 +214,26 @@ This plugin runs unsandboxed inside `omarchy-shell` when enabled. Review its
 source and the documented command, file, and network behavior before installing it.
 ````
 
-Replace every angle-bracket placeholder before publishing. The finished plugin README should contain a real URL and copy-pastable commands; do not leave a catalog URL or fictional repository name in its place.
+Replace every angle-bracket placeholder before publishing. The finished plugin
+README should contain a real URL and copy-pastable commands. The catalog URL is
+correct only for Okomart itself; use each `plugins.txt` standalone URL for catalog
+plugins.
 
 ## Pre-Publish Checklist
 
 Before announcing or tagging a release, verify:
 
-- [ ] The public Git repository contains exactly one plugin and has `manifest.json` at its root.
-- [ ] If developed here, the corresponding folder under `plugins/` remains self-contained and matches the published repository contents.
-- [ ] The actual public repository URL exists, and the README does not use this catalog monorepo as an install URL.
+- [ ] The published repository has one plugin manifest at its root. For
+      Okomart, `plugins.txt` contains URL references rather than additional
+      plugin manifests.
+- [ ] A catalog plugin remains self-contained and valid in its standalone
+      repository.
+- [ ] The actual public repository URL exists. Only Okomart uses the catalog
+      repository URL as its install URL.
+- [ ] A catalog URL is a unique canonical public HTTPS URL ending in `.git`,
+      recorded as one nonblank `plugins.txt` line.
+- [ ] `node scripts/generate-plugin-catalog.mjs` succeeds and the marker-owned
+      README table is current.
 - [ ] The plugin contains no symlinks, install hooks, post-install scripts, or privileged setup.
 - [ ] `schemaVersion` is the JSON number `1`.
 - [ ] `id`, `name`, `version`, `kinds`, and `entryPoints` are present.
@@ -223,7 +246,8 @@ Before announcing or tagging a release, verify:
 - [ ] Global keybindings remain user-owned and are documented with current shell IPC or an intentional `GlobalShortcut`.
 - [ ] Commands, file access, network access, background behavior, and required user configuration are documented.
 - [ ] The manifest `version` has been bumped for the published change.
-- [ ] `omarchy plugin validate ./plugins/<plugin-folder>` succeeds in this catalog and `omarchy plugin validate .` succeeds in the published repository.
+- [ ] `omarchy plugin validate .` succeeds in the plugin's published
+      standalone repository.
 - [ ] Runtime QML and every documented action have been exercised against the current Omarchy checkout.
 - [ ] A clean user can review the source, add the real Git URL, accept the interactive enable prompt, and update the plugin by id.
 - [ ] Automated docs use `--enable --yes` only where immediate execution is intended and trusted.

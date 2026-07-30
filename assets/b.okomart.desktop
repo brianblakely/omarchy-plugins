@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Okomart
+GenericName=Omarchy Plugin Store
+Comment=Browse, install, update, and remove Omarchy plugins
+Exec=bash -c "IFS=; set -f; plugin=\\$HOME/.config/omarchy/plugins/b.okomart/manifest.json; target=\\${XDG_DATA_HOME:-\\$HOME/.local/share}/applications/b.okomart.desktop; if [[ -f \\$plugin ]]; then exec omarchy-shell shell summon b.okomart; fi; if [[ -f \\$target && ! -L \\$target ]] && grep -Fqx -- X-Okomart-Managed=true \\$target; then rm -f -- \\$target; fi"
+Icon=system-software-install
+Terminal=false
+Categories=Settings;PackageManager;
+Keywords=Omarchy;Plugin;Extension;Store;
+StartupNotify=false
+X-Okomart-Managed=true

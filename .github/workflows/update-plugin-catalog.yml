@@ -1,0 +1,42 @@
+name: Update plugin catalog
+
+on:
+  push:
+    paths:
+      - plugins.txt
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-readme:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the catalog
+        uses: actions/checkout@v6
+
+      - name: Generate the catalog table
+        run: node scripts/generate-plugin-catalog.mjs
+
+      - name: Commit the generated README
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -n "$(git status --porcelain --untracked-files=all -- . ':(exclude)README.md')" ]]; then
+            echo "The catalog generator changed files other than README.md." >&2
+            exit 1
+          fi
+
+          if git diff --quiet -- README.md; then
+            echo "README.md is already current."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- README.md
+          [[ "$(git diff --cached --name-only)" == "README.md" ]]
+          git commit -m "Update generated plugin catalog"
+          git push

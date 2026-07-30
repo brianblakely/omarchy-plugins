@@ -1,0 +1,9 @@
+https://github.com/brianblakely/blink.git
+https://github.com/brianblakely/omacal.git
+https://github.com/brianblakely/omahud.git
+https://github.com/brianblakely/omaled.git
+https://github.com/brianblakely/omanews.git
+https://github.com/brianblakely/omanote.git
+https://github.com/brianblakely/omasnap.git
+https://github.com/brianblakely/omastonk.git
+https://github.com/brianblakely/peek.git

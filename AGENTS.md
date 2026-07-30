@@ -1,4 +1,6 @@
-This repository contains third-party Omarchy plugin source folders. Treat this file as the starting map, not the full reference.
+This repository is the Okomart Omarchy plugin and its URL registry of
+third-party plugins. Treat this file as the starting map, not the full
+reference.
 
 Target Omarchy reference:
 
@@ -9,14 +11,26 @@ Target Omarchy reference:
 
 When editing this project:
 
-1. Treat each plugin folder under `plugins/` as the root of its own Git-published repository, not as a package artifact. This monorepo is a development/catalog workspace and is not itself accepted by `omarchy plugin add`.
-2. Keep each plugin self-contained in one immediate child directory of `plugins/`.
-3. Do not invent unsupported `manifest.json` fields.
-4. Do not add symlinks, install hooks, post-install scripts, privileged setup, or automatic keybinding mutation.
-5. Keep global keybindings user-owned and documented explicitly.
-6. Bump `manifest.json` `version` for published changes as release metadata. Current `omarchy plugin update` fast-forwards the installed Git checkout; it does not compare manifest versions.
-7. Validate each plugin you change or intend to publish with `omarchy plugin validate ./plugins/<plugin-folder>`.
-8. Keep README examples copy-pastable and explicit about the plugin Git URL, plugin id, source review, the interactive enable prompt, and updates. Do not invent a URL before that plugin has a standalone repository.
+1. Treat the repository root as the installable `b.okomart` plugin. It is also the catalog repository at `https://github.com/brianblakely/omarchy-plugins.git`.
+2. Treat each nonblank line in `plugins.txt` as the canonical public HTTPS
+   `.git` URL of one independently published plugin repository. Keep URLs
+   unique and do not add embedded plugin source folders.
+3. Keep every catalog plugin self-contained and structurally valid in its own
+   standalone repository, with `manifest.json` at that repository's root.
+4. Do not invent unsupported `manifest.json` fields.
+5. Do not add symlinks, install hooks, post-install scripts, privileged setup, or automatic keybinding mutation.
+6. Keep global keybindings user-owned and documented explicitly.
+7. Bump the relevant standalone repository's `manifest.json` `version` for
+   published plugin changes as release metadata. Current
+   `omarchy plugin update` fast-forwards the installed Git checkout; it does
+   not compare manifest versions.
+8. Validate Okomart changes with `omarchy plugin validate .`. Validate a
+   changed or publishable catalog plugin from that plugin's standalone
+   repository.
+9. Keep README examples copy-pastable and explicit about the real Git URL, plugin id, source review, the interactive enable prompt, and updates. Okomart uses this repository's real URL; do not invent a URL for a catalog plugin before its standalone repository exists.
+10. Regenerate the marker-owned README catalog with
+    `node scripts/generate-plugin-catalog.mjs` after changing `plugins.txt`.
+    Do not edit generated table rows by hand.
 
 ## Documentation Map
 
@@ -31,10 +45,13 @@ When editing this project:
 
 For most plugin edits:
 
-1. Inspect the plugin folder and `manifest.json`.
+1. Decide whether the change belongs to root Okomart, the `plugins.txt`
+   registry, or a plugin's separate repository, then inspect the relevant
+   `manifest.json`.
 2. Check the relevant doc above before changing manifest fields, settings, keybindings, or publishing instructions.
 3. Keep behavior documented if the plugin runs commands, reads or writes files, uses network access, registers shortcuts, or needs user configuration.
-4. Run `omarchy plugin validate ./plugins/<plugin-folder>` for each changed plugin before calling it publishable.
+4. Run `omarchy plugin validate .` for Okomart. Validate each changed catalog
+   plugin in its own checkout before calling it publishable.
 
 ## When Unsure
 

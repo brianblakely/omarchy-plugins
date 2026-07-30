@@ -1,0 +1,217 @@
+import QtQuick
+import qs.Commons
+import qs.Ui
+import "OkomartModel.js" as OkomartModel
+
+FocusScope {
+  id: root
+
+  property var plugins: []
+  property string selectedId: ""
+  property bool activateOnSingleClick: false
+  property color foreground: Color.foreground
+  property color accent: Color.accent
+  property color urgent: Color.urgent
+
+  signal selected(string pluginId)
+  signal activated(var plugin)
+
+  activeFocusOnTab: true
+
+  function idFor(plugin) {
+    return plugin && plugin.id !== undefined ? String(plugin.id) : ""
+  }
+
+  function selectedPlugin() {
+    if (!Array.isArray(plugins) || list.currentIndex < 0 || list.currentIndex >= plugins.length)
+      return null
+    return plugins[list.currentIndex]
+  }
+
+  function indexForId(pluginId) {
+    var id = String(pluginId || "")
+    if (!Array.isArray(plugins)) return -1
+    for (var i = 0; i < plugins.length; i++)
+      if (idFor(plugins[i]) === id) return i
+    return -1
+  }
+
+  function syncCurrentIndex() {
+    var next = indexForId(selectedId)
+    if (next < 0 && Array.isArray(plugins) && plugins.length > 0) next = 0
+    if (list.currentIndex !== next) list.currentIndex = next
+    if (next >= 0) list.positionViewAtIndex(next, ListView.Contain)
+  }
+
+  function move(delta) {
+    if (!Array.isArray(plugins) || plugins.length === 0) return
+    var next = Math.max(0, Math.min(plugins.length - 1, list.currentIndex + delta))
+    list.currentIndex = next
+    list.positionViewAtIndex(next, ListView.Contain)
+  }
+
+  function movePage(delta) {
+    var rows = Math.max(1, Math.floor(list.height / Style.space(76)))
+    move(delta * rows)
+  }
+
+  onPluginsChanged: Qt.callLater(syncCurrentIndex)
+  onSelectedIdChanged: Qt.callLater(syncCurrentIndex)
+
+  Keys.onPressed: function(event) {
+    if (event.key === Qt.Key_Down) {
+      move(1); event.accepted = true
+    } else if (event.key === Qt.Key_Up) {
+      move(-1); event.accepted = true
+    } else if (event.key === Qt.Key_PageDown) {
+      movePage(1); event.accepted = true
+    } else if (event.key === Qt.Key_PageUp) {
+      movePage(-1); event.accepted = true
+    } else if (event.key === Qt.Key_Home) {
+      if (plugins.length > 0) list.currentIndex = 0
+      list.positionViewAtBeginning()
+      event.accepted = true
+    } else if (event.key === Qt.Key_End) {
+      if (plugins.length > 0) list.currentIndex = plugins.length - 1
+      list.positionViewAtEnd()
+      event.accepted = true
+    } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+      var plugin = selectedPlugin()
+      if (plugin) root.activated(plugin)
+      event.accepted = true
+    }
+  }
+
+  ListView {
+    id: list
+    anchors.fill: parent
+    clip: true
+    model: Array.isArray(root.plugins) ? root.plugins : []
+    spacing: Style.space(5)
+    boundsBehavior: Flickable.StopAtBounds
+    reuseItems: true
+    cacheBuffer: height
+    currentIndex: -1
+
+    onCurrentIndexChanged: {
+      var plugin = root.selectedPlugin()
+      if (!plugin) return
+      var id = root.idFor(plugin)
+      if (id !== root.selectedId) root.selected(id)
+    }
+
+    delegate: CursorSurface {
+      id: row
+      required property int index
+      required property var modelData
+
+      readonly property bool rowSelected: index === list.currentIndex
+      readonly property string pluginId: root.idFor(modelData)
+      readonly property string title: String(modelData.name || modelData.id || "Unnamed plugin")
+      readonly property string description: String(modelData.description || "No description provided.")
+      readonly property string normalizedUpdate: OkomartModel.updateState(modelData)
+      readonly property string status: {
+        if (modelData.removed) return "Removed from catalog"
+        if (normalizedUpdate === "available") return "Update available"
+        if ((normalizedUpdate === "dirty" || normalizedUpdate === "diverged")
+            && (modelData.remoteRelation === "behind"
+              || modelData.remoteRelation === "diverged")) return "Update blocked"
+        if (modelData.external) return modelData.installed ? "External · Installed" : "External"
+        if (modelData.installed) return modelData.enabled ? "Installed · Enabled" : "Installed"
+        if (modelData.isNew || modelData.newCatalog) return "New"
+        if (modelData.catalogChanged) return "Catalog updated"
+        return ""
+      }
+
+      width: list.width
+      height: content.implicitHeight + Style.space(18)
+      current: rowSelected
+      hasCursor: rowSelected && root.activeFocus
+      foreground: root.foreground
+      accent: root.accent
+
+      Column {
+        id: content
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        anchors.leftMargin: Style.space(12)
+        anchors.rightMargin: Style.space(12)
+        spacing: Style.space(3)
+
+        Row {
+          width: parent.width
+          spacing: Style.space(8)
+
+          Text {
+            width: Math.max(0, parent.width - (statusText.visible ? statusText.implicitWidth + parent.spacing : 0))
+            text: row.title
+            textFormat: Text.PlainText
+            color: root.foreground
+            font.family: Style.font.family
+            font.pixelSize: Style.font.title
+            font.bold: row.rowSelected
+            elide: Text.ElideRight
+          }
+
+          Text {
+            id: statusText
+            visible: text !== ""
+            text: row.status
+            textFormat: Text.PlainText
+            color: modelData.removed || row.normalizedUpdate === "dirty"
+              || row.normalizedUpdate === "diverged"
+              ? root.urgent : root.accent
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+          }
+        }
+
+        Text {
+          width: parent.width
+          text: row.description
+          textFormat: Text.PlainText
+          color: Util.alpha(root.foreground, 0.72)
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+          wrapMode: Text.WordWrap
+          maximumLineCount: 3
+          elide: Text.ElideRight
+        }
+      }
+
+      MouseArea {
+        anchors.fill: parent
+        hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
+        onEntered: list.currentIndex = row.index
+        onClicked: function(mouse) {
+          list.currentIndex = row.index
+          root.forceActiveFocus()
+          if (root.activateOnSingleClick || (mouse.button === Qt.LeftButton && mouse.modifiers & Qt.ControlModifier))
+            root.activated(row.modelData)
+        }
+        onDoubleClicked: root.activated(row.modelData)
+      }
+
+      Accessible.name: row.title + (row.status ? ", " + row.status : "")
+      Accessible.description: row.description
+      Accessible.role: Accessible.ListItem
+    }
+
+    Text {
+      visible: list.count === 0
+      anchors.centerIn: parent
+      width: Math.max(0, parent.width - Style.space(32))
+      text: "No plugins match this search."
+      color: Util.alpha(root.foreground, 0.68)
+      font.family: Style.font.family
+      font.pixelSize: Style.font.body
+      horizontalAlignment: Text.AlignHCenter
+      wrapMode: Text.WordWrap
+    }
+  }
+
+  Accessible.name: "Plugin list"
+  Accessible.role: Accessible.List
+}
