@@ -97,17 +97,27 @@ run_entrypoint_load_test() {
 grep -Fq 'FloatingWindow {' "$ROOT_DIR/Okomart.qml" \
   || fail "Okomart is not hosted in a FloatingWindow"
 grep -Fq '[helperPath,' "$ROOT_DIR/Okomart.qml" \
-  || fail "Okomart cannot invoke its window-positioning helper"
-grep -Fq '"position-window",' "$ROOT_DIR/Okomart.qml" \
-  || fail "Okomart does not request verified floating placement"
+  || fail "Okomart cannot invoke its window-rule helper"
+grep -Fq '"prepare-window",' "$ROOT_DIR/Okomart.qml" \
+  || fail "Okomart does not prepare its floating rule before mapping"
 grep -Fq 'String(Math.round(windowSide))' \
   "$ROOT_DIR/Okomart.qml" \
   || fail "Okomart does not request its square window size"
-grep -Fq 'parsed.floating === true' \
+grep -Fq 'parsed.prepared === true' \
   "$ROOT_DIR/Okomart.qml" \
-  || fail "Okomart does not verify compositor floating state"
+  || fail "Okomart does not verify that its map-time rule was registered"
+grep -Fq 'function showPreparedWindow()' "$ROOT_DIR/Okomart.qml" \
+  || fail "Okomart is missing its post-preparation map step"
+if sed -n '/function open(payloadJson)/,/^  }/p' "$ROOT_DIR/Okomart.qml" \
+    | grep -Fq 'window.visible = true'; then
+  fail "Okomart maps before its floating rule is prepared"
+fi
+if ! sed -n '/function showPreparedWindow()/,/^  }/p' "$ROOT_DIR/Okomart.qml" \
+    | grep -Fq 'window.visible = true'; then
+  fail "Okomart does not map after its floating rule is prepared"
+fi
 if grep -Fq 'Hyprland.dispatch(' "$ROOT_DIR/Okomart.qml"; then
-  fail "Okomart bypasses the compatible verified window helper"
+  fail "Okomart bypasses the target Lua window-rule helper"
 fi
 [[ $(grep -Fc 'implicitWidth: root.windowSide' "$ROOT_DIR/Okomart.qml") -eq 1 ]] \
   || fail "Okomart does not declare a square initial width"
@@ -384,9 +394,9 @@ grep -Fq 'Qt.callLater(pluginDetails.focusFirstAction)' "$ROOT_DIR/Okomart.qml" 
 grep -Fq 'onPluginListRequested: root.focusPluginListFromSearch()' \
   "$ROOT_DIR/Okomart.qml" \
   || fail "leftward detail navigation is not connected to the plugin list"
-if ! sed -n '/function open(payloadJson)/,/^  }/p' "$ROOT_DIR/Okomart.qml" \
+if ! sed -n '/function showPreparedWindow()/,/^  }/p' "$ROOT_DIR/Okomart.qml" \
     | grep -Fq 'Qt.callLater(focusInitialPluginList)'; then
-  fail "Okomart does not open with the plugin list focused"
+  fail "Okomart does not focus the plugin list after its window maps"
 fi
 grep -Fq 'function focusFirstItem()' "$ROOT_DIR/PluginList.qml" \
   || fail "plugin list cannot focus its first item"

@@ -31,7 +31,8 @@ Item {
   property bool narrowShowingDetails: false
   property bool initialListFocusPending: false
   property int initialListFocusAttempts: 0
-  property int floatingWindowAttempts: 0
+  property bool windowOpenPending: false
+  property bool windowRulePrepared: false
   property bool actionStarting: false
   property bool actionInProgress: false
   property string query: ""
@@ -39,7 +40,7 @@ Item {
   property string cachedOutput: ""
   property string refreshOutput: ""
   property string refreshError: ""
-  property string windowPositionOutput: ""
+  property string windowRuleOutput: ""
   property string actionOutput: ""
   property string actionError: ""
   property string bannerText: ""
@@ -87,64 +88,70 @@ Item {
     window.fullscreen = false
     window.implicitWidth = windowSide
     window.implicitHeight = windowSide
-    window.visible = true
     narrowShowingDetails = false
     if (catalogLoaded) loadActionStatus()
     else loadCachedSnapshot()
-    initialFocusTimer.restart()
-    requestFloatingWindow()
-    Qt.callLater(focusInitialPluginList)
+    windowOpenPending = true
+    prepareFloatingWindow()
   }
 
   function close() {
+    windowOpenPending = false
     initialListFocusPending = false
     initialFocusTimer.stop()
-    floatingWindowTimer.stop()
     closingFromHost = true
     window.visible = false
     closingFromHost = false
   }
 
-  function requestFloatingWindow() {
-    floatingWindowAttempts = 0
-    windowPositionOutput = ""
-    floatingWindowTimer.stop()
-    Qt.callLater(enforceFloatingWindow)
-  }
-
-  function enforceFloatingWindow() {
-    if (!window.visible) {
-      floatingWindowTimer.stop()
+  function prepareFloatingWindow() {
+    if (!windowOpenPending) return
+    if (windowRulePrepared) {
+      showPreparedWindow()
       return
     }
-    if (!helperPath || windowPositionProcess.running) return
+    if (!helperPath) {
+      failWindowPreparation("Okomart's window helper is unavailable.")
+      return
+    }
+    if (windowRuleProcess.running) return
 
-    floatingWindowAttempts++
-    windowPositionOutput = ""
-    windowPositionProcess.command = [
+    windowRuleOutput = ""
+    windowRuleProcess.command = [
       helperPath,
-      "position-window",
+      "prepare-window",
       String(Math.round(windowSide))
     ]
-    windowPositionProcess.running = true
+    windowRuleProcess.running = true
   }
 
-  function applyWindowPosition(raw, exitCode) {
-    if (!window.visible) {
-      floatingWindowTimer.stop()
-      return
-    }
-
+  function applyWindowRule(raw, exitCode) {
     var parsed = null
     try { parsed = JSON.parse(String(raw || "")) } catch (e) {}
     if (exitCode === 0 && parsed && parsed.ok === true
-        && parsed.floating === true) {
-      floatingWindowTimer.stop()
+        && parsed.prepared === true) {
+      windowRulePrepared = true
+      showPreparedWindow()
       return
     }
 
-    if (floatingWindowAttempts >= 40) floatingWindowTimer.stop()
-    else floatingWindowTimer.restart()
+    var reason = parsed && parsed.error
+      ? String(parsed.error) : "Could not prepare Okomart's floating window."
+    failWindowPreparation(reason)
+  }
+
+  function failWindowPreparation(reason) {
+    if (!windowOpenPending) return
+    windowOpenPending = false
+    console.warn("Okomart: " + reason)
+    if (shell && typeof shell.hide === "function") shell.hide(pluginId)
+  }
+
+  function showPreparedWindow() {
+    if (!windowOpenPending) return
+    windowOpenPending = false
+    window.visible = true
+    Qt.callLater(focusInitialPluginList)
   }
 
   function focusInitialPluginList() {
@@ -476,13 +483,13 @@ Item {
   }
 
   Process {
-    id: windowPositionProcess
+    id: windowRuleProcess
     stdout: StdioCollector {
       waitForEnd: true
-      onStreamFinished: root.windowPositionOutput = text
+      onStreamFinished: root.windowRuleOutput = text
     }
     onExited: function(exitCode) {
-      root.applyWindowPosition(root.windowPositionOutput, exitCode)
+      root.applyWindowRule(root.windowRuleOutput, exitCode)
     }
   }
 
@@ -545,13 +552,6 @@ Item {
     onTriggered: root.focusInitialPluginList()
   }
 
-  Timer {
-    id: floatingWindowTimer
-    interval: 50
-    repeat: false
-    onTriggered: root.enforceFloatingWindow()
-  }
-
   FloatingWindow {
     id: window
     title: "Okomart"
@@ -565,9 +565,8 @@ Item {
     onVisibleChanged: {
       if (visible) {
         if (root.initialListFocusPending) initialFocusTimer.restart()
-        root.requestFloatingWindow()
       } else {
-        floatingWindowTimer.stop()
+        root.windowOpenPending = false
         if (!root.closingFromHost && root.shell && typeof root.shell.hide === "function")
           root.shell.hide(root.pluginId)
       }

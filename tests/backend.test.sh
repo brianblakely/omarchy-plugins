@@ -121,33 +121,19 @@ chmod +x "$TMP/bin/timeout" "$TMP/bin/tar"
 export PATH="$TMP/bin:$PATH"
 
 HYPRCTL_LOG="$TMP/hyprctl.log"
-HYPRCTL_STATE="$TMP/hyprctl-state.json"
-export HYPRCTL_LOG HYPRCTL_STATE
+export HYPRCTL_LOG
 cat >"$TMP/bin/hyprctl" <<'MOCK'
 #!/usr/bin/env bash
 set -u
 printf '%s\n' "$*" >>"$HYPRCTL_LOG"
 
-if [[ ${1:-} == -j && ${2:-} == clients ]]; then
-  cat "$HYPRCTL_STATE"
-  exit 0
-fi
-
-if [[ ${1:-} == dispatch ]]; then
-  request="${2:-}"
-  if [[ $request == hl.dsp.* ]]; then
-    if [[ ${MOCK_HYPR_FAIL:-0} == 1 ]]; then
-      printf 'Invalid dispatcher\n'
-      exit 0
-    fi
-    if [[ $request == hl.dsp.window.float* ]]; then
-      jq 'map(if .address=="0xabc123" then .floating=true else . end)' \
-        "$HYPRCTL_STATE" >"$HYPRCTL_STATE.next"
-      mv "$HYPRCTL_STATE.next" "$HYPRCTL_STATE"
-    fi
-    printf 'ok\n'
+if [[ ${1:-} == eval && ${2:-} == hl.window_rule* ]]; then
+  if [[ ${MOCK_HYPR_FAIL:-0} == 1 ]]; then
+    printf 'Lua evaluation failed\n' >&2
     exit 0
   fi
+  printf 'ok\n'
+  exit 0
 fi
 
 exit 1
@@ -155,57 +141,38 @@ MOCK
 chmod +x "$TMP/bin/hyprctl"
 
 reset_hypr_fixture() {
-  printf '%s\n' '[
-    {
-      "address":"0xdec0de",
-      "class":"org.quickshell",
-      "initialClass":"org.quickshell",
-      "title":"Another Quickshell window",
-      "initialTitle":"Another Quickshell window",
-      "floating":false
-    },
-    {
-      "address":"0xabc123",
-      "class":"",
-      "initialClass":"org.quickshell",
-      "title":"",
-      "initialTitle":"Okomart",
-      "floating":false
-    }
-  ]' >"$HYPRCTL_STATE"
   : >"$HYPRCTL_LOG"
 }
 
 reset_hypr_fixture
-"$OKOMART" position-window 760 >"$TMP/window-position.json"
-assert_jq "$TMP/window-position.json" \
-  '.ok and .floating and .address=="0xabc123"
-    and .width==760 and .height==760' \
-  "target dispatchers float the exact Okomart window"
-grep -Fq 'hl.dsp.window.float({ window = "address:0xabc123", action = "set" })' \
+"$OKOMART" prepare-window 760 >"$TMP/window-preparation.json"
+assert_jq "$TMP/window-preparation.json" \
+  '.ok and .prepared and .width==760 and .height==760' \
+  "target Lua rule is registered before Okomart maps"
+grep -Fq 'eval hl.window_rule({ name = "okomart-floating-window"' \
   "$HYPRCTL_LOG" ||
-  fail "Lua window placement did not request an idempotent floating state"
-grep -Fq 'hl.dsp.window.resize({ window = "address:0xabc123", x = 760, y = 760 })' \
+  fail "window preparation did not register a named Lua rule"
+grep -Fq 'match = { class = "^org.quickshell$", title = "^Okomart$" }' \
   "$HYPRCTL_LOG" ||
-  fail "Lua window placement did not request square geometry"
-grep -Fq 'hl.dsp.window.center({ window = "address:0xabc123" })' \
+  fail "window preparation rule is not scoped to Okomart"
+grep -Fq 'float = true, center = true, size = { 760, 760 }' \
   "$HYPRCTL_LOG" ||
-  fail "Lua window placement did not request centering"
+  fail "window preparation rule does not request floating square geometry"
 if grep -Eq \
-  'setfloating|togglefloating|resizewindowpixel|movewindowpixel|centerwindow' \
+  'hl\.dsp\.window|setfloating|togglefloating|resizewindowpixel|movewindowpixel|centerwindow' \
   "$OKOMART"; then
-  fail "window placement still contains a legacy Hyprland dispatcher"
+  fail "window preparation still contains a post-map or legacy dispatcher"
 fi
-pass "window placement supports only the target Lua dispatcher API"
+pass "window preparation supports only the target Lua rule API"
 
 reset_hypr_fixture
-if MOCK_HYPR_FAIL=1 "$OKOMART" position-window 760 \
-  >"$TMP/window-position-failed.json"; then
-  fail "dispatcher errors should fail verified window placement"
+if MOCK_HYPR_FAIL=1 "$OKOMART" prepare-window 760 \
+  >"$TMP/window-preparation-failed.json"; then
+  fail "Lua evaluation errors should fail window preparation"
 fi
-assert_jq "$TMP/window-position-failed.json" \
-  '(.ok|not) and .error=="Could not float the Okomart window"' \
-  "target dispatcher errors are rejected"
+assert_jq "$TMP/window-preparation-failed.json" \
+  '(.ok|not) and .error=="Could not register the Okomart window rule"' \
+  "target Lua rule errors are rejected"
 
 write_plugin_manifest() {
   local target="$1"
