@@ -792,7 +792,7 @@ Item {
             && !root.statusChecking && !root.refreshing && !root.actionInProgress
           iconText: "\uf021"
           tooltipText: root.safeUpdateCount > 0
-            ? "Review " + root.safeUpdateCount + " safe plugin "
+            ? "Review " + root.safeUpdateCount + " plugin "
               + (root.safeUpdateCount === 1 ? "update" : "updates")
             : "Review detected plugin updates"
           onClicked: root.openActionDialog("updates", null, root.updateRows)
@@ -806,7 +806,7 @@ Item {
             }
           }
           Accessible.name: root.safeUpdateCount > 0
-            ? root.safeUpdateCount + " safe plugin "
+            ? root.safeUpdateCount + " plugin "
               + (root.safeUpdateCount === 1 ? "update" : "updates") + " available"
             : "Review detected plugin updates"
           Accessible.role: Accessible.Button

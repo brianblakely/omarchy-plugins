@@ -1184,7 +1184,7 @@ assert_jq "$TMP/action-update-drift.json" \
   '(.ok|not) and (.results|length)==3
     and (.results[0].ok|not) and .results[1].ok and .results[2].ok
     and (.results[0].output|contains("changed after confirmation"))' \
-  "update preflight records commit drift and continues safe packages"
+  "update preflight records commit drift and continues eligible packages"
 
 "$OKOMART" snapshot "$SOURCE" >"$TMP/snapshot-current-updates.json"
 CONFIRMED_SNAPSHOT_ID="$(

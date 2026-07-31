@@ -423,6 +423,11 @@ if sed -n \
     "$ROOT_DIR/ActionDialog.qml" | grep -Fq 'BorderSurface {'; then
   fail "updateable confirmation items still have individual frames"
 fi
+if ! sed -n '/id: reviewScroll/,/id: reviewColumn/p' \
+    "$ROOT_DIR/ActionDialog.qml" \
+    | grep -Fq 'visible: root.mode === "results"'; then
+  fail "update confirmation list still has an outer outline"
+fi
 grep -Fq 'root.confirmsUpdate' "$ROOT_DIR/ActionDialog.qml" \
   || fail "update confirmation dialog does not distinguish its outer frame"
 grep -Fq '? Border.none()' "$ROOT_DIR/ActionDialog.qml" \
@@ -529,6 +534,9 @@ grep -Fq 'iconText: root.installedOnly ? "󰈲" : "󱓯"' \
   || fail "installed filter does not distinguish filtered and unfiltered glyphs"
 grep -Fq 'iconText: "\uf021"' "$ROOT_DIR/Okomart.qml" \
   || fail "updates button does not use Omarchy's update-available glyph"
+if grep -Fq ' safe plugin ' "$ROOT_DIR/Okomart.qml"; then
+  fail "updates button still describes routine updates as safe"
+fi
 if grep -Fq 'text: root.installedOnly ? "Installed" : "All"' \
     "$ROOT_DIR/Okomart.qml" \
     || grep -Fq 'text: root.safeUpdateCount > 0 ? "Updates "' \

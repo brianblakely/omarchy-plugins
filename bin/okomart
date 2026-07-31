@@ -436,7 +436,7 @@ refresh_catalog() {
     return 1
   fi
   if [[ -e $CATALOG_DIR && ! -d $CATALOG_DIR ]]; then
-    REFRESH_ERROR="The catalog cache is not a safe display directory."
+    REFRESH_ERROR="The catalog cache path is not a directory."
     return 1
   fi
   if [[ -L $REPOSITORY_CACHE ||
@@ -1801,7 +1801,7 @@ preflight_update() {
   fi
   if ! git -C "$target" merge-base --is-ancestor "$live_current" "$live_available" \
     >/dev/null 2>&1; then
-    PREFLIGHT_ERROR="The confirmed update is no longer a safe fast-forward."
+    PREFLIGHT_ERROR="The confirmed update can no longer be fast-forwarded."
     return 1
   fi
 }

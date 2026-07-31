@@ -321,6 +321,7 @@ FocusScope {
         Accessible.role: Accessible.List
 
         background: Rectangle {
+          visible: root.mode === "results"
           color: "transparent"
           border.color: reviewScroll.activeFocus
             ? root.accent : Util.alpha(root.foreground, 0.16)
