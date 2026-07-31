@@ -704,6 +704,11 @@ Item {
 
       GridLayout {
         id: toolbar
+        readonly property real controlHeight: Math.max(
+          searchField.implicitHeight,
+          filterButton.implicitHeight,
+          updatesButton.implicitHeight)
+
         enabled: !dialog.opened
         columns: root.toolbarSingleRow ? 3 : 2
         columnSpacing: Style.space(8)
@@ -718,6 +723,7 @@ Item {
           Layout.preferredWidth: Style.space(150)
           Layout.minimumWidth: Style.space(150)
           Layout.maximumWidth: Style.space(150)
+          Layout.preferredHeight: toolbar.controlHeight
           Layout.alignment: Qt.AlignVCenter
           placeholderText: "Search plugins…"
           text: root.query
@@ -749,6 +755,7 @@ Item {
 
         Button {
           id: filterButton
+          Layout.preferredHeight: toolbar.controlHeight
           Layout.alignment: Qt.AlignVCenter
           focusable: true
           bordered: true
@@ -775,6 +782,7 @@ Item {
 
         Button {
           id: updatesButton
+          Layout.preferredHeight: toolbar.controlHeight
           Layout.alignment: Qt.AlignVCenter
           visible: root.hasConfirmedUpdates
           focusable: true

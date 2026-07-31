@@ -185,6 +185,11 @@ grep -Fq 'wideLayout: window.width >= Style.space(600)' "$ROOT_DIR/Okomart.qml" 
   || fail "responsive master-detail breakpoint is missing"
 grep -Fq 'toolbarSingleRow: window.width >= Style.space(420)' "$ROOT_DIR/Okomart.qml" \
   || fail "responsive single-row toolbar breakpoint is missing"
+grep -Fq 'readonly property real controlHeight: Math.max(' "$ROOT_DIR/Okomart.qml" \
+  || fail "toolbar does not derive one shared control height"
+[[ $(grep -Fc 'Layout.preferredHeight: toolbar.controlHeight' \
+  "$ROOT_DIR/Okomart.qml") -eq 3 ]] \
+  || fail "toolbar search field and buttons do not share a height"
 grep -Fq 'installedOnly ? "installed" : "all"' "$ROOT_DIR/Okomart.qml" \
   || fail "installed-only filter is not wired"
 grep -Fq 'OkomartModel.filterPlugins' "$ROOT_DIR/Okomart.qml" \
