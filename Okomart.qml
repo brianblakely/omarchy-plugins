@@ -79,8 +79,17 @@ Item {
   }
   readonly property bool hasConfirmedUpdates:
     updatesConfirmed && updateRows.length > 0
-  readonly property color storefrontColor:
+  property color storefrontColor:
     focusScope.Window.active ? Color.accent : inactiveBorderColor
+
+  Behavior on storefrontColor {
+    ColorAnimation {
+      duration: 539
+      easing.type: Easing.BezierSpline
+      easing.bezierCurve: [0.23, 1, 0.32, 1, 1, 1]
+    }
+  }
+
   readonly property bool snapshotActionable: !!(snapshot
     && snapshot.snapshotId && snapshot.ok !== false)
 

@@ -149,6 +149,15 @@ grep -Fq 'import QtQuick.Window' "$ROOT_DIR/Okomart.qml" \
 grep -Fq 'focusScope.Window.active ? Color.accent : inactiveBorderColor' \
   "$ROOT_DIR/Okomart.qml" \
   || fail "storefront color does not follow window activity"
+grep -Fq 'Behavior on storefrontColor' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront color does not animate between activity states"
+grep -Fq 'duration: 539' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront activity animation does not match Omarchy's border duration"
+grep -Fq 'easing.type: Easing.BezierSpline' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront activity animation does not use Omarchy's border easing"
+grep -Fq 'easing.bezierCurve: [0.23, 1, 0.32, 1, 1, 1]' \
+  "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront activity animation does not match Omarchy's easeOutQuint curve"
 grep -Fq 'strokeColor: root.storefrontColor' "$ROOT_DIR/Okomart.qml" \
   || fail "storefront line drawing does not use its activity color"
 grep -Fq 'color: root.storefrontColor' "$ROOT_DIR/Okomart.qml" \
