@@ -27,6 +27,7 @@ Item {
   property bool refreshing: false
   property bool refreshQueued: false
   property bool statusChecking: false
+  property bool updatesConfirmed: false
   property bool installedOnly: false
   property bool narrowShowingDetails: false
   property bool initialListFocusPending: false
@@ -72,7 +73,8 @@ Item {
       if (updateRows[i] && updateRows[i].safeUpdate === true) count++
     return count
   }
-  readonly property bool hasDetectedUpdates: updateRows.length > 0
+  readonly property bool hasConfirmedUpdates:
+    updatesConfirmed && updateRows.length > 0
   readonly property bool snapshotActionable: !!(snapshot
     && snapshot.snapshotId && snapshot.ok !== false)
 
@@ -86,6 +88,7 @@ Item {
 
   function open(payloadJson) {
     closingFromHost = false
+    updatesConfirmed = false
     initialListFocusPending = true
     initialListFocusAttempts = 0
     selectedId = ""
@@ -306,6 +309,7 @@ Item {
     refreshing = false
     var parsed = null
     try { parsed = JSON.parse(String(raw || "")) } catch (e) {}
+    var confirmsUpdates = OkomartModel.snapshotConfirmsUpdates(parsed, exitCode)
 
     if (!parsed || !Array.isArray(parsed.plugins)) {
       bannerText = refreshError.trim() || "Catalog refresh failed."
@@ -335,7 +339,10 @@ Item {
 
     if (refreshQueued) {
       refreshQueued = false
+      updatesConfirmed = false
       Qt.callLater(refresh)
+    } else {
+      updatesConfirmed = confirmsUpdates
     }
   }
 
@@ -351,6 +358,7 @@ Item {
     }
     if (actionStarting || actionInProgress) return
     if (dialog.opened && dialog.mode !== "results") return
+    updatesConfirmed = false
     refreshing = true
     refreshOutput = ""
     refreshError = ""
@@ -491,6 +499,7 @@ Item {
     }
     var replaceOkomart = actionReplacesOkomart
     actionReplacesOkomart = false
+    updatesConfirmed = false
     dialog.closeDialog()
     actionInProgress = true
     if (replaceOkomart) {
@@ -720,13 +729,13 @@ Item {
         Button {
           id: updatesButton
           Layout.alignment: Qt.AlignVCenter
-          visible: root.hasDetectedUpdates
+          visible: root.hasConfirmedUpdates
           focusable: true
           bordered: true
           selected: true
           enabled: root.snapshotActionable
             && !root.statusChecking && !root.refreshing && !root.actionInProgress
-          iconText: "󰚰"
+          iconText: "\uf021"
           tooltipText: root.safeUpdateCount > 0
             ? "Review " + root.safeUpdateCount + " safe plugin "
               + (root.safeUpdateCount === 1 ? "update" : "updates")

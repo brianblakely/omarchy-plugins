@@ -25,6 +25,7 @@ const {
   resolveSelection,
   sortPlugins,
   sortScreenshots,
+  snapshotConfirmsUpdates,
   sourceLabel,
   sourceState,
   supportedScreenshots,
@@ -154,6 +155,25 @@ test("exposes only browser-safe plugin source URLs", () => {
     sourceUrl: "javascript:alert(1)"
   })), "")
   assert.equal(clickableSourceUrl(null), "")
+})
+
+test("confirms updates only from a fresh successful snapshot", () => {
+  const current = {
+    ok: true,
+    cached: false,
+    stale: false,
+    snapshotId: "snapshot-1",
+    plugins: []
+  }
+
+  assert.equal(snapshotConfirmsUpdates(current, 0), true)
+  assert.equal(snapshotConfirmsUpdates({ ...current, cached: true }, 0), false)
+  assert.equal(snapshotConfirmsUpdates({ ...current, stale: true }, 0), false)
+  assert.equal(snapshotConfirmsUpdates({ ...current, ok: false }, 0), false)
+  assert.equal(snapshotConfirmsUpdates({ ...current, snapshotId: "" }, 0), false)
+  assert.equal(snapshotConfirmsUpdates({ ...current, plugins: null }, 0), false)
+  assert.equal(snapshotConfirmsUpdates(current, 1), false)
+  assert.equal(snapshotConfirmsUpdates(null, 0), false)
 })
 
 test("renders catalog and installed versions without a phantom fallback", () => {

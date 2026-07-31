@@ -158,6 +158,9 @@ grep -Fq 'match = { class = "^org.quickshell$", title = "^Okomart$" }' \
 grep -Fq 'float = true, center = true, size = { 760, 760 }' \
   "$HYPRCTL_LOG" ||
   fail "window preparation rule does not request floating square geometry"
+grep -Fq 'border_size = 0' "$HYPRCTL_LOG" ||
+  fail "window preparation rule does not remove the compositor border"
+pass "window preparation removes the compositor border"
 if grep -Eq \
   'hl\.dsp\.window|setfloating|togglefloating|resizewindowpixel|movewindowpixel|centerwindow' \
   "$OKOMART"; then

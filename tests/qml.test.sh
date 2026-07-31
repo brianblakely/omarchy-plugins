@@ -412,6 +412,22 @@ grep -Fq 'parsed.ok === false || exitCode !== 0' "$ROOT_DIR/Okomart.qml" \
   || fail "snapshot persistence failures are not surfaced as refresh errors"
 grep -Fq 'readonly property bool snapshotActionable' "$ROOT_DIR/Okomart.qml" \
   || fail "unpersisted snapshots are not blocked from plugin actions"
+grep -Fq 'OkomartModel.snapshotConfirmsUpdates(parsed, exitCode)' \
+  "$ROOT_DIR/Okomart.qml" \
+  || fail "update visibility does not require a tested fresh snapshot"
+grep -Fq 'visible: root.hasConfirmedUpdates' "$ROOT_DIR/Okomart.qml" \
+  || fail "updates button is visible before update availability is confirmed"
+if grep -Fq 'visible: root.hasDetectedUpdates' "$ROOT_DIR/Okomart.qml"; then
+  fail "updates button still trusts unconfirmed cached update rows"
+fi
+if ! sed -n '/function open(payloadJson)/,/^  }/p' "$ROOT_DIR/Okomart.qml" \
+    | grep -Fq 'updatesConfirmed = false'; then
+  fail "reopening Okomart retains stale update confirmation"
+fi
+if ! sed -n '/function refresh()/,/^  }/p' "$ROOT_DIR/Okomart.qml" \
+    | grep -Fq 'updatesConfirmed = false'; then
+  fail "refreshing Okomart leaves update availability confirmed"
+fi
 grep -Fq 'p.versionUpdateAvailable === true' "$ROOT_DIR/Okomart.qml" \
   || fail "global updates are not gated by manifest version"
 grep -Fq 'onUpdateRequested: function(plugin)' "$ROOT_DIR/Okomart.qml" \
@@ -475,8 +491,8 @@ grep -Fq 'event.key === Qt.Key_Left || event.key === Qt.Key_H' \
 grep -Fq 'iconText: root.installedOnly ? "󰈲" : "󱓯"' \
   "$ROOT_DIR/Okomart.qml" \
   || fail "installed filter does not distinguish filtered and unfiltered glyphs"
-grep -Fq 'iconText: "󰚰"' "$ROOT_DIR/Okomart.qml" \
-  || fail "updates button does not use its Nerd Font glyph"
+grep -Fq 'iconText: "\uf021"' "$ROOT_DIR/Okomart.qml" \
+  || fail "updates button does not use Omarchy's update-available glyph"
 if grep -Fq 'text: root.installedOnly ? "Installed" : "All"' \
     "$ROOT_DIR/Okomart.qml" \
     || grep -Fq 'text: root.safeUpdateCount > 0 ? "Updates "' \

@@ -527,6 +527,16 @@ function clickableSourceUrl(plugin) {
   return /^https?:\/\/\S+$/i.test(source) ? source : ""
 }
 
+function snapshotConfirmsUpdates(snapshot, exitCode) {
+  return isRecord(snapshot)
+    && snapshot.ok === true
+    && snapshot.cached !== true
+    && snapshot.stale !== true
+    && Array.isArray(snapshot.plugins)
+    && trimmedString(snapshot.snapshotId).length > 0
+    && Number(exitCode) === 0
+}
+
 function normalizedState(value) {
   return lowerString(value)
     .replace(/[\s_]+/g, "-")
@@ -762,6 +772,7 @@ if (typeof module !== "undefined") {
     resolveSelection: resolveSelection,
     sortPlugins: sortPlugins,
     sortScreenshots: sortScreenshots,
+    snapshotConfirmsUpdates: snapshotConfirmsUpdates,
     sourceLabel: sourceLabel,
     sourceState: sourceState,
     supportedScreenshots: supportedScreenshots,

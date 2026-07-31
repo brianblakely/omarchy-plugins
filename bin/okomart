@@ -183,7 +183,7 @@ prepare_window_command() {
   require_tool hyprctl
 
   local rule output="" status=0
-  rule="hl.window_rule({ name = \"okomart-floating-window\", match = { class = \"^org.quickshell$\", title = \"^Okomart$\" }, float = true, center = true, size = { $side, $side } })"
+  rule="hl.window_rule({ name = \"okomart-floating-window\", match = { class = \"^org.quickshell$\", title = \"^Okomart$\" }, float = true, center = true, size = { $side, $side }, border_size = 0 })"
   output="$(hyprctl eval "$rule" 2>&1)" || status=$?
   if (( status != 0 )) || [[ $output != "ok" ]]; then
     json_error "Could not register the Okomart window rule"
