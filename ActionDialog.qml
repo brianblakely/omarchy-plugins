@@ -25,11 +25,13 @@ FocusScope {
   z: 1000
 
   readonly property bool destructive: mode === "remove"
+  readonly property bool confirmsUpdate:
+    mode === "update" || mode === "updates"
   readonly property string title: {
     if (mode === "install") return "Install and enable plugin?"
     if (mode === "remove") return "Remove plugin?"
     if (mode === "update") return "Update plugin?"
-    if (mode === "updates") return "Apply all safe updates?"
+    if (mode === "updates") return "Apply plugin updates?"
     if (mode === "results") return "Plugin operation results"
     return "Confirm action"
   }
@@ -229,7 +231,10 @@ FocusScope {
         : (root.errorText ? Style.space(390) : Style.space(340)))
     anchors.centerIn: parent
     color: root.background
-    borderSpec: Border.flat(root.destructive ? root.urgent : root.accent, Math.max(1, Style.normalBorderWidth))
+    borderSpec: root.confirmsUpdate
+      ? Border.none()
+      : Border.flat(root.destructive ? root.urgent : root.accent,
+          Math.max(1, Style.normalBorderWidth))
     radius: Style.cornerRadius
 
     MouseArea { anchors.fill: parent; onClicked: {} }

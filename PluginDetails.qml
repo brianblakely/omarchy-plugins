@@ -157,6 +157,14 @@ FocusScope {
       plugin.external ? "Installed source" : "Not declared")
   }
 
+  function sourceUrl() {
+    return hasPlugin ? OkomartModel.clickableSourceUrl(plugin) : ""
+  }
+
+  function openSourceUrl(url) {
+    if (url !== "" && url === sourceUrl()) Qt.openUrlExternally(url)
+  }
+
   function updateText() {
     return hasPlugin ? OkomartModel.updateDetailText(plugin) : ""
   }
@@ -373,7 +381,12 @@ FocusScope {
             ] : []
 
             delegate: Row {
+              id: detailRow
+
               required property var modelData
+              readonly property string linkUrl:
+                modelData.label === "Source" ? root.sourceUrl() : ""
+
               width: metadata.width
               spacing: Style.space(10)
 
@@ -386,13 +399,44 @@ FocusScope {
               }
 
               Text {
+                id: detailValue
+
                 width: Math.max(0, parent.width - Style.space(84))
                 text: modelData.value
                 textFormat: Text.PlainText
-                color: root.foreground
+                color: detailRow.linkUrl !== "" ? root.accent : root.foreground
                 font.family: Style.font.family
                 font.pixelSize: Style.font.bodySmall
+                font.underline: detailRow.linkUrl !== ""
+                  && (activeFocus || sourceMouse.containsMouse)
                 wrapMode: Text.WrapAnywhere
+                activeFocusOnTab: detailRow.linkUrl !== ""
+
+                Keys.onReturnPressed: root.openSourceUrl(detailRow.linkUrl)
+                Keys.onEnterPressed: root.openSourceUrl(detailRow.linkUrl)
+                Keys.onSpacePressed: root.openSourceUrl(detailRow.linkUrl)
+
+                MouseArea {
+                  id: sourceMouse
+                  anchors.left: parent.left
+                  anchors.top: parent.top
+                  width: Math.min(parent.width, parent.contentWidth)
+                  height: parent.height
+                  enabled: detailRow.linkUrl !== ""
+                  hoverEnabled: enabled
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: {
+                    detailValue.forceActiveFocus()
+                    root.openSourceUrl(detailRow.linkUrl)
+                  }
+                }
+
+                Accessible.name: detailRow.linkUrl !== ""
+                  ? "Open plugin source " + text : text
+                Accessible.description: detailRow.linkUrl !== ""
+                  ? "Opens in the default browser" : ""
+                Accessible.role: detailRow.linkUrl !== ""
+                  ? Accessible.Link : Accessible.StaticText
               }
             }
           }

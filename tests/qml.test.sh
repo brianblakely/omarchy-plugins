@@ -248,6 +248,15 @@ grep -Fq 'OkomartModel.metadataValue(value, fallback)' "$ROOT_DIR/PluginDetails.
   || fail "detail metadata does not use the tested formatter"
 grep -Fq 'OkomartModel.pluginVersionText(plugin)' "$ROOT_DIR/PluginDetails.qml" \
   || fail "detail version does not use the tested formatter"
+grep -Fq 'OkomartModel.clickableSourceUrl(plugin)' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin source links do not use the tested URL guard"
+grep -Fq 'Qt.openUrlExternally(url)' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin source is not opened externally"
+grep -Fq '? Accessible.Link : Accessible.StaticText' \
+  "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin source link is not exposed accessibly"
+grep -Fq 'cursorShape: Qt.PointingHandCursor' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin source link does not expose a pointing cursor"
 grep -Fq 'OkomartModel.updateDetailText(plugin)' "$ROOT_DIR/PluginDetails.qml" \
   || fail "detail update status does not use the tested formatter"
 if grep -Eqi 'badge|detailBadges' "$ROOT_DIR/PluginDetails.qml" \
@@ -367,11 +376,21 @@ grep -Fq 'mode === "updates"' "$ROOT_DIR/ActionDialog.qml" \
   || fail "update confirmation mode is missing"
 grep -Fq 'mode === "update"' "$ROOT_DIR/ActionDialog.qml" \
   || fail "single-plugin update confirmation mode is missing"
+grep -Fq 'if (mode === "updates") return "Apply plugin updates?"' \
+  "$ROOT_DIR/ActionDialog.qml" \
+  || fail "update confirmation title does not use neutral wording"
+if grep -Fq '"Apply all safe updates?"' "$ROOT_DIR/ActionDialog.qml"; then
+  fail "update confirmation still describes updates as safe"
+fi
 if sed -n \
     '/model: root.mode === "updates" ? root.safeUpdates : \[\]/,/model: root.mode === "updates" ? root.blockedUpdates : \[\]/p' \
     "$ROOT_DIR/ActionDialog.qml" | grep -Fq 'BorderSurface {'; then
   fail "updateable confirmation items still have individual frames"
 fi
+grep -Fq 'root.confirmsUpdate' "$ROOT_DIR/ActionDialog.qml" \
+  || fail "update confirmation dialog does not distinguish its outer frame"
+grep -Fq '? Border.none()' "$ROOT_DIR/ActionDialog.qml" \
+  || fail "update confirmation dialog still has an outer frame"
 grep -Fq 'event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab' \
   "$ROOT_DIR/ActionDialog.qml" \
   || fail "modal keyboard focus is not trapped"

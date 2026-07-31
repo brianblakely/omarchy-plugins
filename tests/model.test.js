@@ -5,6 +5,7 @@ const {
   actionLabel,
   buildViewModel,
   canRemovePlugin,
+  clickableSourceUrl,
   filterPlugins,
   hasUpdate,
   hasVersionUpdate,
@@ -130,6 +131,29 @@ test("preserves explicit metadata fallbacks and scalar values", () => {
   assert.equal(metadataValue("", false), "false")
   assert.equal(metadataValue(0), "0")
   assert.equal(metadataValue(false), "false")
+})
+
+test("exposes only browser-safe plugin source URLs", () => {
+  assert.equal(clickableSourceUrl(plugin({
+    installedSourceUrl: " https://github.com/example/installed.git ",
+    sourceUrl: "https://github.com/example/catalog.git"
+  })), "https://github.com/example/installed.git")
+  assert.equal(clickableSourceUrl(plugin({
+    sourceUrl: "https://github.com/example/catalog.git"
+  })), "https://github.com/example/catalog.git")
+  assert.equal(clickableSourceUrl({
+    manifest: { originUrl: "http://example.test/plugin.git" }
+  }), "http://example.test/plugin.git")
+  assert.equal(clickableSourceUrl(plugin({
+    sourceUrl: "git@github.com:example/plugin.git"
+  })), "")
+  assert.equal(clickableSourceUrl(plugin({
+    sourceUrl: "file:///tmp/plugin"
+  })), "")
+  assert.equal(clickableSourceUrl(plugin({
+    sourceUrl: "javascript:alert(1)"
+  })), "")
+  assert.equal(clickableSourceUrl(null), "")
 })
 
 test("renders catalog and installed versions without a phantom fallback", () => {

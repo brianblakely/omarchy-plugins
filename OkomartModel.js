@@ -516,6 +516,17 @@ function sourceLabel(plugin) {
   return "Catalog"
 }
 
+function clickableSourceUrl(plugin) {
+  if (!isRecord(plugin)) return ""
+
+  var source = firstText([
+    plugin.installedSourceUrl,
+    recordField(plugin, "sourceUrl"),
+    recordField(plugin, "originUrl")
+  ])
+  return /^https?:\/\/\S+$/i.test(source) ? source : ""
+}
+
 function normalizedState(value) {
   return lowerString(value)
     .replace(/[\s_]+/g, "-")
@@ -730,6 +741,7 @@ if (typeof module !== "undefined") {
     actionLabel: actionLabel,
     buildViewModel: buildViewModel,
     canRemovePlugin: canRemovePlugin,
+    clickableSourceUrl: clickableSourceUrl,
     comparePlugins: comparePlugins,
     filterPlugins: filterPlugins,
     hasUpdate: hasUpdate,
