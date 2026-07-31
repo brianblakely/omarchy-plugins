@@ -127,6 +127,24 @@ cat >"$TMP/bin/hyprctl" <<'MOCK'
 set -u
 printf '%s\n' "$*" >>"$HYPRCTL_LOG"
 
+if [[ ${1:-} == monitors && ${2:-} == -j ]]; then
+  if [[ -n ${MOCK_HYPR_MONITORS_JSON:-} ]]; then
+    printf '%s\n' "$MOCK_HYPR_MONITORS_JSON"
+  else
+    printf '%s\n' '[{"name":"Test Monitor","width":3840,"height":2160,"scale":2,"transform":0,"focused":true}]'
+  fi
+  exit 0
+fi
+
+if [[ ${1:-} == -j && ${2:-} == getoption && ${3:-} == general:gaps_out ]]; then
+  if [[ -n ${MOCK_HYPR_GAPS_JSON:-} ]]; then
+    printf '%s\n' "$MOCK_HYPR_GAPS_JSON"
+  else
+    printf '%s\n' '{"custom":"10 10 10 10"}'
+  fi
+  exit 0
+fi
+
 if [[ ${1:-} == eval && ${2:-} == hl.window_rule* ]]; then
   if [[ ${MOCK_HYPR_FAIL:-0} == 1 ]]; then
     printf 'Lua evaluation failed\n' >&2
@@ -145,22 +163,55 @@ reset_hypr_fixture() {
 }
 
 reset_hypr_fixture
-"$OKOMART" prepare-window 760 >"$TMP/window-preparation.json"
+"$OKOMART" prepare-window top 26 >"$TMP/window-preparation.json"
 assert_jq "$TMP/window-preparation.json" \
-  '.ok and .prepared and .width==760 and .height==760' \
-  "target Lua rule is registered before Okomart maps"
+  '.ok and .prepared and .width==1044 and .height==1044
+    and .monitor=="Test Monitor" and .outputScale==2
+    and .screen=={width:1920,height:1080,transform:0}
+    and .gap==10 and .bar=={position:"top",size:26}' \
+  "window geometry uses the focused logical screen, gap, and top bar"
 grep -Fq 'eval hl.window_rule({ name = "okomart-floating-window"' \
   "$HYPRCTL_LOG" ||
   fail "window preparation did not register a named Lua rule"
 grep -Fq 'match = { class = "^org.quickshell$", title = "^Okomart$" }' \
   "$HYPRCTL_LOG" ||
   fail "window preparation rule is not scoped to Okomart"
-grep -Fq 'float = true, center = true, size = { 760, 760 }' \
+grep -Fq 'float = true, center = true, size = { 1044, 1044 }' \
   "$HYPRCTL_LOG" ||
   fail "window preparation rule does not request floating square geometry"
 grep -Fq 'border_size = 0' "$HYPRCTL_LOG" ||
   fail "window preparation rule does not remove the compositor border"
 pass "window preparation removes the compositor border"
+
+reset_hypr_fixture
+"$OKOMART" prepare-window left 28 >"$TMP/window-preparation-left.json"
+assert_jq "$TMP/window-preparation-left.json" \
+  '.ok and .width==1070 and .height==1070
+    and .bar=={position:"left",size:28}' \
+  "a vertical bar reduces screen width before selecting the square dimension"
+
+reset_hypr_fixture
+"$OKOMART" prepare-window none 999 >"$TMP/window-preparation-no-bar.json"
+assert_jq "$TMP/window-preparation-no-bar.json" \
+  '.ok and .width==1070 and .height==1070
+    and .bar=={position:"none",size:0}' \
+  "a hidden or absent bar consumes no screen space"
+
+reset_hypr_fixture
+MOCK_HYPR_MONITORS_JSON='[{"name":"Portrait","width":3840,"height":2160,"scale":2,"transform":1,"focused":true}]' \
+MOCK_HYPR_GAPS_JSON='{"custom":"8 8 8 8"}' \
+  "$OKOMART" prepare-window right 28 >"$TMP/window-preparation-portrait.json"
+assert_jq "$TMP/window-preparation-portrait.json" \
+  '.ok and .width==1044 and .height==1044
+    and .screen=={width:1080,height:1920,transform:1}
+    and .gap==8 and .bar=={position:"right",size:28}' \
+  "rotated outputs swap logical axes before bar and gap subtraction"
+
+reset_hypr_fixture
+"$OKOMART" prepare-window 760 >"$TMP/window-preparation-legacy.json"
+assert_jq "$TMP/window-preparation-legacy.json" \
+  '.ok and .legacy and .width==760 and .height==760' \
+  "the previous fixed-size call remains compatible during self-update"
 if grep -Eq \
   'hl\.dsp\.window|setfloating|togglefloating|resizewindowpixel|movewindowpixel|centerwindow' \
   "$OKOMART"; then
@@ -169,7 +220,7 @@ fi
 pass "window preparation supports only the target Lua rule API"
 
 reset_hypr_fixture
-if MOCK_HYPR_FAIL=1 "$OKOMART" prepare-window 760 \
+if MOCK_HYPR_FAIL=1 "$OKOMART" prepare-window top 26 \
   >"$TMP/window-preparation-failed.json"; then
   fail "Lua evaluation errors should fail window preparation"
 fi
@@ -1184,8 +1235,31 @@ assert_jq "$TMP/action-update-selected.json" \
     and .selectedUpdateIds==["b.okomart","b.beta"]
     and [.results[].id]==["b.beta","b.okomart"]
     and all(.results[]; .operation=="update" and .ok)
-    and .selfUpdated' \
+    and .selfUpdated and (.shellRestarted|not)
+    and (.runtimeReloaded|not) and (.resummoned|not)' \
   "selected update-all persists its exact confirmed selection"
+[[ -z $(grep -Fx 'restart shell' "$MOCK_LOG" || true) ]] \
+  || fail "the worker restarted the shell before self-update recovery"
+pass "self-update actions defer their one shell restart to updated recovery code"
+
+: >"$MOCK_LOG"
+"$OKOMART" action "$SOURCE" update-all "" "$CONFIRMED_SNAPSHOT_ID" \
+  '["b.alpha","b.beta"]' >"$TMP/action-update-selected-plugins.json"
+assert_eq \
+  $'plugin update b.alpha --yes\nplugin update b.beta --yes' \
+  "$(grep '^plugin update ' "$MOCK_LOG")" \
+  "a selected plugin batch updates every confirmed non-self package"
+assert_eq \
+  "1" \
+  "$(grep -Fc 'restart shell' "$MOCK_LOG")" \
+  "a plugin update batch restarts the Omarchy shell exactly once"
+assert_jq "$TMP/action-update-selected-plugins.json" \
+  '.ok and (.running|not) and (.results|length)==2
+    and all(.results[]; .operation=="update" and .ok)
+    and (.selfUpdated|not) and .shellRestarted
+    and .runtimeReloaded and .resummoned
+    and (has("reloadError")|not)' \
+  "a plugin update batch records that the new runtime was loaded"
 
 : >"$MOCK_LOG"
 "$OKOMART" action "$SOURCE" update b.alpha "$CONFIRMED_SNAPSHOT_ID" \
@@ -1198,8 +1272,30 @@ assert_jq "$TMP/action-update-one.json" \
   '.ok and (.running|not) and (.results|length)==1
     and .results[0].id=="b.alpha"
     and .results[0].operation=="update"
-    and .results[0].ok' \
-  "single-plugin update changes only the selected plugin"
+    and .results[0].ok and .shellRestarted
+    and .runtimeReloaded and .resummoned' \
+  "single-plugin update changes and activates only the selected plugin"
+assert_eq \
+  $'restart shell\nshell:shell summon b.okomart\nshell:shell call b.okomart runtimeVersion ' \
+  "$(grep -v '^plugin update ' "$MOCK_LOG")" \
+  "single-plugin update restarts the shell and reopens Okomart"
+
+: >"$MOCK_LOG"
+export MOCK_RESTART_FAIL=1
+if "$OKOMART" action "$SOURCE" update b.alpha "$CONFIRMED_SNAPSHOT_ID" \
+  >"$TMP/action-update-restart-failed.json"; then
+  fail "a plugin update accepted a failed Omarchy shell restart"
+fi
+unset MOCK_RESTART_FAIL
+assert_jq "$TMP/action-update-restart-failed.json" \
+  '(.ok|not) and (.running|not) and (.results|length)==2
+    and .results[0].id=="b.alpha" and .results[0].ok
+    and .results[1].id=="Omarchy shell"
+    and .results[1].operation=="reload" and (.results[1].ok|not)
+    and (.shellRestarted|not) and (.runtimeReloaded|not)
+    and (.resummoned|not)
+    and (.reloadError|contains("could not restart automatically"))' \
+  "a failed post-update restart is retained as an actionable failure"
 
 advance_plugin alpha 4.0.0
 : >"$MOCK_LOG"

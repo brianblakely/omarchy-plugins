@@ -24,7 +24,6 @@ const {
   primaryAction,
   removalBlockReason,
   resolveSelection,
-  scaleAdjustedWindowSide,
   selectableUpdates,
   sortPlugins,
   sortScreenshots,
@@ -177,17 +176,6 @@ test("confirms updates only from a fresh successful snapshot", () => {
   assert.equal(snapshotConfirmsUpdates({ ...current, plugins: null }, 0), false)
   assert.equal(snapshotConfirmsUpdates(current, 1), false)
   assert.equal(snapshotConfirmsUpdates(null, 0), false)
-})
-
-test("keeps the window's physical footprint stable across output scales", () => {
-  assert.equal(scaleAdjustedWindowSide(760, 1, 320), 760)
-  assert.equal(scaleAdjustedWindowSide(760, 1.25, 320), 608)
-  assert.equal(scaleAdjustedWindowSide(760, 1.6, 320), 475)
-  assert.equal(scaleAdjustedWindowSide(760, 2, 320), 380)
-  assert.equal(scaleAdjustedWindowSide(760, 3, 320), 320)
-  assert.equal(scaleAdjustedWindowSide(560, 2, 320), 320)
-  assert.equal(scaleAdjustedWindowSide(760, 0, 320), 760)
-  assert.equal(scaleAdjustedWindowSide(760, Number.NaN, 320), 760)
 })
 
 test("orders selectable updates with Okomart first without mutation", () => {

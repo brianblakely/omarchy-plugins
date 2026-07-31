@@ -261,18 +261,6 @@ function clampedIndex(value, length) {
   return Math.max(0, Math.min(length - 1, numeric))
 }
 
-function scaleAdjustedWindowSide(styledSide, outputScale, minimumSide) {
-  var side = Number(styledSide)
-  var scale = Number(outputScale)
-  var minimum = Number(minimumSide)
-
-  if (!isFinite(side) || side <= 0) side = 1
-  if (!isFinite(scale) || scale < 1) scale = 1
-  if (!isFinite(minimum) || minimum < 1) minimum = 1
-
-  return Math.max(Math.round(minimum), Math.round(side / scale))
-}
-
 function resolveSelection(plugins, selectedId, previousIndex) {
   var values = Array.isArray(plugins) ? plugins : []
   if (values.length === 0) {
@@ -816,7 +804,6 @@ if (typeof module !== "undefined") {
     primaryAction: primaryAction,
     removalBlockReason: removalBlockReason,
     resolveSelection: resolveSelection,
-    scaleAdjustedWindowSide: scaleAdjustedWindowSide,
     selectableUpdates: selectableUpdates,
     sortPlugins: sortPlugins,
     sortScreenshots: sortScreenshots,

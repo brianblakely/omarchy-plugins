@@ -171,16 +171,119 @@ version_is_higher() {
 }
 
 prepare_window_command() {
-  local side="${1:-}"
-  (( $# == 1 )) || {
-    json_error "Usage: okomart prepare-window <square-size>"
-    return 2
-  }
-  [[ $side =~ ^[0-9]+$ ]] && (( side >= 320 && side <= 4096 )) || {
-    json_error "Window size must be an integer from 320 through 4096"
-    return 2
-  }
+  local side="" position="" bar_size=0
+  local monitor_output gap_output monitor_geometry gap
+  local monitor_name monitor_scale screen_width screen_height transform
+  local available_width available_height
+  local -a monitor_fields=()
+
   require_tool hyprctl
+
+  # Keep the old fixed-size form working while a self-update may still have
+  # the previous QML component loaded in the running shell.
+  if (( $# == 1 )); then
+    side="${1:-}"
+    [[ $side =~ ^[0-9]+$ ]] && (( side >= 320 && side <= 4096 )) || {
+      json_error "Window size must be an integer from 320 through 4096"
+      return 2
+    }
+  elif (( $# == 2 )); then
+    position="${1:-}"
+    bar_size="${2:-}"
+    case "$position" in
+    top | bottom | left | right | none) ;;
+    *)
+      json_error "Bar position must be top, bottom, left, right, or none"
+      return 2
+      ;;
+    esac
+    [[ $bar_size =~ ^[0-9]+$ ]] && (( bar_size <= 4096 )) || {
+      json_error "Bar size must be an integer from 0 through 4096"
+      return 2
+    }
+    [[ $position != none ]] || bar_size=0
+
+    monitor_output="$(hyprctl monitors -j 2>/dev/null)" || {
+      json_error "Could not read the focused Hyprland monitor"
+      return 1
+    }
+    monitor_geometry="$(
+      jq -cer '
+        [.[] | select(.focused == true)][0] as $monitor
+        | if $monitor == null then error("no focused monitor") else
+            ($monitor.width | tonumber) as $rawWidth
+            | ($monitor.height | tonumber) as $rawHeight
+            | ($monitor.scale | tonumber) as $scale
+            | (($monitor.transform // 0) | tonumber | floor) as $transform
+            | if $rawWidth <= 0 or $rawHeight <= 0 or $scale <= 0 then
+                error("invalid focused monitor geometry")
+              else
+                (if ($transform % 2) == 1 then $rawHeight else $rawWidth end) as $physicalWidth
+                | (if ($transform % 2) == 1 then $rawWidth else $rawHeight end) as $physicalHeight
+                | {
+                    monitor: ($monitor.name | tostring),
+                    scale: $scale,
+                    transform: $transform,
+                    width: (($physicalWidth / $scale) | floor),
+                    height: (($physicalHeight / $scale) | floor)
+                  }
+              end
+          end
+      ' <<<"$monitor_output"
+    )" || {
+      json_error "Could not read the focused Hyprland monitor"
+      return 1
+    }
+    mapfile -t monitor_fields < <(
+      jq -r '.monitor, .scale, .width, .height, .transform' <<<"$monitor_geometry"
+    )
+    monitor_name="${monitor_fields[0]:-}"
+    monitor_scale="${monitor_fields[1]:-}"
+    screen_width="${monitor_fields[2]:-}"
+    screen_height="${monitor_fields[3]:-}"
+    transform="${monitor_fields[4]:-}"
+    [[ $screen_width =~ ^[0-9]+$ && $screen_height =~ ^[0-9]+$ ]] || {
+      json_error "Could not read the focused Hyprland monitor"
+      return 1
+    }
+
+    gap_output="$(hyprctl -j getoption general:gaps_out 2>/dev/null)" || {
+      json_error "Could not read the Hyprland window gap"
+      return 1
+    }
+    gap="$(
+      jq -er '
+        ([.custom, .css, .int]
+          | map(select(. != null) | tostring | select(length > 0))
+          | .[0] // "0")
+        | capture("(?<number>-?[0-9]+(?:\\.[0-9]+)?)").number
+        | tonumber
+        | if . < 0 then error("negative gap") else round end
+      ' <<<"$gap_output"
+    )" || {
+      json_error "Could not read the Hyprland window gap"
+      return 1
+    }
+
+    available_width=$screen_width
+    available_height=$screen_height
+    case "$position" in
+    left | right) available_width=$((available_width - bar_size)) ;;
+    top | bottom) available_height=$((available_height - bar_size)) ;;
+    esac
+    if (( available_width < available_height )); then
+      side=$((available_width - gap))
+    else
+      side=$((available_height - gap))
+    fi
+    (( side >= 1 && side <= 32768 )) || {
+      json_error "Focused screen does not have enough room for Okomart"
+      return 1
+    }
+  else
+    json_error "Usage: okomart prepare-window <bar-position> <bar-size>"
+    return 2
+  fi
 
   local rule output="" status=0
   rule="hl.window_rule({ name = \"okomart-floating-window\", match = { class = \"^org.quickshell$\", title = \"^Okomart$\" }, float = true, center = true, size = { $side, $side }, border_size = 0 })"
@@ -190,8 +293,32 @@ prepare_window_command() {
     return 1
   fi
 
-  jq -cn --argjson side "$side" \
-    '{ok:true,prepared:true,width:$side,height:$side}'
+  if [[ -z $position ]]; then
+    jq -cn --argjson side "$side" \
+      '{ok:true,prepared:true,width:$side,height:$side,legacy:true}'
+  else
+    jq -cn \
+      --argjson side "$side" \
+      --arg monitor "$monitor_name" \
+      --argjson scale "$monitor_scale" \
+      --argjson screenWidth "$screen_width" \
+      --argjson screenHeight "$screen_height" \
+      --argjson gap "$gap" \
+      --arg barPosition "$position" \
+      --argjson barSize "$bar_size" \
+      --argjson transform "$transform" \
+      '{
+        ok:true,
+        prepared:true,
+        width:$side,
+        height:$side,
+        monitor:$monitor,
+        outputScale:$scale,
+        screen:{width:$screenWidth,height:$screenHeight,transform:$transform},
+        gap:$gap,
+        bar:{position:$barPosition,size:$barSize}
+      }'
+  fi
 }
 
 source_origin() {
@@ -2218,7 +2345,9 @@ worker_command() {
       "Stopped before scheduling more mutations because action status could not be persisted.")"
   fi
 
-  local self_updated=false resummoned=false
+  local self_updated=false
+  local shell_restarted=false runtime_reloaded=false resummoned=false
+  local reload_error=""
   if jq -e --arg id "$OKOMART_ID" '
     any(
       (.results // [])[];
@@ -2226,6 +2355,33 @@ worker_command() {
     )
   ' <<<"$status" >/dev/null 2>&1; then
     self_updated=true
+  elif jq -e '
+    any(
+      (.results // [])[];
+      .operation == "update" and .ok == true
+    )
+  ' <<<"$status" >/dev/null 2>&1; then
+    # Omarchy's in-process rescan can leave live loaders or compiled QML at
+    # the same URL attached to the previous checkout. A process restart is the
+    # activation boundary that guarantees every updated plugin runs its new
+    # code. Do this once after the whole action, never once per package.
+    if restart_omarchy_shell; then
+      shell_restarted=true
+      if resummon_okomart "$source_dir"; then
+        runtime_reloaded=true
+        resummoned=true
+      else
+        reload_error="The Omarchy shell restarted, but Okomart could not reopen to confirm the updated plugin runtime."
+      fi
+    else
+      reload_error="The plugin code was updated, but the Omarchy shell could not restart automatically. $SHELL_RESTART_ERROR"
+    fi
+
+    if [[ -n $reload_error ]]; then
+      status="$(append_action_message "$status" "Omarchy shell" reload false \
+        "$reload_error")"
+      overall=false
+    fi
   else
     resummon_okomart "$source_dir" && resummoned=true
   fi
@@ -2239,11 +2395,18 @@ worker_command() {
   status="$(jq -c \
     --argjson ok "$overall" \
     --argjson selfUpdated "$self_updated" \
+    --argjson shellRestarted "$shell_restarted" \
+    --argjson runtimeReloaded "$runtime_reloaded" \
     --argjson resummoned "$resummoned" \
+    --arg reloadError "$reload_error" \
     --arg finishedAt "$finished" \
     --arg message "$message" \
     '.ok=$ok | .running=false | .selfUpdated=$selfUpdated
+      | .shellRestarted=$shellRestarted
+      | .runtimeReloaded=$runtimeReloaded
       | .resummoned=$resummoned
+      | if $reloadError == "" then del(.reloadError)
+        else .reloadError=$reloadError end
       | .finishedAt=$finishedAt | .message=$message' <<<"$status")"
   local final_status_written=true
   write_action_status "$status" || final_status_written=false
@@ -2432,7 +2595,7 @@ action_command() {
 usage_json() {
   jq -cn '{
     ok:false,
-    error:"Usage: okomart snapshot <source-dir> | cached | prepare-window <square-size> | action <source-dir> <install|remove|update|update-all> <id-or-empty> <snapshot-id> [selected-update-ids-json] | status | ack <action-id>"
+    error:"Usage: okomart snapshot <source-dir> | cached | prepare-window <bar-position> <bar-size> | action <source-dir> <install|remove|update|update-all> <id-or-empty> <snapshot-id> [selected-update-ids-json] | status | ack <action-id>"
   }'
 }
 

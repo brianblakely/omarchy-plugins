@@ -34,9 +34,6 @@ Item {
   property bool initialListFocusPending: false
   property int initialListFocusAttempts: 0
   property bool windowOpenPending: false
-  property bool windowRulePrepared: false
-  property int windowRulePreparedSide: 0
-  property int windowRuleRequestedSide: 0
   property bool actionStarting: false
   property bool actionInProgress: false
   property bool actionReplacesOkomart: false
@@ -61,14 +58,9 @@ Item {
 
   readonly property bool wideLayout: window.width >= Style.space(600)
   readonly property bool toolbarSingleRow: window.width >= Style.space(420)
-  readonly property real outputScale: {
-    var scale = Number(window.devicePixelRatio)
-    return isFinite(scale) && scale >= 1 ? scale : 1
-  }
-  readonly property int windowSide: OkomartModel.scaleAdjustedWindowSide(
-    Style.space(760), outputScale, 320)
-  readonly property int minimumWindowSide: OkomartModel.scaleAdjustedWindowSide(
-    Style.space(560), outputScale, 320)
+  property int windowSide: Style.space(760)
+  readonly property int minimumWindowSide:
+    Math.min(windowSide, Style.space(560))
   readonly property real bodyTop: Math.max(Style.space(164), Math.min(Style.space(205), window.height * 0.255))
   readonly property real headerEdgeInset:
     wideLayout ? Style.space(82) : Style.space(42)
@@ -128,6 +120,23 @@ Item {
       components[3] / 255)
   }
 
+  function activeBarGeometry() {
+    var activeBar = shell && shell.bar ? shell.bar : null
+    if (!activeBar || activeBar.barHidden === true)
+      return { position: "none", size: 0 }
+
+    var position = String(activeBar.position
+      || (shell.barConfig && shell.barConfig.position) || "top").toLowerCase()
+    if (["top", "bottom", "left", "right"].indexOf(position) < 0)
+      position = "top"
+
+    var fallback = position === "left" || position === "right"
+      ? Style.bar.sizeVertical : Style.bar.sizeHorizontal
+    var size = Number(activeBar.barSize)
+    if (!isFinite(size) || size < 0) size = fallback
+    return { position: position, size: Math.max(0, Math.round(size)) }
+  }
+
   function open(payloadJson) {
     closingFromHost = false
     updatesConfirmed = false
@@ -159,11 +168,6 @@ Item {
 
   function prepareFloatingWindow() {
     if (!windowOpenPending) return
-    var side = Math.round(windowSide)
-    if (windowRulePrepared && windowRulePreparedSide === side) {
-      showPreparedWindow()
-      return
-    }
     if (!helperPath) {
       failWindowPreparation("Okomart's window helper is unavailable.")
       return
@@ -171,11 +175,12 @@ Item {
     if (windowRuleProcess.running) return
 
     windowRuleOutput = ""
-    windowRuleRequestedSide = side
+    var barGeometry = activeBarGeometry()
     windowRuleProcess.command = [
       helperPath,
       "prepare-window",
-      String(windowRuleRequestedSide)
+      barGeometry.position,
+      String(barGeometry.size)
     ]
     windowRuleProcess.running = true
   }
@@ -183,15 +188,13 @@ Item {
   function applyWindowRule(raw, exitCode) {
     var parsed = null
     try { parsed = JSON.parse(String(raw || "")) } catch (e) {}
+    var preparedWidth = Math.round(Number(parsed && parsed.width))
+    var preparedHeight = Math.round(Number(parsed && parsed.height))
     if (exitCode === 0 && parsed && parsed.ok === true
-        && parsed.prepared === true) {
-      windowRulePrepared = true
-      windowRulePreparedSide = windowRuleRequestedSide
-      if (windowOpenPending
-          && windowRulePreparedSide !== Math.round(windowSide)) {
-        Qt.callLater(prepareFloatingWindow)
-        return
-      }
+        && parsed.prepared === true
+        && preparedWidth > 0 && preparedWidth === preparedHeight) {
+      windowSide = preparedWidth
+      applyCurrentWindowSize()
       showPreparedWindow()
       return
     }

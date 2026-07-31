@@ -100,16 +100,19 @@ grep -Fq '[helperPath,' "$ROOT_DIR/Okomart.qml" \
   || fail "Okomart cannot invoke its window-rule helper"
 grep -Fq '"prepare-window",' "$ROOT_DIR/Okomart.qml" \
   || fail "Okomart does not prepare its floating rule before mapping"
-grep -Fq 'String(windowRuleRequestedSide)' \
+grep -Fq 'barGeometry.position,' \
   "$ROOT_DIR/Okomart.qml" \
-  || fail "Okomart does not request its square window size"
-grep -Fq 'Number(window.devicePixelRatio)' "$ROOT_DIR/Okomart.qml" \
-  || fail "Okomart window geometry does not read the active output scale"
-[[ $(grep -Fc 'OkomartModel.scaleAdjustedWindowSide(' \
-  "$ROOT_DIR/Okomart.qml") -eq 2 ]] \
-  || fail "Okomart initial and minimum geometry are not scale-adjusted"
-grep -Fq 'windowRulePreparedSide === side' "$ROOT_DIR/Okomart.qml" \
-  || fail "Okomart reuses a window rule prepared for a different scale"
+  || fail "Okomart does not send the live bar position for window sizing"
+grep -Fq 'String(barGeometry.size)' "$ROOT_DIR/Okomart.qml" \
+  || fail "Okomart does not send the live bar size for window sizing"
+grep -Fq 'activeBar.barHidden === true' "$ROOT_DIR/Okomart.qml" \
+  || fail "Okomart window sizing does not account for a hidden bar"
+grep -Fq 'Number(activeBar.barSize)' "$ROOT_DIR/Okomart.qml" \
+  || fail "Okomart window sizing does not read the active bar size"
+grep -Fq 'String(activeBar.position' "$ROOT_DIR/Okomart.qml" \
+  || fail "Okomart window sizing does not read the active bar position"
+grep -Fq 'windowSide = preparedWidth' "$ROOT_DIR/Okomart.qml" \
+  || fail "Okomart does not adopt the prepared focused-screen geometry"
 grep -Fq 'parsed.prepared === true' \
   "$ROOT_DIR/Okomart.qml" \
   || fail "Okomart does not verify that its map-time rule was registered"
