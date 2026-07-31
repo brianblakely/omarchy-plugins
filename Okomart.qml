@@ -492,24 +492,29 @@ Item {
     dialog.openFor(mode, plugin, updates)
   }
 
-  function actionIncludesSelf(kind, plugin) {
+  function actionIncludesSelf(kind, plugin, selectedUpdateIds) {
     if (kind === "update")
       return !!(plugin && String(plugin.id || "") === pluginId)
+    if (kind === "update-all" && Array.isArray(selectedUpdateIds))
+      return selectedUpdateIds.indexOf(pluginId) >= 0
     return kind === "update-all" && !!(snapshot && snapshot.self
       && snapshot.self.safeUpdate === true)
   }
 
-  function beginAction(kind, plugin) {
+  function beginAction(kind, plugin, selectedUpdateIds) {
     if (actionStarting || actionInProgress || statusChecking || refreshing || !helperPath
         || !snapshotActionable) return
     actionStarting = true
-    actionReplacesOkomart = actionIncludesSelf(kind, plugin)
+    actionReplacesOkomart = actionIncludesSelf(kind, plugin, selectedUpdateIds)
     pendingActionPlugin = plugin || null
     actionOutput = ""
     actionError = ""
     var command = [helperPath, "action", sourceDir, kind,
       plugin && plugin.id ? String(plugin.id) : "",
       String(snapshot.snapshotId)]
+    if (kind === "update-all")
+      command.push(JSON.stringify(Array.isArray(selectedUpdateIds)
+        ? selectedUpdateIds : []))
     actionProcess.command = command
     actionProcess.running = true
   }
@@ -901,11 +906,12 @@ Item {
       ActionDialog {
         id: dialog
         anchors.fill: parent
+        selfPluginId: root.pluginId
         busy: root.actionStarting
         onCanceled: {
           if (!root.actionStarting) closeDialog()
         }
-        onConfirmed: {
+        onConfirmed: function(selectedUpdateIds) {
           if (mode === "results") {
             closeDialog()
             return
@@ -914,7 +920,8 @@ Item {
           if (mode === "install") root.beginAction("install", plugin)
           else if (mode === "remove") root.beginAction("remove", plugin)
           else if (mode === "update") root.beginAction("update", plugin)
-          else if (mode === "updates") root.beginAction("update-all", null)
+          else if (mode === "updates")
+            root.beginAction("update-all", null, selectedUpdateIds)
         }
       }
     }

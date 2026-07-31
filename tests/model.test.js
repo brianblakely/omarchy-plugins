@@ -24,6 +24,7 @@ const {
   primaryAction,
   removalBlockReason,
   resolveSelection,
+  selectableUpdates,
   sortPlugins,
   sortScreenshots,
   snapshotConfirmsUpdates,
@@ -175,6 +176,22 @@ test("confirms updates only from a fresh successful snapshot", () => {
   assert.equal(snapshotConfirmsUpdates({ ...current, plugins: null }, 0), false)
   assert.equal(snapshotConfirmsUpdates(current, 1), false)
   assert.equal(snapshotConfirmsUpdates(null, 0), false)
+})
+
+test("orders selectable updates with Okomart first without mutation", () => {
+  const alpha = { id: "b.alpha", safeUpdate: true }
+  const beta = { id: "b.beta", safeUpdate: true }
+  const self = { id: "b.okomart", name: "Okomart", safeUpdate: true, self: true }
+  const blocked = { id: "b.blocked", safeUpdate: false }
+  const duplicate = { id: "b.alpha", safeUpdate: true }
+  const updates = [alpha, blocked, beta, self, duplicate]
+
+  const result = selectableUpdates(updates, "b.okomart")
+
+  assert.deepEqual(result, [self, alpha, beta])
+  assert.equal(result[0], self)
+  assert.deepEqual(updates, [alpha, blocked, beta, self, duplicate])
+  assert.deepEqual(selectableUpdates(null, "b.okomart"), [])
 })
 
 test("parses Hyprland ARGB option colors", () => {

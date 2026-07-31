@@ -2011,6 +2011,37 @@ recover_self_update_command() {
   return 1
 }
 
+normalize_update_selection() {
+  local raw="${1:-}"
+  local snapshot="${2:-}"
+  [[ -n $raw && -f $snapshot && ! -L $snapshot ]] || return 1
+
+  local normalized target
+  normalized="$(jq -ce '
+    if type == "array"
+      and length > 0
+      and all(.[]; type == "string")
+      and length == (unique | length)
+    then .
+    else error("invalid update selection")
+    end
+  ' <<<"$raw" 2>/dev/null)" || return 1
+
+  while IFS= read -r target; do
+    valid_plugin_id "$target" || return 1
+    if [[ $target == "$OKOMART_ID" ]]; then
+      jq -e '.self.safeUpdate == true' "$snapshot" >/dev/null 2>&1 ||
+        return 1
+    else
+      jq -e --arg id "$target" '
+        any((.plugins // [])[]; .id == $id and .safeUpdate == true)
+      ' "$snapshot" >/dev/null 2>&1 || return 1
+    fi
+  done < <(jq -r '.[]' <<<"$normalized")
+
+  printf '%s\n' "$normalized"
+}
+
 worker_command() {
   local source_dir="$1"
   local action_id="$2"
@@ -2018,6 +2049,12 @@ worker_command() {
   local id="${4:-}"
   local confirmed_snapshot_id="${5:-}"
   local confirmed_snapshot_file="${6:-}"
+  local selected_updates_json="${7:-}"
+  local selected_status_json='[]'
+  if [[ -n $selected_updates_json ]] &&
+    jq -e 'type == "array"' <<<"$selected_updates_json" >/dev/null 2>&1; then
+    selected_status_json="$selected_updates_json"
+  fi
   local started status overall=true persistence_failed=false
   started="$(utc_now)"
   status="$(jq -cn \
@@ -2025,9 +2062,11 @@ worker_command() {
     --arg actionId "$action_id" \
     --arg startedAt "$started" \
     --argjson pid "$$" \
+    --argjson selectedUpdateIds "$selected_status_json" \
     '{
       ok:true,running:true,action:$action,actionId:$actionId,pid:$pid,
       startedAt:$startedAt,finishedAt:"",message:"Working…",
+      selectedUpdateIds:$selectedUpdateIds,
       results:[],selfUpdated:false,shellRestarted:false,
       runtimeReloaded:false,resummoned:false,acknowledged:false
     }')"
@@ -2049,6 +2088,12 @@ worker_command() {
       || $current_snapshot_id != "$confirmed_snapshot_id" ]]; then
     status="$(append_action_message "$status" "${id:-catalog}" "$operation" false \
       "The catalog changed after confirmation. Reopen the action and review it again.")"
+    overall=false
+  elif [[ $operation == update-all && -n $selected_updates_json ]] &&
+    ! selected_updates_json="$(normalize_update_selection \
+      "$selected_updates_json" "$confirmed_snapshot_file")"; then
+    status="$(append_action_message "$status" selection "$operation" false \
+      "The selected updates do not match the confirmed catalog snapshot.")"
     overall=false
   else
     case "$operation" in
@@ -2102,11 +2147,14 @@ worker_command() {
     ;;
   update-all)
     local -a targets=()
+    local selection_filter_json="${selected_updates_json:-null}"
     mapfile -t targets < <(
-      jq -r '
+      jq -r --argjson selected "$selection_filter_json" '
         .plugins[]
         | select(.safeUpdate == true)
         | .id
+        | select($selected == null
+            or (. as $id | ($selected | index($id)) != null))
         | select(
             test("^[A-Za-z0-9][A-Za-z0-9._-]*$")
             and (contains("..") | not)
@@ -2140,7 +2188,10 @@ worker_command() {
       [[ $action_timed_out != true ]] || break
     done
     if [[ $persistence_failed != true && $action_timed_out != true ]] &&
-      jq -e '.self.safeUpdate == true' "$confirmed_snapshot_file" \
+      jq -e --arg id "$OKOMART_ID" --argjson selected "$selection_filter_json" '
+        .self.safeUpdate == true
+        and ($selected == null or ($selected | index($id)) != null)
+      ' "$confirmed_snapshot_file" \
       >/dev/null 2>&1; then
       if ! preflight_update "$OKOMART_ID" "$confirmed_snapshot_file" "$source_dir"; then
         status="$(append_action_message "$status" "$OKOMART_ID" update false \
@@ -2210,12 +2261,13 @@ action_command() {
   local operation="${2:-}"
   local id="${3:-}"
   local confirmed_snapshot_id="${4:-}"
-  (( $# <= 4 )) || {
+  local selected_updates_json="${5:-}"
+  (( $# <= 5 )) || {
     json_error "Too many action arguments"
     return 2
   }
   [[ -n $source_arg ]] || {
-    json_error "Usage: okomart action <source-dir> <install|remove|update|update-all> [id]"
+    json_error "Usage: okomart action <source-dir> <install|remove|update|update-all> [id] [snapshot-id] [selected-update-ids-json]"
     return 2
   }
   local source_dir
@@ -2232,6 +2284,10 @@ action_command() {
     }
     [[ $operation != remove || $id != "$OKOMART_ID" ]] || {
       json_error "Okomart cannot remove itself from its storefront"
+      return 2
+    }
+    [[ -z $selected_updates_json ]] || {
+      json_error "Update selection is supported only for update-all"
       return 2
     }
     ;;
@@ -2260,6 +2316,13 @@ action_command() {
       '{ok:false,started:false,staleConfirmation:true,snapshotId:$snapshotId,
         error:"The catalog changed after confirmation. Review the action again."}'
     return 1
+  fi
+  if [[ $operation == update-all && -n $selected_updates_json ]]; then
+    if ! selected_updates_json="$(normalize_update_selection \
+      "$selected_updates_json" "$SNAPSHOT_STATE")"; then
+      json_error "Select one or more updates from the confirmed list"
+      return 2
+    fi
   fi
 
   if [[ -L $ACTION_LOCK || -d $ACTION_LOCK ]]; then
@@ -2323,9 +2386,11 @@ action_command() {
   action_status="$(jq -cn \
     --arg action "$operation" \
     --arg actionId "$action_id" \
+    --argjson selectedUpdateIds "${selected_updates_json:-null}" \
     '{
       ok:true,running:true,action:$action,actionId:$actionId,pid:null,
       startedAt:"",finishedAt:"",message:"Queued…",results:[],
+      selectedUpdateIds:($selectedUpdateIds // []),
       selfUpdated:false,shellRestarted:false,runtimeReloaded:false,
       resummoned:false,acknowledged:false
     }')"
@@ -2339,7 +2404,8 @@ action_command() {
   if [[ ${OKOMART_ACTION_FOREGROUND:-0} == 1 ]]; then
     local rc=0
     worker_command "$source_dir" "$action_id" "$operation" "$id" \
-      "$confirmed_snapshot_id" "$confirmed_snapshot" || rc=$?
+      "$confirmed_snapshot_id" "$confirmed_snapshot" \
+      "$selected_updates_json" || rc=$?
     exec 9>&-
     status_command
     return $rc
@@ -2347,11 +2413,11 @@ action_command() {
 
   if command -v setsid >/dev/null 2>&1; then
     setsid bash "$worker" _worker "$source_dir" "$action_id" "$operation" "$id" \
-      "$confirmed_snapshot_id" "$confirmed_snapshot" \
+      "$confirmed_snapshot_id" "$confirmed_snapshot" "$selected_updates_json" \
       </dev/null >>"$ACTION_LOG" 2>&1 &
   else
     nohup bash "$worker" _worker "$source_dir" "$action_id" "$operation" "$id" \
-      "$confirmed_snapshot_id" "$confirmed_snapshot" \
+      "$confirmed_snapshot_id" "$confirmed_snapshot" "$selected_updates_json" \
       </dev/null >>"$ACTION_LOG" 2>&1 &
   fi
   local pid=$!
@@ -2366,7 +2432,7 @@ action_command() {
 usage_json() {
   jq -cn '{
     ok:false,
-    error:"Usage: okomart snapshot <source-dir> | cached | prepare-window <square-size> | action <source-dir> <install|remove|update|update-all> <id-or-empty> <snapshot-id> | status | ack <action-id>"
+    error:"Usage: okomart snapshot <source-dir> | cached | prepare-window <square-size> | action <source-dir> <install|remove|update|update-all> <id-or-empty> <snapshot-id> [selected-update-ids-json] | status | ack <action-id>"
   }'
 }
 

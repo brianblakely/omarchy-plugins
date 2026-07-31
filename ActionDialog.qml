@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls as QQC
 import qs.Commons
 import qs.Ui
+import "OkomartModel.js" as OkomartModel
 
 FocusScope {
   id: root
@@ -10,6 +11,8 @@ FocusScope {
   property string mode: ""
   property var plugin: null
   property var updates: []
+  property var selectedUpdateIds: []
+  property string selfPluginId: "b.okomart"
   property bool busy: false
   property string errorText: ""
   property color foreground: Color.foreground
@@ -18,7 +21,7 @@ FocusScope {
   property color urgent: Color.urgent
 
   signal canceled()
-  signal confirmed()
+  signal confirmed(var selectedUpdateIds)
 
   visible: opened
   focus: opened
@@ -39,17 +42,14 @@ FocusScope {
     if (mode === "install") return "Install & Enable"
     if (mode === "remove") return "Remove"
     if (mode === "update") return "Update"
-    if (mode === "updates") return "Update all"
+    if (mode === "updates")
+      return selectedUpdateIds.length === eligibleUpdates.length
+        ? "Update all" : "Update selected"
     if (mode === "results") return "Close"
     return "Confirm"
   }
-  readonly property var safeUpdates: {
-    var out = []
-    if (!Array.isArray(updates)) return out
-    for (var i = 0; i < updates.length; i++)
-      if (updates[i] && updates[i].safeUpdate === true) out.push(updates[i])
-    return out
-  }
+  readonly property var eligibleUpdates:
+    OkomartModel.selectableUpdates(updates, selfPluginId)
   readonly property var blockedUpdates: {
     var out = []
     if (!Array.isArray(updates)) return out
@@ -58,13 +58,41 @@ FocusScope {
     return out
   }
   readonly property bool canConfirm: !busy
-    && (mode !== "updates" || safeUpdates.length > 0)
+    && (mode !== "updates" || selectedUpdateIds.length > 0)
     && (mode !== "update" || (plugin && plugin.safeUpdate === true
       && plugin.versionUpdateAvailable === true))
   readonly property bool hasReviewList: mode === "updates" || mode === "results"
 
   function pluginName(item) {
     return item ? String(item.name || item.id || "plugin") : "plugin"
+  }
+
+  function updateId(item) {
+    return item ? String(item.id || "") : ""
+  }
+
+  function updateIds(items) {
+    var ids = []
+    if (!Array.isArray(items)) return ids
+    for (var i = 0; i < items.length; i++) {
+      var id = updateId(items[i])
+      if (id !== "") ids.push(id)
+    }
+    return ids
+  }
+
+  function isUpdateSelected(item) {
+    return selectedUpdateIds.indexOf(updateId(item)) >= 0
+  }
+
+  function setUpdateSelected(item, selected) {
+    var id = updateId(item)
+    if (id === "") return
+    var next = selectedUpdateIds.slice()
+    var index = next.indexOf(id)
+    if (selected && index < 0) next.push(id)
+    else if (!selected && index >= 0) next.splice(index, 1)
+    selectedUpdateIds = next
   }
 
   function shortCommit(value) {
@@ -116,7 +144,14 @@ FocusScope {
 
   function focusTargets() {
     var out = []
-    if (reviewScroll.visible && reviewScroll.enabled) out.push(reviewScroll)
+    if (mode === "updates") {
+      for (var i = 0; i < updateChoices.count; i++) {
+        var choice = updateChoices.itemAt(i)
+        if (choice && choice.visible && choice.enabled) out.push(choice)
+      }
+    } else if (reviewScroll.visible && reviewScroll.enabled) {
+      out.push(reviewScroll)
+    }
     if (cancelButton.visible && cancelButton.enabled) out.push(cancelButton)
     if (confirmButton.visible && confirmButton.enabled) out.push(confirmButton)
     return out
@@ -135,6 +170,23 @@ FocusScope {
       ? (current <= 0 ? targets.length - 1 : current - 1)
       : (current < 0 || current >= targets.length - 1 ? 0 : current + 1)
     targets[next].forceActiveFocus()
+  }
+
+  function focusedUpdateChoiceIndex() {
+    for (var i = 0; i < updateChoices.count; i++) {
+      var choice = updateChoices.itemAt(i)
+      if (choice && choice.activeFocus) return i
+    }
+    return -1
+  }
+
+  function focusUpdateChoice(index) {
+    if (updateChoices.count <= 0) return false
+    var bounded = Math.max(0, Math.min(updateChoices.count - 1, index))
+    var choice = updateChoices.itemAt(bounded)
+    if (!choice) return false
+    choice.forceActiveFocus()
+    return true
   }
 
   function detailMessage() {
@@ -162,10 +214,13 @@ FocusScope {
     mode = nextMode
     plugin = nextPlugin || null
     updates = nextUpdates || []
+    selectedUpdateIds = nextMode === "updates"
+      ? updateIds(OkomartModel.selectableUpdates(updates, selfPluginId)) : []
     errorText = ""
     opened = true
     Qt.callLater(function() {
       if (root.mode === "results") reviewScroll.forceActiveFocus()
+      else if (root.mode === "updates" && root.focusUpdateChoice(0)) return
       else cancelButton.forceActiveFocus()
     })
   }
@@ -175,6 +230,7 @@ FocusScope {
     mode = ""
     plugin = null
     updates = []
+    selectedUpdateIds = []
     errorText = ""
   }
 
@@ -193,6 +249,22 @@ FocusScope {
       event.accepted = true
     } else if (root.hasReviewList && event.key === Qt.Key_PageUp) {
       root.scrollReviewBy(-reviewScroll.height * 0.8)
+      event.accepted = true
+    } else if (root.mode === "updates" && root.focusedUpdateChoiceIndex() >= 0
+        && event.key === Qt.Key_Home) {
+      root.focusUpdateChoice(0)
+      event.accepted = true
+    } else if (root.mode === "updates" && root.focusedUpdateChoiceIndex() >= 0
+        && event.key === Qt.Key_End) {
+      root.focusUpdateChoice(updateChoices.count - 1)
+      event.accepted = true
+    } else if (root.mode === "updates" && root.focusedUpdateChoiceIndex() >= 0
+        && (event.key === Qt.Key_Down || event.key === Qt.Key_J)) {
+      root.focusUpdateChoice(root.focusedUpdateChoiceIndex() + 1)
+      event.accepted = true
+    } else if (root.mode === "updates" && root.focusedUpdateChoiceIndex() >= 0
+        && (event.key === Qt.Key_Up || event.key === Qt.Key_K)) {
+      root.focusUpdateChoice(root.focusedUpdateChoiceIndex() - 1)
       event.accepted = true
     } else if (root.hasReviewList && event.key === Qt.Key_Home) {
       root.scrollReviewTo(0)
@@ -304,7 +376,7 @@ FocusScope {
       QQC.ScrollView {
         id: reviewScroll
         visible: root.hasReviewList
-        activeFocusOnTab: visible
+        activeFocusOnTab: visible && root.mode === "results"
         width: parent.width
         height: visible
           ? Math.min(Style.space(330),
@@ -317,7 +389,7 @@ FocusScope {
         QQC.ScrollBar.vertical.policy: QQC.ScrollBar.AsNeeded
         Accessible.name: root.mode === "results"
           ? "Failed plugin operation details"
-          : "Packages included in this update"
+          : "Select plugin updates"
         Accessible.role: Accessible.List
 
         background: Rectangle {
@@ -339,9 +411,8 @@ FocusScope {
             visible: root.mode === "updates"
             height: visible ? implicitHeight : 0
             width: parent.width
-            text: root.safeUpdates.length === 1
-              ? "The following package will be updated:"
-              : "The following " + root.safeUpdates.length + " packages will be updated:"
+            text: "Select updates to apply · " + root.selectedUpdateIds.length
+              + " of " + root.eligibleUpdates.length + " selected"
             color: root.foreground
             font.family: Style.font.family
             font.pixelSize: Style.font.body
@@ -349,32 +420,72 @@ FocusScope {
           }
 
           Repeater {
-            model: root.mode === "updates" ? root.safeUpdates : []
+            id: updateChoices
+            model: root.mode === "updates" ? root.eligibleUpdates : []
 
-            delegate: Column {
+            delegate: QQC.CheckBox {
+              id: updateChoice
               required property var modelData
-              width: reviewColumn.width
-              spacing: Style.space(2)
 
-              Text {
-                width: parent.width
-                text: root.pluginName(modelData)
-                textFormat: Text.PlainText
-                color: root.foreground
-                font.family: Style.font.family
-                font.pixelSize: Style.font.body
-                font.bold: true
-                elide: Text.ElideRight
+              width: reviewColumn.width
+              enabled: !root.busy
+              checked: root.isUpdateSelected(modelData)
+              hoverEnabled: true
+              activeFocusOnTab: true
+              spacing: Style.space(10)
+              leftPadding: selectionSwitch.implicitWidth + spacing
+              rightPadding: Style.space(4)
+              topPadding: Style.space(4)
+              bottomPadding: Style.space(4)
+              implicitHeight: Math.max(
+                updateContent.implicitHeight + topPadding + bottomPadding,
+                selectionSwitch.implicitHeight)
+
+              indicator: ToggleSwitch {
+                id: selectionSwitch
+                x: 0
+                y: Math.round((updateChoice.height - height) / 2)
+                checked: updateChoice.checked
+                interactive: false
+                cursorRing: false
+                foreground: root.foreground
+                accent: root.accent
               }
-              Text {
-                width: parent.width
-                text: root.updateTransition(modelData)
-                textFormat: Text.PlainText
-                color: root.accent
-                font.family: Style.font.family
-                font.pixelSize: Style.font.caption
-                elide: Text.ElideRight
+
+              contentItem: Column {
+                id: updateContent
+                spacing: Style.space(2)
+
+                Text {
+                  width: parent.width
+                  text: root.pluginName(updateChoice.modelData)
+                  textFormat: Text.PlainText
+                  color: root.foreground
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.body
+                  font.bold: true
+                  elide: Text.ElideRight
+                }
+                Text {
+                  width: parent.width
+                  text: root.updateTransition(updateChoice.modelData)
+                  textFormat: Text.PlainText
+                  color: root.accent
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
+                  elide: Text.ElideRight
+                }
               }
+
+              background: Rectangle {
+                color: updateChoice.activeFocus || updateChoice.hovered
+                  ? Util.alpha(root.accent, 0.10) : "transparent"
+                radius: Style.cornerRadius
+              }
+
+              onToggled: root.setUpdateSelected(modelData, checked)
+              Accessible.name: root.pluginName(modelData)
+              Accessible.description: root.updateTransition(modelData)
             }
           }
 
@@ -488,7 +599,8 @@ FocusScope {
           foreground: root.destructive ? root.urgent : root.foreground
           accent: root.destructive ? root.urgent : root.accent
           text: root.busy ? "Working…" : root.confirmLabel
-          onClicked: root.confirmed()
+          onClicked: root.confirmed(root.mode === "updates"
+            ? root.selectedUpdateIds.slice() : [])
           Accessible.name: root.confirmLabel
           Accessible.role: Accessible.Button
         }

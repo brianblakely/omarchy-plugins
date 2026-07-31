@@ -426,8 +426,19 @@ grep -Fq 'if (mode === "updates") return "Apply plugin updates?"' \
 if grep -Fq '"Apply all safe updates?"' "$ROOT_DIR/ActionDialog.qml"; then
   fail "update confirmation still describes updates as safe"
 fi
+grep -Fq 'signal confirmed(var selectedUpdateIds)' "$ROOT_DIR/ActionDialog.qml" \
+  || fail "update confirmation does not return the selected update ids"
+grep -Fq 'selectedUpdateIds.length > 0' "$ROOT_DIR/ActionDialog.qml" \
+  || fail "update confirmation allows an empty selection"
+grep -Fq 'OkomartModel.selectableUpdates(updates, selfPluginId)' \
+  "$ROOT_DIR/ActionDialog.qml" \
+  || fail "update confirmation does not place Okomart first"
+grep -Fq 'delegate: QQC.CheckBox {' "$ROOT_DIR/ActionDialog.qml" \
+  || fail "update confirmation rows are not selectable"
+grep -Fq 'checked: root.isUpdateSelected(modelData)' "$ROOT_DIR/ActionDialog.qml" \
+  || fail "update confirmation choices do not reflect selection state"
 if sed -n \
-    '/model: root.mode === "updates" ? root.safeUpdates : \[\]/,/model: root.mode === "updates" ? root.blockedUpdates : \[\]/p' \
+    '/model: root.mode === "updates" ? root.eligibleUpdates : \[\]/,/model: root.mode === "updates" ? root.blockedUpdates : \[\]/p' \
     "$ROOT_DIR/ActionDialog.qml" | grep -Fq 'BorderSurface {'; then
   fail "updateable confirmation items still have individual frames"
 fi
@@ -481,11 +492,18 @@ grep -Fq 'p.versionUpdateAvailable === true' "$ROOT_DIR/Okomart.qml" \
   || fail "global updates are not gated by manifest version"
 grep -Fq 'onUpdateRequested: function(plugin)' "$ROOT_DIR/Okomart.qml" \
   || fail "single-plugin update is not connected to the storefront"
-if ! sed -n '/function actionIncludesSelf(kind, plugin)/,/^  }/p' \
+if ! sed -n \
+    '/function actionIncludesSelf(kind, plugin, selectedUpdateIds)/,/^  }/p' \
     "$ROOT_DIR/Okomart.qml" \
-    | grep -Fq 'snapshot.self.safeUpdate === true'; then
-  fail "confirmed batch updates do not detect when Okomart replaces itself"
+    | grep -Fq 'selectedUpdateIds.indexOf(pluginId) >= 0'; then
+  fail "selected batch updates do not detect when Okomart replaces itself"
 fi
+grep -Fq 'command.push(JSON.stringify(Array.isArray(selectedUpdateIds)' \
+  "$ROOT_DIR/Okomart.qml" \
+  || fail "selected update ids are not passed to the backend"
+grep -Fq 'root.beginAction("update-all", null, selectedUpdateIds)' \
+  "$ROOT_DIR/Okomart.qml" \
+  || fail "update-all does not use the dialog selection"
 if ! sed -n '/function actionStarted(raw, exitCode)/,/^  }/p' \
     "$ROOT_DIR/Okomart.qml" \
     | grep -Fq 'requestClose()'; then

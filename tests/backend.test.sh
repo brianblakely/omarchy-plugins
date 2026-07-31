@@ -1156,6 +1156,37 @@ assert_jq "$TMP/snapshot-safe-updates.json" \
     and .self.availableVersion=="0.0.2"' \
   "update fixture contains real confirmed fast-forward commits"
 
+if "$OKOMART" action "$SOURCE" update-all "" "$CONFIRMED_SNAPSHOT_ID" '[]' \
+  >"$TMP/action-update-selection-empty.json"; then
+  fail "update-all should reject an empty explicit selection"
+fi
+assert_jq "$TMP/action-update-selection-empty.json" \
+  '(.ok|not) and (.error|contains("Select one or more updates"))' \
+  "update-all rejects an empty explicit selection"
+
+if "$OKOMART" action "$SOURCE" update-all "" "$CONFIRMED_SNAPSHOT_ID" \
+  '["b.missing"]' >"$TMP/action-update-selection-unknown.json"; then
+  fail "update-all should reject updates outside the confirmed snapshot"
+fi
+assert_jq "$TMP/action-update-selection-unknown.json" \
+  '(.ok|not) and (.error|contains("confirmed list"))' \
+  "update-all rejects selections outside the confirmed snapshot"
+
+: >"$MOCK_LOG"
+"$OKOMART" action "$SOURCE" update-all "" "$CONFIRMED_SNAPSHOT_ID" \
+  '["b.okomart","b.beta"]' >"$TMP/action-update-selected.json"
+assert_eq \
+  $'plugin update b.beta --yes\nplugin update b.okomart --yes' \
+  "$(grep '^plugin update ' "$MOCK_LOG")" \
+  "selected update-all changes only chosen packages and updates Okomart last"
+assert_jq "$TMP/action-update-selected.json" \
+  '.ok and (.running|not)
+    and .selectedUpdateIds==["b.okomart","b.beta"]
+    and [.results[].id]==["b.beta","b.okomart"]
+    and all(.results[]; .operation=="update" and .ok)
+    and .selfUpdated' \
+  "selected update-all persists its exact confirmed selection"
+
 : >"$MOCK_LOG"
 "$OKOMART" action "$SOURCE" update b.alpha "$CONFIRMED_SNAPSHOT_ID" \
   >"$TMP/action-update-one.json"

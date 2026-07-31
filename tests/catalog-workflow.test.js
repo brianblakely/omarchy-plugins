@@ -19,7 +19,8 @@ const expectedUrls = [
   "https://github.com/brianblakely/omasnap.git",
   "https://github.com/brianblakely/omastonk.git",
   "https://github.com/brianblakely/peek.git",
-  "https://github.com/mwikala/omarchy-world-time.git"
+  "https://github.com/mwikala/omarchy-world-time.git",
+  "https://github.com/brianblakely/omadoro.git"
 ]
 let passed = 0
 
@@ -29,7 +30,7 @@ function test(name, callback) {
   process.stdout.write(`ok ${passed} - ${name}\n`)
 }
 
-test("plugins.txt contains the ten canonical standalone URLs in deterministic order", () => {
+test("plugins.txt contains the eleven canonical standalone URLs in deterministic order", () => {
   assert.equal(registry.endsWith("\n"), true)
   assert.deepEqual(registry.trimEnd().split("\n"), expectedUrls)
 })

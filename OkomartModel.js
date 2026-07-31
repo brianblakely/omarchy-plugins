@@ -527,6 +527,25 @@ function clickableSourceUrl(plugin) {
   return /^https?:\/\/\S+$/i.test(source) ? source : ""
 }
 
+function selectableUpdates(updates, selfId) {
+  var selfRows = []
+  var otherRows = []
+  var seen = ({})
+  var resolvedSelfId = trimmedString(selfId) || "b.okomart"
+  if (!Array.isArray(updates)) return otherRows
+
+  for (var i = 0; i < updates.length; i++) {
+    var item = updates[i]
+    var id = pluginId(item)
+    if (!isRecord(item) || item.safeUpdate !== true || !id || seen[id])
+      continue
+    seen[id] = true
+    if (item.self === true || id === resolvedSelfId) selfRows.push(item)
+    else otherRows.push(item)
+  }
+  return selfRows.concat(otherRows)
+}
+
 function snapshotConfirmsUpdates(snapshot, exitCode) {
   return isRecord(snapshot)
     && snapshot.ok === true
@@ -785,6 +804,7 @@ if (typeof module !== "undefined") {
     primaryAction: primaryAction,
     removalBlockReason: removalBlockReason,
     resolveSelection: resolveSelection,
+    selectableUpdates: selectableUpdates,
     sortPlugins: sortPlugins,
     sortScreenshots: sortScreenshots,
     snapshotConfirmsUpdates: snapshotConfirmsUpdates,
