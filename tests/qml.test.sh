@@ -100,9 +100,16 @@ grep -Fq '[helperPath,' "$ROOT_DIR/Okomart.qml" \
   || fail "Okomart cannot invoke its window-rule helper"
 grep -Fq '"prepare-window",' "$ROOT_DIR/Okomart.qml" \
   || fail "Okomart does not prepare its floating rule before mapping"
-grep -Fq 'String(Math.round(windowSide))' \
+grep -Fq 'String(windowRuleRequestedSide)' \
   "$ROOT_DIR/Okomart.qml" \
   || fail "Okomart does not request its square window size"
+grep -Fq 'Number(window.devicePixelRatio)' "$ROOT_DIR/Okomart.qml" \
+  || fail "Okomart window geometry does not read the active output scale"
+[[ $(grep -Fc 'OkomartModel.scaleAdjustedWindowSide(' \
+  "$ROOT_DIR/Okomart.qml") -eq 2 ]] \
+  || fail "Okomart initial and minimum geometry are not scale-adjusted"
+grep -Fq 'windowRulePreparedSide === side' "$ROOT_DIR/Okomart.qml" \
+  || fail "Okomart reuses a window rule prepared for a different scale"
 grep -Fq 'parsed.prepared === true' \
   "$ROOT_DIR/Okomart.qml" \
   || fail "Okomart does not verify that its map-time rule was registered"
@@ -123,7 +130,7 @@ fi
   || fail "Okomart does not declare a square initial width"
 [[ $(grep -Fc 'implicitHeight: root.windowSide' "$ROOT_DIR/Okomart.qml") -eq 1 ]] \
   || fail "Okomart does not declare a square initial height"
-grep -Fq 'minimumSize: Qt.size(Style.space(560), Style.space(560))' \
+grep -Fq 'minimumSize: Qt.size(root.minimumWindowSide, root.minimumWindowSide)' \
   "$ROOT_DIR/Okomart.qml" \
   || fail "Okomart minimum geometry is not square"
 grep -Fq 'function open(payloadJson)' "$ROOT_DIR/Okomart.qml" \

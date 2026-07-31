@@ -35,6 +35,8 @@ Item {
   property int initialListFocusAttempts: 0
   property bool windowOpenPending: false
   property bool windowRulePrepared: false
+  property int windowRulePreparedSide: 0
+  property int windowRuleRequestedSide: 0
   property bool actionStarting: false
   property bool actionInProgress: false
   property bool actionReplacesOkomart: false
@@ -59,7 +61,14 @@ Item {
 
   readonly property bool wideLayout: window.width >= Style.space(600)
   readonly property bool toolbarSingleRow: window.width >= Style.space(420)
-  readonly property int windowSide: Style.space(760)
+  readonly property real outputScale: {
+    var scale = Number(window.devicePixelRatio)
+    return isFinite(scale) && scale >= 1 ? scale : 1
+  }
+  readonly property int windowSide: OkomartModel.scaleAdjustedWindowSide(
+    Style.space(760), outputScale, 320)
+  readonly property int minimumWindowSide: OkomartModel.scaleAdjustedWindowSide(
+    Style.space(560), outputScale, 320)
   readonly property real bodyTop: Math.max(Style.space(164), Math.min(Style.space(205), window.height * 0.255))
   readonly property real headerEdgeInset:
     wideLayout ? Style.space(82) : Style.space(42)
@@ -94,6 +103,7 @@ Item {
     && snapshot.snapshotId && snapshot.ok !== false)
 
   onWideLayoutChanged: if (wideLayout) narrowShowingDetails = false
+  onWindowSideChanged: Qt.callLater(applyCurrentWindowSize)
   onQueryChanged: rebuildView()
   onInstalledOnlyChanged: rebuildView()
 
@@ -129,6 +139,8 @@ Item {
     window.fullscreen = false
     window.implicitWidth = windowSide
     window.implicitHeight = windowSide
+    window.width = windowSide
+    window.height = windowSide
     narrowShowingDetails = false
     if (catalogLoaded) loadActionStatus()
     else loadCachedSnapshot()
@@ -147,7 +159,8 @@ Item {
 
   function prepareFloatingWindow() {
     if (!windowOpenPending) return
-    if (windowRulePrepared) {
+    var side = Math.round(windowSide)
+    if (windowRulePrepared && windowRulePreparedSide === side) {
       showPreparedWindow()
       return
     }
@@ -158,10 +171,11 @@ Item {
     if (windowRuleProcess.running) return
 
     windowRuleOutput = ""
+    windowRuleRequestedSide = side
     windowRuleProcess.command = [
       helperPath,
       "prepare-window",
-      String(Math.round(windowSide))
+      String(windowRuleRequestedSide)
     ]
     windowRuleProcess.running = true
   }
@@ -172,6 +186,12 @@ Item {
     if (exitCode === 0 && parsed && parsed.ok === true
         && parsed.prepared === true) {
       windowRulePrepared = true
+      windowRulePreparedSide = windowRuleRequestedSide
+      if (windowOpenPending
+          && windowRulePreparedSide !== Math.round(windowSide)) {
+        Qt.callLater(prepareFloatingWindow)
+        return
+      }
       showPreparedWindow()
       return
     }
@@ -193,6 +213,14 @@ Item {
     windowOpenPending = false
     window.visible = true
     Qt.callLater(focusInitialPluginList)
+  }
+
+  function applyCurrentWindowSize() {
+    window.implicitWidth = windowSide
+    window.implicitHeight = windowSide
+    if (!window.visible) return
+    window.width = windowSide
+    window.height = windowSide
   }
 
   function focusInitialPluginList() {
@@ -639,7 +667,7 @@ Item {
     color: Color.background
     implicitWidth: root.windowSide
     implicitHeight: root.windowSide
-    minimumSize: Qt.size(Style.space(560), Style.space(560))
+    minimumSize: Qt.size(root.minimumWindowSide, root.minimumWindowSide)
     maximized: false
     fullscreen: false
 

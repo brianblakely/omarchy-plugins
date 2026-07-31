@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "b.okomart",
   "name": "Okomart",
-  "version": "0.0.38",
+  "version": "0.0.39",
   "author": "Brian Blakely",
   "description": "Browse, install, update, and remove Omarchy plugins from a storefront interface",
   "license": "MIT",
