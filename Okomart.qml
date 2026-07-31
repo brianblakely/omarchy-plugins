@@ -80,14 +80,13 @@ Item {
   readonly property bool hasConfirmedUpdates:
     updatesConfirmed && updateRows.length > 0
   readonly property color storefrontColor:
-    root.Window.active ? Color.accent : inactiveBorderColor
+    focusScope.Window.active ? Color.accent : inactiveBorderColor
   readonly property bool snapshotActionable: !!(snapshot
     && snapshot.snapshotId && snapshot.ok !== false)
 
   onWideLayoutChanged: if (wideLayout) narrowShowingDetails = false
   onQueryChanged: rebuildView()
   onInstalledOnlyChanged: rebuildView()
-  Window.onActiveChanged: refreshInactiveBorderColor()
 
   function runtimeVersion(_arg) {
     return manifest && manifest.version ? String(manifest.version) : ""
@@ -644,6 +643,7 @@ Item {
       id: focusScope
       anchors.fill: parent
       focus: true
+      Window.onActiveChanged: root.refreshInactiveBorderColor()
 
       Keys.priority: Keys.AfterItem
       Keys.onPressed: function(event) {

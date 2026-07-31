@@ -146,18 +146,19 @@ grep -Fq '"general:col.inactive_border"' "$ROOT_DIR/Okomart.qml" \
   || fail "storefront does not query the OS inactive-border color"
 grep -Fq 'import QtQuick.Window' "$ROOT_DIR/Okomart.qml" \
   || fail "storefront cannot use the backing window's attached activity state"
-grep -Fq 'root.Window.active ? Color.accent : inactiveBorderColor' \
+grep -Fq 'focusScope.Window.active ? Color.accent : inactiveBorderColor' \
   "$ROOT_DIR/Okomart.qml" \
   || fail "storefront color does not follow window activity"
 grep -Fq 'strokeColor: root.storefrontColor' "$ROOT_DIR/Okomart.qml" \
   || fail "storefront line drawing does not use its activity color"
 grep -Fq 'color: root.storefrontColor' "$ROOT_DIR/Okomart.qml" \
   || fail "storefront signage does not use its activity color"
-grep -Fq 'Window.onActiveChanged: refreshInactiveBorderColor()' \
+grep -Fq 'Window.onActiveChanged: root.refreshInactiveBorderColor()' \
   "$ROOT_DIR/Okomart.qml" \
   || fail "storefront does not refresh the OS color on activity changes"
 if grep -Fq 'window.active' "$ROOT_DIR/Okomart.qml" \
-    || grep -Fq 'onActiveChanged: root.refreshInactiveBorderColor()' \
+    || grep -Fq 'root.Window.active' "$ROOT_DIR/Okomart.qml" \
+    || grep -Eq '^[[:space:]]+onActiveChanged: root\.refreshInactiveBorderColor' \
       "$ROOT_DIR/Okomart.qml"; then
   fail "storefront reads activity from unsupported FloatingWindow properties"
 fi
