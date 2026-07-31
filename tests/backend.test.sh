@@ -358,6 +358,11 @@ if [[ -n ${MOCK_FAIL_ID:-} && " $* " == *" $MOCK_FAIL_ID "* ]]; then
   printf 'mock failure for %s\n' "$MOCK_FAIL_ID" >&2
   exit 7
 fi
+if [[ ${MOCK_RESTART_FAIL:-0} == 1
+    && ${1:-} == restart && ${2:-} == shell ]]; then
+  printf 'mock shell restart failure\n' >&2
+  exit 8
+fi
 printf 'mock success\n'
 MOCK
 cat >"$MOCK_SHELL" <<'MOCK'
@@ -1219,7 +1224,9 @@ assert_eq \
   "update-all uses the confirmed snapshot, continues failures, and updates Okomart last"
 assert_jq "$TMP/action-update.json" \
   '(.ok|not) and (.running|not) and (.results|length)==3
-    and .results[0].ok and (.results[1].ok|not) and .results[2].ok' \
+    and .results[0].ok and (.results[1].ok|not) and .results[2].ok
+    and .selfUpdated and (.shellRestarted|not)
+    and (.runtimeReloaded|not) and (.resummoned|not)' \
   "update-all persists per-package success and failure results"
 
 "$OKOMART" status >"$TMP/status.json"
@@ -1227,14 +1234,56 @@ assert_jq "$TMP/status.json" \
   '.action=="update-all" and (.running|not) and (.results|length)==3' \
   "status returns the last complete atomic worker state"
 
+# The worker copied before an update may only know the previous status schema,
+# and the previous panel can acknowledge that terminal record after a partial
+# component reload. The helper from the updated checkout must still finish the
+# full reload.
+jq -c '
+  del(.selfUpdated, .shellRestarted, .runtimeReloaded)
+  | .resummoned=true
+  | .acknowledged=true
+' "$XDG_STATE_HOME/okomart/action.json" \
+  >"$TMP/self-recovery-previous-version.json"
+mv -- "$TMP/self-recovery-previous-version.json" \
+  "$XDG_STATE_HOME/okomart/action.json"
+
+: >"$MOCK_LOG"
+export MOCK_RESTART_FAIL=1
+if "$OKOMART" _recover-self-update "$ROOT"; then
+  fail "self-update recovery accepted a failed Omarchy shell restart"
+fi
+unset MOCK_RESTART_FAIL
+assert_eq \
+  "restart shell" \
+  "$(cat -- "$MOCK_LOG")" \
+  "self-update recovery reports a failed full shell restart"
+assert_jq "$XDG_STATE_HOME/okomart/action.json" \
+  '.selfUpdated and (.shellRestarted|not) and (.runtimeReloaded|not)
+    and (.resummoned|not) and .acknowledged
+    and (.reloadError|contains("could not restart automatically"))' \
+  "the updated helper repairs and retains retryable previous-version state"
+
 : >"$MOCK_LOG"
 export MOCK_RUNTIME_VERSION
 MOCK_RUNTIME_VERSION="$(jq -r '.version' "$ROOT/manifest.json")"
 "$OKOMART" _recover-self-update "$ROOT"
 assert_eq \
-  $'shell:shell summon b.okomart\nshell:shell call b.okomart runtimeVersion ' \
+  $'restart shell\nshell:shell summon b.okomart\nshell:shell call b.okomart runtimeVersion ' \
   "$(cat -- "$MOCK_LOG")" \
-  "completed self-update recovery verifies and reopens the updated runtime"
+  "completed self-update recovery fully restarts, verifies, and reopens the updated runtime"
+assert_jq "$XDG_STATE_HOME/okomart/action.json" \
+  '.selfUpdated and .shellRestarted and .runtimeReloaded and .resummoned
+    and (has("reloadError")|not)' \
+  "successful self-update recovery records a fully loaded runtime"
+
+jq -c '
+  .runtimeReloaded=false
+  | .resummoned=false
+  | .acknowledged=true
+' "$XDG_STATE_HOME/okomart/action.json" \
+  >"$TMP/self-recovery-stale.json"
+mv -- "$TMP/self-recovery-stale.json" \
+  "$XDG_STATE_HOME/okomart/action.json"
 
 : >"$MOCK_LOG"
 MOCK_RUNTIME_VERSION="stale"
@@ -1247,6 +1296,30 @@ assert_eq \
   "2" \
   "$(grep -Fc 'shell:shell call b.okomart runtimeVersion ' "$MOCK_LOG")" \
   "self-update recovery retries until the loaded runtime version matches"
+[[ -z $(grep -Fx 'restart shell' "$MOCK_LOG" || true) ]] \
+  || fail "self-update runtime verification repeated a completed shell restart"
+pass "self-update runtime verification does not repeat a completed shell restart"
+assert_jq "$XDG_STATE_HOME/okomart/action.json" \
+  '.selfUpdated and .shellRestarted and (.runtimeReloaded|not)
+    and (.resummoned|not) and .acknowledged
+    and (.reloadError|contains("did not load the updated runtime"))' \
+  "an early acknowledgement cannot suppress incomplete self-update recovery"
+
+jq -c '.acknowledged=false' "$XDG_STATE_HOME/okomart/action.json" \
+  >"$TMP/self-recovery-unacknowledged.json"
+mv -- "$TMP/self-recovery-unacknowledged.json" \
+  "$XDG_STATE_HOME/okomart/action.json"
+: >"$MOCK_LOG"
+MOCK_RUNTIME_VERSION="$(jq -r '.version' "$ROOT/manifest.json")"
+"$OKOMART" _recover-self-update "$ROOT"
+assert_eq \
+  $'shell:shell summon b.okomart\nshell:shell call b.okomart runtimeVersion ' \
+  "$(cat -- "$MOCK_LOG")" \
+  "a later recovery retries only the incomplete runtime reopen"
+assert_jq "$XDG_STATE_HOME/okomart/action.json" \
+  '.shellRestarted and .runtimeReloaded and .resummoned
+    and (has("reloadError")|not)' \
+  "a retried self-update recovery reaches a fully loaded state"
 unset MOCK_RUNTIME_VERSION
 
 ACTION_ID="$(jq -r '.actionId' "$TMP/status.json")"
@@ -1261,8 +1334,8 @@ assert_jq "$TMP/status-acknowledged.json" \
 : >"$MOCK_LOG"
 "$OKOMART" _recover-self-update "$ROOT"
 [[ ! -s $MOCK_LOG ]] \
-  || fail "self-update recovery replayed an acknowledged action"
-pass "self-update recovery ignores acknowledged actions"
+  || fail "self-update recovery replayed an already loaded action"
+pass "self-update recovery is idempotent after the runtime is loaded"
 [[ -z $(find "$XDG_STATE_HOME/okomart/worker" -maxdepth 1 \
   -name 'snapshot-*.json' -print -quit 2>/dev/null) ]] \
   || fail "completed workers left a confirmed snapshot copy behind"

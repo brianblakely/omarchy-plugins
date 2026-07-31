@@ -1402,7 +1402,8 @@ default_action_status() {
   jq -cn '{
     ok:true,running:false,action:"",actionId:"",pid:null,
     startedAt:"",finishedAt:"",message:"No Okomart action has run.",
-    results:[],resummoned:false,acknowledged:true
+    results:[],selfUpdated:false,shellRestarted:false,
+    runtimeReloaded:false,resummoned:false,acknowledged:true
   }'
 }
 
@@ -1848,6 +1849,122 @@ resummon_okomart() {
   return 1
 }
 
+SHELL_RESTART_ERROR=""
+restart_omarchy_shell() {
+  local seconds="${OKOMART_SHELL_RESTART_TIMEOUT_SECONDS:-30}"
+  if [[ $seconds =~ ^[1-9][0-9]{0,2}$ ]]; then
+    seconds=$((10#$seconds))
+    (( seconds <= 120 )) || seconds=30
+  else
+    seconds=30
+  fi
+
+  local output_file rc=0
+  SHELL_RESTART_ERROR=""
+  output_file="$(mktemp "$STATE_ROOT/.shell-restart.XXXXXX")" || {
+    SHELL_RESTART_ERROR="Could not prepare the Omarchy shell restart."
+    return 1
+  }
+  timeout --signal=TERM --kill-after=5s "${seconds}s" \
+    "${OKOMART_OMARCHY_BIN:-omarchy}" restart shell \
+    >"$output_file" 2>&1 || rc=$?
+  if (( rc != 0 )); then
+    SHELL_RESTART_ERROR="$(cat -- "$output_file" 2>/dev/null || true)"
+    if (( ${#SHELL_RESTART_ERROR} > 12000 )); then
+      SHELL_RESTART_ERROR="${SHELL_RESTART_ERROR: -12000}"
+    fi
+    [[ -n $SHELL_RESTART_ERROR ]] ||
+      SHELL_RESTART_ERROR="Omarchy shell restart failed with exit code $rc."
+  fi
+  rm -f -- "$output_file"
+  (( rc == 0 ))
+}
+
+complete_self_update_reload() {
+  local source_dir="$1"
+  local lock_wait="${OKOMART_SELF_RELOAD_LOCK_TIMEOUT_SECONDS:-5}"
+  if [[ ! $lock_wait =~ ^[1-9][0-9]?$ ]]; then
+    lock_wait=5
+  fi
+  if [[ -L $ACTION_LOCK || -d $ACTION_LOCK ]]; then
+    return 1
+  fi
+  exec 6>>"$ACTION_LOCK" || return 1
+  if ! flock -w "$lock_wait" 6; then
+    exec 6>&-
+    return 1
+  fi
+
+  local status shell_restarted=false runtime_reloaded=false reload_error=""
+  if [[ ! -f $ACTION_STATE || -L $ACTION_STATE ]] ||
+    ! status="$(cat -- "$ACTION_STATE" 2>/dev/null)" ||
+    ! jq -e --arg id "$OKOMART_ID" '
+      type == "object"
+      and .running == false
+      and (.action == "update" or .action == "update-all")
+      and any(
+        (.results // [])[];
+        .id == $id and .operation == "update" and .ok == true
+      )
+    ' <<<"$status" >/dev/null 2>&1; then
+    exec 6>&-
+    return 0
+  fi
+  if jq -e '.runtimeReloaded == true' <<<"$status" >/dev/null 2>&1; then
+    exec 6>&-
+    return 0
+  fi
+
+  if jq -e '.shellRestarted == true' <<<"$status" >/dev/null 2>&1; then
+    shell_restarted=true
+  elif restart_omarchy_shell; then
+    shell_restarted=true
+    status="$(jq -c '
+      .selfUpdated=true
+      | .shellRestarted=true
+      | .runtimeReloaded=false
+      | .resummoned=false
+      | del(.reloadError)
+    ' <<<"$status")"
+    if ! write_action_status "$status"; then
+      exec 6>&-
+      return 1
+    fi
+  else
+    reload_error="Okomart updated, but the Omarchy shell could not restart automatically. $SHELL_RESTART_ERROR"
+    status="$(jq -c --arg error "$reload_error" '
+      .selfUpdated=true
+      | .shellRestarted=false
+      | .runtimeReloaded=false
+      | .resummoned=false
+      | .reloadError=$error
+    ' <<<"$status")"
+    write_action_status "$status" >/dev/null 2>&1 || true
+    exec 6>&-
+    return 1
+  fi
+
+  if [[ $shell_restarted == true ]] && resummon_okomart "$source_dir"; then
+    runtime_reloaded=true
+  else
+    reload_error="The Omarchy shell restarted, but Okomart did not load the updated runtime."
+  fi
+  status="$(jq -c \
+    --argjson runtimeReloaded "$runtime_reloaded" \
+    --arg error "$reload_error" '
+      .selfUpdated=true
+      | .shellRestarted=true
+      | .runtimeReloaded=$runtimeReloaded
+      | .resummoned=$runtimeReloaded
+      | if $runtimeReloaded then del(.reloadError)
+        else .reloadError=$error end
+    ' <<<"$status")"
+  local persisted=true
+  write_action_status "$status" || persisted=false
+  exec 6>&-
+  [[ $runtime_reloaded == true && $persisted == true ]]
+}
+
 recover_self_update_command() {
   local source_arg="${1:-}"
   (( $# == 1 )) || return 2
@@ -1871,8 +1988,6 @@ recover_self_update_command() {
     [[ -f $ACTION_STATE && ! -L $ACTION_STATE ]] || return 0
     status="$(cat -- "$ACTION_STATE" 2>/dev/null)" || return 0
     jq -e 'type == "object"' <<<"$status" >/dev/null 2>&1 || return 0
-    jq -e '(.acknowledged // false) == true' <<<"$status" \
-      >/dev/null 2>&1 && return 0
     jq -e '.action == "update" or .action == "update-all"' <<<"$status" \
       >/dev/null 2>&1 || return 0
 
@@ -1888,7 +2003,7 @@ recover_self_update_command() {
         .id == $id and .operation == "update" and .ok == true
       )
     ' <<<"$status" >/dev/null 2>&1; then
-      resummon_okomart "$source_dir"
+      complete_self_update_reload "$source_dir"
       return
     fi
     return 0
@@ -1913,7 +2028,8 @@ worker_command() {
     '{
       ok:true,running:true,action:$action,actionId:$actionId,pid:$pid,
       startedAt:$startedAt,finishedAt:"",message:"Working…",
-      results:[],resummoned:false,acknowledged:false
+      results:[],selfUpdated:false,shellRestarted:false,
+      runtimeReloaded:false,resummoned:false,acknowledged:false
     }')"
   if ! write_action_status "$status"; then
     reconcile_unpersisted_action "$action_id"
@@ -2051,8 +2167,17 @@ worker_command() {
       "Stopped before scheduling more mutations because action status could not be persisted.")"
   fi
 
-  local resummoned=false
-  resummon_okomart "$source_dir" && resummoned=true
+  local self_updated=false resummoned=false
+  if jq -e --arg id "$OKOMART_ID" '
+    any(
+      (.results // [])[];
+      .id == $id and .operation == "update" and .ok == true
+    )
+  ' <<<"$status" >/dev/null 2>&1; then
+    self_updated=true
+  else
+    resummon_okomart "$source_dir" && resummoned=true
+  fi
   local finished message
   finished="$(utc_now)"
   if [[ $overall == true ]]; then
@@ -2062,10 +2187,12 @@ worker_command() {
   fi
   status="$(jq -c \
     --argjson ok "$overall" \
+    --argjson selfUpdated "$self_updated" \
     --argjson resummoned "$resummoned" \
     --arg finishedAt "$finished" \
     --arg message "$message" \
-    '.ok=$ok | .running=false | .resummoned=$resummoned
+    '.ok=$ok | .running=false | .selfUpdated=$selfUpdated
+      | .resummoned=$resummoned
       | .finishedAt=$finishedAt | .message=$message' <<<"$status")"
   local final_status_written=true
   write_action_status "$status" || final_status_written=false
@@ -2198,8 +2325,9 @@ action_command() {
     --arg actionId "$action_id" \
     '{
       ok:true,running:true,action:$action,actionId:$actionId,pid:null,
-      startedAt:"",finishedAt:"",message:"Queued…",results:[],resummoned:false,
-      acknowledged:false
+      startedAt:"",finishedAt:"",message:"Queued…",results:[],
+      selfUpdated:false,shellRestarted:false,runtimeReloaded:false,
+      resummoned:false,acknowledged:false
     }')"
   if ! write_action_status "$action_status"; then
     rm -f -- "$confirmed_snapshot"
