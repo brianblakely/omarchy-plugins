@@ -40,6 +40,7 @@ Item {
   property string query: ""
   property string selectedId: ""
   property string cachedOutput: ""
+  property string inactiveBorderOutput: ""
   property string refreshOutput: ""
   property string refreshError: ""
   property string windowRuleOutput: ""
@@ -52,6 +53,8 @@ Item {
   property var visiblePlugins: []
   property var updateRows: []
   property var pendingActionPlugin: null
+  property color inactiveBorderColor: Qt.rgba(
+    0x59 / 255, 0x59 / 255, 0x59 / 255, 0xaa / 255)
 
   readonly property bool wideLayout: window.width >= Style.space(600)
   readonly property bool toolbarSingleRow: window.width >= Style.space(420)
@@ -75,6 +78,8 @@ Item {
   }
   readonly property bool hasConfirmedUpdates:
     updatesConfirmed && updateRows.length > 0
+  readonly property color storefrontColor:
+    window.active ? Color.accent : inactiveBorderColor
   readonly property bool snapshotActionable: !!(snapshot
     && snapshot.snapshotId && snapshot.ok !== false)
 
@@ -86,9 +91,27 @@ Item {
     return manifest && manifest.version ? String(manifest.version) : ""
   }
 
+  function refreshInactiveBorderColor() {
+    if (inactiveBorderProcess.running) return
+    inactiveBorderOutput = ""
+    inactiveBorderProcess.running = true
+  }
+
+  function applyInactiveBorderColor(raw, exitCode) {
+    if (exitCode !== 0) return
+    var components = OkomartModel.hyprlandColorComponents(raw)
+    if (!Array.isArray(components) || components.length !== 4) return
+    inactiveBorderColor = Qt.rgba(
+      components[0] / 255,
+      components[1] / 255,
+      components[2] / 255,
+      components[3] / 255)
+  }
+
   function open(payloadJson) {
     closingFromHost = false
     updatesConfirmed = false
+    refreshInactiveBorderColor()
     initialListFocusPending = true
     initialListFocusAttempts = 0
     selectedId = ""
@@ -514,6 +537,18 @@ Item {
   }
 
   Process {
+    id: inactiveBorderProcess
+    command: ["hyprctl", "-j", "getoption", "general:col.inactive_border"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.inactiveBorderOutput = text
+    }
+    onExited: function(exitCode) {
+      root.applyInactiveBorderColor(root.inactiveBorderOutput, exitCode)
+    }
+  }
+
+  Process {
     id: windowRuleProcess
     stdout: StdioCollector {
       waitForEnd: true
@@ -593,6 +628,8 @@ Item {
     maximized: false
     fullscreen: false
 
+    onActiveChanged: root.refreshInactiveBorderColor()
+
     onVisibleChanged: {
       if (visible) {
         if (root.initialListFocusPending) initialFocusTimer.restart()
@@ -636,6 +673,7 @@ Item {
         splitX: root.splitX
         wideLayout: root.wideLayout
         awningVisible: root.wideLayout || !root.narrowShowingDetails
+        strokeColor: root.storefrontColor
       }
 
       Text {
@@ -648,7 +686,7 @@ Item {
           ? Math.max(Style.space(180), root.splitX - x - Style.space(28))
           : storefront.frameRight - x - root.headerEdgeInset
         text: "オコマート"
-        color: Color.accent
+        color: root.storefrontColor
         font.family: Style.font.family
         font.pixelSize: root.wideLayout ? Style.font.displayLarge : Style.font.display
         horizontalAlignment: root.wideLayout ? Text.AlignLeft : Text.AlignHCenter

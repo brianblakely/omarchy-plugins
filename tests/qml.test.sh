@@ -140,6 +140,20 @@ grep -Fq 'import QtQuick.Shapes' "$ROOT_DIR/StorefrontFrame.qml" \
   || fail "storefront is not drawn with QtQuick.Shapes"
 grep -Fq 'PathSvg { path: root.roofPath() }' "$ROOT_DIR/StorefrontFrame.qml" \
   || fail "responsive roof path is missing"
+grep -Fq 'OkomartModel.hyprlandColorComponents(raw)' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront does not parse the effective Hyprland border color"
+grep -Fq '"general:col.inactive_border"' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront does not query the OS inactive-border color"
+grep -Fq 'window.active ? Color.accent : inactiveBorderColor' \
+  "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront color does not follow window activity"
+grep -Fq 'strokeColor: root.storefrontColor' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront line drawing does not use its activity color"
+grep -Fq 'color: root.storefrontColor' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront signage does not use its activity color"
+grep -Fq 'onActiveChanged: root.refreshInactiveBorderColor()' \
+  "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront does not refresh the OS color on activity changes"
 if sed -n '/function roofPath()/,/^  }/p' "$ROOT_DIR/StorefrontFrame.qml" \
     | grep -Fq '+ " Z"'; then
   fail "roof path closes across separate trim segments"

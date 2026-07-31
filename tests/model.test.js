@@ -9,6 +9,7 @@ const {
   filterPlugins,
   hasUpdate,
   hasVersionUpdate,
+  hyprlandColorComponents,
   isInstalled,
   isSupportedScreenshot,
   matchesSearch,
@@ -174,6 +175,18 @@ test("confirms updates only from a fresh successful snapshot", () => {
   assert.equal(snapshotConfirmsUpdates({ ...current, plugins: null }, 0), false)
   assert.equal(snapshotConfirmsUpdates(current, 1), false)
   assert.equal(snapshotConfirmsUpdates(null, 0), false)
+})
+
+test("parses Hyprland ARGB option colors", () => {
+  assert.deepEqual(hyprlandColorComponents(
+    '{"option":"general:col.inactive_border","custom":"aa595959 0deg"}'
+  ), [0x59, 0x59, 0x59, 0xaa])
+  assert.deepEqual(hyprlandColorComponents({
+    custom: "0xcc112233 ff445566 45deg"
+  }), [0x11, 0x22, 0x33, 0xcc])
+  assert.deepEqual(hyprlandColorComponents({ custom: "not-a-color" }), [])
+  assert.deepEqual(hyprlandColorComponents("not-json"), [])
+  assert.deepEqual(hyprlandColorComponents(null), [])
 })
 
 test("renders catalog and installed versions without a phantom fallback", () => {

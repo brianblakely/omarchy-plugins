@@ -537,6 +537,25 @@ function snapshotConfirmsUpdates(snapshot, exitCode) {
     && Number(exitCode) === 0
 }
 
+function hyprlandColorComponents(raw) {
+  var option = raw
+  if (typeof raw === "string") {
+    try { option = JSON.parse(raw) } catch (e) { return [] }
+  }
+  if (!isRecord(option)) return []
+
+  var match = trimmedString(option.custom)
+    .match(/^(?:0x)?([0-9A-Fa-f]{8})(?:\s|$)/)
+  if (!match) return []
+  var argb = match[1]
+  return [
+    parseInt(argb.substr(2, 2), 16),
+    parseInt(argb.substr(4, 2), 16),
+    parseInt(argb.substr(6, 2), 16),
+    parseInt(argb.substr(0, 2), 16)
+  ]
+}
+
 function normalizedState(value) {
   return lowerString(value)
     .replace(/[\s_]+/g, "-")
@@ -756,6 +775,7 @@ if (typeof module !== "undefined") {
     filterPlugins: filterPlugins,
     hasUpdate: hasUpdate,
     hasVersionUpdate: hasVersionUpdate,
+    hyprlandColorComponents: hyprlandColorComponents,
     isInstalled: isInstalled,
     isSupportedScreenshot: isSupportedScreenshot,
     matchesSearch: matchesSearch,
