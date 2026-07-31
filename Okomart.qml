@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls as QQC
 import QtQuick.Layouts
+import QtQuick.Window
 import Quickshell
 import Quickshell.Io
 import qs.Commons
@@ -79,13 +80,14 @@ Item {
   readonly property bool hasConfirmedUpdates:
     updatesConfirmed && updateRows.length > 0
   readonly property color storefrontColor:
-    window.active ? Color.accent : inactiveBorderColor
+    root.Window.active ? Color.accent : inactiveBorderColor
   readonly property bool snapshotActionable: !!(snapshot
     && snapshot.snapshotId && snapshot.ok !== false)
 
   onWideLayoutChanged: if (wideLayout) narrowShowingDetails = false
   onQueryChanged: rebuildView()
   onInstalledOnlyChanged: rebuildView()
+  Window.onActiveChanged: refreshInactiveBorderColor()
 
   function runtimeVersion(_arg) {
     return manifest && manifest.version ? String(manifest.version) : ""
@@ -627,8 +629,6 @@ Item {
     minimumSize: Qt.size(Style.space(560), Style.space(560))
     maximized: false
     fullscreen: false
-
-    onActiveChanged: root.refreshInactiveBorderColor()
 
     onVisibleChanged: {
       if (visible) {
