@@ -191,10 +191,20 @@ if grep -Eq 'readonly property real (left|right|bottom)[[:space:]]*:' \
     "$ROOT_DIR/StorefrontFrame.qml"; then
   fail "storefront overrides a final Item geometry property"
 fi
-grep -Fq 'wideLayout: window.width >= Style.space(600)' "$ROOT_DIR/Okomart.qml" \
-  || fail "responsive master-detail breakpoint is missing"
-grep -Fq 'toolbarSingleRow: window.width >= Style.space(420)' "$ROOT_DIR/Okomart.qml" \
-  || fail "responsive single-row toolbar breakpoint is missing"
+grep -Fq 'Number(window.devicePixelRatio)' "$ROOT_DIR/Okomart.qml" \
+  || fail "adaptive content scaling does not read the output scale"
+grep -Fq 'OkomartModel.dpiCompactionScale(' "$ROOT_DIR/Okomart.qml" \
+  || fail "high-DPI content compaction is missing"
+grep -Fq 'wideLayout: layoutWidth >= wideLayoutBreakpoint' "$ROOT_DIR/Okomart.qml" \
+  || fail "responsive master-detail breakpoint ignores compacted layout width"
+grep -Fq 'toolbarSingleRow: layoutWidth >= Style.space(420)' "$ROOT_DIR/Okomart.qml" \
+  || fail "responsive single-row toolbar ignores compacted layout width"
+grep -Fq 'width: parent.width / root.contentScale' "$ROOT_DIR/Okomart.qml" \
+  || fail "content canvas does not compensate for adaptive scaling"
+grep -Fq 'xScale: root.contentScale' "$ROOT_DIR/Okomart.qml" \
+  || fail "adaptive horizontal content scale is missing"
+grep -Fq 'yScale: root.contentScale' "$ROOT_DIR/Okomart.qml" \
+  || fail "adaptive vertical content scale is missing"
 grep -Fq 'readonly property real controlHeight: Math.max(' "$ROOT_DIR/Okomart.qml" \
   || fail "toolbar does not derive one shared control height"
 [[ $(grep -Fc 'Layout.preferredHeight: toolbar.controlHeight' \

@@ -6,6 +6,7 @@ const {
   buildViewModel,
   canRemovePlugin,
   clickableSourceUrl,
+  dpiCompactionScale,
   filterPlugins,
   hasUpdate,
   hasVersionUpdate,
@@ -176,6 +177,17 @@ test("confirms updates only from a fresh successful snapshot", () => {
   assert.equal(snapshotConfirmsUpdates({ ...current, plugins: null }, 0), false)
   assert.equal(snapshotConfirmsUpdates(current, 1), false)
   assert.equal(snapshotConfirmsUpdates(null, 0), false)
+})
+
+test("compacts high-DPI content only enough to retain the wide layout", () => {
+  assert.equal(dpiCompactionScale(1200, 1200, 2), 1)
+  assert.equal(dpiCompactionScale(1070, 1200, 2), 1070 / 1200)
+  assert.equal(dpiCompactionScale(760, 600, 2), 1)
+  assert.equal(dpiCompactionScale(380, 600, 2), 380 / 600)
+  assert.equal(dpiCompactionScale(250, 600, 2), 0.5)
+  assert.equal(dpiCompactionScale(500, 600, 1), 1)
+  assert.equal(dpiCompactionScale(500, 600, 0), 1)
+  assert.equal(dpiCompactionScale(Number.NaN, 600, 2), 1)
 })
 
 test("orders selectable updates with Okomart first without mutation", () => {

@@ -56,12 +56,21 @@ Item {
   property color inactiveBorderColor: Qt.rgba(
     0x59 / 255, 0x59 / 255, 0x59 / 255, 0xaa / 255)
 
-  readonly property bool wideLayout: window.width >= Style.space(600)
-  readonly property bool toolbarSingleRow: window.width >= Style.space(420)
+  readonly property real outputScale: {
+    var scale = Number(window.devicePixelRatio)
+    return isFinite(scale) && scale >= 1 ? scale : 1
+  }
+  readonly property real wideLayoutBreakpoint: Style.space(600)
+  readonly property real contentScale: OkomartModel.dpiCompactionScale(
+    window.width, wideLayoutBreakpoint, outputScale)
+  readonly property real layoutWidth: window.width / contentScale
+  readonly property real layoutHeight: window.height / contentScale
+  readonly property bool wideLayout: layoutWidth >= wideLayoutBreakpoint
+  readonly property bool toolbarSingleRow: layoutWidth >= Style.space(420)
   property int windowSide: Style.space(760)
   readonly property int minimumWindowSide:
     Math.min(windowSide, Style.space(560))
-  readonly property real bodyTop: Math.max(Style.space(164), Math.min(Style.space(205), window.height * 0.255))
+  readonly property real bodyTop: Math.max(Style.space(164), Math.min(Style.space(205), layoutHeight * 0.255))
   readonly property real headerEdgeInset:
     wideLayout ? Style.space(82) : Style.space(42)
   readonly property real splitX: storefront.frameLeft
@@ -686,8 +695,15 @@ Item {
 
     FocusScope {
       id: focusScope
-      anchors.fill: parent
+      width: parent.width / root.contentScale
+      height: parent.height / root.contentScale
       focus: true
+      transform: Scale {
+        origin.x: 0
+        origin.y: 0
+        xScale: root.contentScale
+        yScale: root.contentScale
+      }
       Window.onActiveChanged: root.refreshInactiveBorderColor()
 
       Keys.priority: Keys.AfterItem

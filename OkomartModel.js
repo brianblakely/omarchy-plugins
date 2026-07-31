@@ -261,6 +261,22 @@ function clampedIndex(value, length) {
   return Math.max(0, Math.min(length - 1, numeric))
 }
 
+function dpiCompactionScale(availableWidth, wideBreakpoint, outputScale) {
+  var width = Number(availableWidth)
+  var breakpoint = Number(wideBreakpoint)
+  var scale = Number(outputScale)
+
+  if (!isFinite(width) || width <= 0
+      || !isFinite(breakpoint) || breakpoint <= 0) return 1
+  if (!isFinite(scale) || scale < 1) scale = 1
+  if (scale === 1 || width >= breakpoint) return 1
+
+  // Preserve as much of the OS-requested UI scale as the wide layout can
+  // accommodate. Never compact beyond cancelling the output scale entirely;
+  // below that point the window is genuinely too small and should stay narrow.
+  return Math.max(1 / scale, Math.min(1, width / breakpoint))
+}
+
 function resolveSelection(plugins, selectedId, previousIndex) {
   var values = Array.isArray(plugins) ? plugins : []
   if (values.length === 0) {
@@ -786,6 +802,7 @@ if (typeof module !== "undefined") {
     canRemovePlugin: canRemovePlugin,
     clickableSourceUrl: clickableSourceUrl,
     comparePlugins: comparePlugins,
+    dpiCompactionScale: dpiCompactionScale,
     filterPlugins: filterPlugins,
     hasUpdate: hasUpdate,
     hasVersionUpdate: hasVersionUpdate,
