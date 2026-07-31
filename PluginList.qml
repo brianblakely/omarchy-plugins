@@ -135,6 +135,8 @@ FocusScope {
 
       readonly property bool rowSelected: index === list.currentIndex
       readonly property bool installed: !!(modelData && modelData.installed === true)
+      readonly property bool updateAvailable: installed
+        && modelData.versionUpdateAvailable === true
       readonly property string pluginId: root.idFor(modelData)
       readonly property string title: String(modelData.name || modelData.id || "Unnamed plugin")
       readonly property string description: String(modelData.description || "No description provided.")
@@ -162,7 +164,7 @@ FocusScope {
           Text {
             id: installedIndicator
             visible: row.installed
-            text: "󰏗"
+            text: row.updateAvailable ? "\uf021" : "󰏗"
             textFormat: Text.PlainText
             y: Math.round((parent.height - height) / 2)
             color: root.accent
@@ -211,7 +213,8 @@ FocusScope {
         onDoubleClicked: root.activated(row.modelData)
       }
 
-      Accessible.name: row.title + (row.installed ? ", installed" : "")
+      Accessible.name: row.title + (row.updateAvailable
+        ? ", installed, update available" : (row.installed ? ", installed" : ""))
       Accessible.description: row.description
       Accessible.role: Accessible.ListItem
     }
