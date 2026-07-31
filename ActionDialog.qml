@@ -152,7 +152,7 @@ FocusScope {
       return "Omarchy will disable and delete the installed checkout for " + pluginName(plugin) + "."
     }
     if (mode === "update") {
-      return "Okomart will update only " + pluginName(plugin) + ".\n\n"
+      return "Okomart will update " + pluginName(plugin) + ".\n\n"
         + updateTransition(plugin)
     }
     return ""

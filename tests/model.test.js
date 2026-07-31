@@ -651,14 +651,13 @@ test("omits update detail for every uninstalled state", () => {
   }
 })
 
-test("shows only actionable or exceptional update detail for installed plugins", () => {
+test("shows only exceptional update detail for installed plugins", () => {
   const cases = [
     [{
       updateState: "update-available",
       installedVersion: "1.0",
       availableVersion: "2.0"
-    },
-      "Update available: 2.0"],
+    }, ""],
     [{ updateState: "update-available", availableVersion: "" },
       ""],
     [{ updateState: "up-to-date" }, ""],

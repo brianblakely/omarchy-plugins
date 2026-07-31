@@ -308,6 +308,8 @@ if grep -Fq 'modelData.enabled' "$ROOT_DIR/PluginList.qml" \
 fi
 grep -Fq 'if (state === "current") return ""' "$ROOT_DIR/OkomartModel.js" \
   || fail "plugin details still expose an up-to-date status snippet"
+grep -Fq 'if (state === "available") return ""' "$ROOT_DIR/OkomartModel.js" \
+  || fail "plugin details still expose an update-available status snippet"
 if grep -Eq '\{ label: "(ID|Kinds|License|State)"' "$ROOT_DIR/PluginDetails.qml"; then
   fail "plugin details expose internal or unwanted metadata"
 fi
@@ -412,6 +414,12 @@ grep -Fq 'mode === "updates"' "$ROOT_DIR/ActionDialog.qml" \
   || fail "update confirmation mode is missing"
 grep -Fq 'mode === "update"' "$ROOT_DIR/ActionDialog.qml" \
   || fail "single-plugin update confirmation mode is missing"
+grep -Fq 'return "Okomart will update " + pluginName(plugin)' \
+  "$ROOT_DIR/ActionDialog.qml" \
+  || fail "single-plugin update confirmation uses unexpected scope wording"
+if grep -Fq 'will update only' "$ROOT_DIR/ActionDialog.qml"; then
+  fail "single-plugin update confirmation still says only"
+fi
 grep -Fq 'if (mode === "updates") return "Apply plugin updates?"' \
   "$ROOT_DIR/ActionDialog.qml" \
   || fail "update confirmation title does not use neutral wording"

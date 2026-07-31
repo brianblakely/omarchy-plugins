@@ -650,12 +650,7 @@ function updateDetailText(plugin) {
   if (removalReason.length > 0) return removalReason
 
   var state = updateState(plugin)
-  if (state === "available") {
-    var availableVersion = metadataValue(plugin.availableVersion, "")
-    return availableVersion.length > 0
-      ? "Update available: " + availableVersion
-      : "Update available"
-  }
+  if (state === "available") return ""
   if (state === "dirty") return "Update blocked: local changes"
   if (state === "diverged")
     return "Update blocked: local and remote histories diverged"
