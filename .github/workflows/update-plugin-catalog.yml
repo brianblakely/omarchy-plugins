@@ -16,7 +16,7 @@ jobs:
       - name: Check out the catalog
         uses: actions/checkout@v6
 
-      - name: Generate the catalog table
+      - name: Generate the alphabetized catalog table
         run: node scripts/generate-plugin-catalog.mjs
 
       - name: Commit the generated README
