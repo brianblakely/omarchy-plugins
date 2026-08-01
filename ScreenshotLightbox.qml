@@ -186,6 +186,7 @@ FocusScope {
       foreground: root.foreground
       accent: root.accent
       imageInteractive: false
+      imageNavigationInteractive: true
       imageHeightOverride: Math.max(1, height - paginationGap - paginationHeight)
     }
   }

@@ -16,6 +16,7 @@ FocusScope {
   property real revealProgress: 1
   property bool transitionReady: false
   property bool imageInteractive: true
+  property bool imageNavigationInteractive: false
   property real imageHeightOverride: -1
   property color foreground: Color.foreground
   property color accent: Color.accent
@@ -226,13 +227,45 @@ FocusScope {
       anchors.fill: parent
       enabled: root.imageInteractive && root.imageCount > 0
       acceptedButtons: Qt.LeftButton
-      cursorShape: Qt.PointingHandCursor
+      cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
       onClicked: root.imageActivated(root.currentIndex)
 
       Accessible.name: "View screenshot " + (root.currentIndex + 1) + " larger"
       Accessible.role: Accessible.Button
       Accessible.ignored: !enabled
       Accessible.onPressAction: root.imageActivated(root.currentIndex)
+    }
+
+    MouseArea {
+      anchors.top: parent.top
+      anchors.bottom: parent.bottom
+      anchors.left: parent.left
+      width: parent.width / 2
+      enabled: root.imageNavigationInteractive && root.imageCount > 1
+      acceptedButtons: Qt.LeftButton
+      cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+      onClicked: root.select(root.currentIndex - 1)
+
+      Accessible.name: "Show previous screenshot"
+      Accessible.role: Accessible.Button
+      Accessible.ignored: !enabled
+      Accessible.onPressAction: root.select(root.currentIndex - 1)
+    }
+
+    MouseArea {
+      anchors.top: parent.top
+      anchors.bottom: parent.bottom
+      anchors.right: parent.right
+      width: parent.width / 2
+      enabled: root.imageNavigationInteractive && root.imageCount > 1
+      acceptedButtons: Qt.LeftButton
+      cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+      onClicked: root.select(root.currentIndex + 1)
+
+      Accessible.name: "Show next screenshot"
+      Accessible.role: Accessible.Button
+      Accessible.ignored: !enabled
+      Accessible.onPressAction: root.select(root.currentIndex + 1)
     }
   }
 

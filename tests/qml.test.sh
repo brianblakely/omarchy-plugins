@@ -505,6 +505,27 @@ grep -Fq 'imageHeightOverride: Math.max(1, height - paginationGap - paginationHe
   || fail "screenshot lightbox does not give the image its available height"
 grep -Fq 'imageInteractive: false' "$ROOT_DIR/ScreenshotLightbox.qml" \
   || fail "the enlarged screenshot recursively reopens its lightbox"
+grep -Fq 'imageNavigationInteractive: true' "$ROOT_DIR/ScreenshotLightbox.qml" \
+  || fail "the enlarged screenshot does not enable split image navigation"
+grep -Fq 'property bool imageNavigationInteractive: false' \
+  "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot carousel cannot opt into split image navigation"
+if [[ $(grep -Fc \
+    'enabled: root.imageNavigationInteractive && root.imageCount > 1' \
+    "$ROOT_DIR/ScreenshotCarousel.qml") -ne 2 ]]; then
+  fail "lightbox image halves remain clickable without multiple screenshots"
+fi
+grep -Fq 'onClicked: root.select(root.currentIndex - 1)' \
+  "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "the left lightbox image half does not select the previous screenshot"
+grep -Fq 'onClicked: root.select(root.currentIndex + 1)' \
+  "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "the right lightbox image half does not select the next screenshot"
+if [[ $(grep -Fc \
+    'cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor' \
+    "$ROOT_DIR/ScreenshotCarousel.qml") -ne 3 ]]; then
+  fail "disabled screenshot image interactions still expose a clickable cursor"
+fi
 grep -Fq 'text: "Open Original"' "$ROOT_DIR/ScreenshotLightbox.qml" \
   || fail "screenshot lightbox is missing its Open Original action"
 grep -Fq 'Qt.openUrlExternally(Util.fileUrl(currentPath))' \
