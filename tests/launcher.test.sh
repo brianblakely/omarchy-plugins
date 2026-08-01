@@ -35,7 +35,7 @@ jq -e '
   .schemaVersion == 1
   and .id == "b.okomart"
   and .name == "Okomart"
-  and .version == "0.0.42"
+  and .version == "0.0.43"
   and .author == "Brian Blakely"
   and .license == "MIT"
   and .kinds == ["service", "panel"]

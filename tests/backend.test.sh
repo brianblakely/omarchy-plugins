@@ -355,6 +355,27 @@ git -C "$CATALOG_WORK" push -q -u origin main
 SOURCE="$TMP/source"
 git clone -q --no-recurse-submodules "$CATALOG_REMOTE" "$SOURCE"
 
+OFFICIAL_CATALOG_URL="https://github.com/brianblakely/omarchy-plugins.git"
+OFFICIAL_SSH_SOURCE="$TMP/official-ssh-source"
+git clone -q --no-recurse-submodules "$CATALOG_REMOTE" "$OFFICIAL_SSH_SOURCE"
+git -C "$OFFICIAL_SSH_SOURCE" remote set-url origin \
+  git@github.com:brianblakely/omarchy-plugins.git
+if ! GIT_CONFIG_COUNT=1 \
+  GIT_CONFIG_KEY_0="url.$CATALOG_REMOTE.insteadOf" \
+  GIT_CONFIG_VALUE_0="$OFFICIAL_CATALOG_URL" \
+  OKOMART_GIT_TIMEOUT_SECONDS=1 \
+  XDG_CACHE_HOME="$TMP/official-ssh-cache" \
+  XDG_STATE_HOME="$TMP/official-ssh-state" \
+  "$OKOMART" snapshot "$OFFICIAL_SSH_SOURCE" \
+  >"$TMP/snapshot-official-ssh.json"; then
+  fail "the official SSH install origin should not block the public catalog"
+fi
+assert_jq "$TMP/snapshot-official-ssh.json" \
+  '.ok and (.stale|not)
+    and .catalogSourceUrl=="https://github.com/brianblakely/omarchy-plugins.git"
+    and (.plugins|length)==2' \
+  "official SSH installs fetch the catalog over canonical public HTTPS"
+
 COLD_CACHE="$TMP/cached-empty.json"
 "$OKOMART" cached >"$COLD_CACHE"
 assert_jq "$COLD_CACHE" \

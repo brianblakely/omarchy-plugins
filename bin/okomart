@@ -12,6 +12,7 @@ export GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -oBatchMode=yes}"
 export LC_ALL=C
 
 OKOMART_ID="b.okomart"
+OFFICIAL_CATALOG_URL="https://github.com/brianblakely/omarchy-plugins.git"
 SCRIPT_PATH="$(realpath -m -- "${BASH_SOURCE[0]}")"
 
 json_error() {
@@ -328,7 +329,27 @@ source_origin() {
     return 0
   fi
   plugin_owned_git_worktree "$source_dir" || return 1
-  git -C "$source_dir" remote get-url origin 2>/dev/null
+  local origin
+  origin="$(git -C "$source_dir" remote get-url origin 2>/dev/null)" ||
+    return 1
+
+  # The shell may not inherit the SSH agent that was available when a user
+  # installed Okomart from a terminal. Its catalog is public, so resolve known
+  # aliases of the official origin to the canonical HTTPS URL. Self updates
+  # still use the checkout's configured origin in self_update_json().
+  case "${origin,,}" in
+  https://github.com/brianblakely/omarchy-plugins | \
+    https://github.com/brianblakely/omarchy-plugins.git | \
+    git@github.com:brianblakely/omarchy-plugins.git | \
+    ssh://git@github.com/brianblakely/omarchy-plugins.git | \
+    ssh://git@github.com:22/brianblakely/omarchy-plugins.git | \
+    git+ssh://git@github.com/brianblakely/omarchy-plugins.git)
+    printf '%s\n' "$OFFICIAL_CATALOG_URL"
+    ;;
+  *)
+    printf '%s\n' "$origin"
+    ;;
+  esac
 }
 
 valid_registry_url() {
