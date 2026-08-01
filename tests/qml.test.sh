@@ -448,9 +448,13 @@ grep -Fq 'implicitHeight: visible ? imageHeight + paginationGap + paginationHeig
   || fail "screenshot carousel does not reserve layout space for its dots"
 grep -Fq 'anchors.top: carouselContent.bottom' "$ROOT_DIR/ScreenshotCarousel.qml" \
   || fail "screenshot dots are not laid out below the image"
-grep -Fq 'width: index === root.currentIndex ? Style.space(10) : Style.space(8)' \
+grep -Fq 'width: Style.space(10)' \
   "$ROOT_DIR/ScreenshotCarousel.qml" \
-  || fail "screenshot dots did not receive the larger visual sizes"
+  || fail "screenshot dots do not share the larger visual size"
+if grep -Eq 'width: index === root\.currentIndex' \
+    "$ROOT_DIR/ScreenshotCarousel.qml"; then
+  fail "active screenshot dots still change size"
+fi
 grep -Fq 'width: Style.space(18)' "$ROOT_DIR/ScreenshotCarousel.qml" \
   || fail "screenshot dots do not have a generous click target"
 grep -Fq 'cursorShape: Qt.PointingHandCursor' "$ROOT_DIR/ScreenshotCarousel.qml" \
@@ -486,6 +490,16 @@ grep -Fq 'function openFor(nextImages, nextRevision, index, nextPluginName)' \
   || fail "screenshot lightbox cannot open with the selected screenshot"
 grep -Fq 'anchors.margins: Style.space(16)' "$ROOT_DIR/ScreenshotLightbox.qml" \
   || fail "screenshot lightbox does not span Okomart's interior"
+if grep -Fq 'borderSpec:' "$ROOT_DIR/ScreenshotLightbox.qml" \
+    || grep -Fq 'border.width:' "$ROOT_DIR/ScreenshotLightbox.qml"; then
+  fail "screenshot lightbox still draws a border"
+fi
+grep -Fq 'text: root.pluginName' "$ROOT_DIR/ScreenshotLightbox.qml" \
+  || fail "screenshot lightbox heading does not use the plugin name"
+if grep -Eq 'screenshot.*of.*imageCount|currentIndex.*of' \
+    "$ROOT_DIR/ScreenshotLightbox.qml"; then
+  fail "screenshot lightbox duplicates dot pagination in its heading"
+fi
 grep -Fq 'imageHeightOverride: Math.max(1, height - paginationGap - paginationHeight)' \
   "$ROOT_DIR/ScreenshotLightbox.qml" \
   || fail "screenshot lightbox does not give the image its available height"

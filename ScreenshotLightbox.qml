@@ -112,7 +112,6 @@ FocusScope {
     anchors.fill: parent
     anchors.margins: Style.space(16)
     color: root.background
-    borderSpec: Border.flat(root.accent, Math.max(1, Style.normalBorderWidth))
     radius: Style.cornerRadius
 
     MouseArea { anchors.fill: parent; onClicked: {} }
@@ -133,8 +132,7 @@ FocusScope {
         anchors.right: headerActions.left
         anchors.rightMargin: Style.space(14)
         anchors.verticalCenter: parent.verticalCenter
-        text: root.pluginName + " · screenshot " + (carousel.currentIndex + 1)
-          + " of " + root.imageCount
+        text: root.pluginName
         textFormat: Text.PlainText
         color: root.foreground
         font.family: Style.font.family

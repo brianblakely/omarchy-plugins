@@ -255,7 +255,7 @@ FocusScope {
 
         Rectangle {
           anchors.centerIn: parent
-          width: index === root.currentIndex ? Style.space(10) : Style.space(8)
+          width: Style.space(10)
           height: width
           radius: width / 2
           color: index === root.currentIndex
