@@ -9,3 +9,5 @@ https://github.com/brianblakely/omastonk.git
 https://github.com/brianblakely/peek.git
 https://github.com/mwikala/omarchy-world-time.git
 https://github.com/brianblakely/omadoro.git
+https://github.com/nightdevil00/bt.codecs.git
+https://github.com/yuters/omarchy-flight-radar.git
