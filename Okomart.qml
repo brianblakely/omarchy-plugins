@@ -148,6 +148,7 @@ Item {
 
   function open(payloadJson) {
     closingFromHost = false
+    screenshotLightbox.clear()
     updatesConfirmed = false
     refreshInactiveBorderColor()
     initialListFocusPending = true
@@ -170,6 +171,7 @@ Item {
     windowOpenPending = false
     initialListFocusPending = false
     initialFocusTimer.stop()
+    screenshotLightbox.clear()
     closingFromHost = true
     window.visible = false
     closingFromHost = false
@@ -263,6 +265,16 @@ Item {
     Qt.callLater(pluginDetails.focusViewport)
   }
 
+  function openScreenshotLightbox(index) {
+    if (dialog.opened || !selectedPlugin) return
+    var images = Array.isArray(selectedPlugin.images) ? selectedPlugin.images : []
+    if (images.length < 1) return
+    var revision = String(selectedPlugin.catalogCommit
+      || snapshot.catalogCommit || "")
+    var name = String(selectedPlugin.name || selectedPlugin.id || "Plugin")
+    screenshotLightbox.openFor(images, revision, index, name)
+  }
+
   function requestClose() {
     if (shell && typeof shell.hide === "function") shell.hide(pluginId)
     else window.visible = false
@@ -271,6 +283,10 @@ Item {
   function closeFromKeyboard() {
     if (dialog.opened) {
       if (!actionStarting) dialog.closeDialog()
+      return
+    }
+    if (screenshotLightbox.opened) {
+      screenshotLightbox.closeLightbox()
       return
     }
     if (!wideLayout && narrowShowingDetails) {
@@ -708,16 +724,16 @@ Item {
 
       Keys.priority: Keys.AfterItem
       Keys.onPressed: function(event) {
-        if (!dialog.opened
+        if (!dialog.opened && !screenshotLightbox.opened
             && (event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_F) {
           searchField.forceActiveFocus()
           searchField.selectAll()
           event.accepted = true
-        } else if (!dialog.opened
+        } else if (!dialog.opened && !screenshotLightbox.opened
             && (event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_R) {
           root.refresh()
           event.accepted = true
-        } else if (!dialog.opened
+        } else if (!dialog.opened && !screenshotLightbox.opened
             && event.key === Qt.Key_Slash && !searchField.activeFocus) {
           searchField.forceActiveFocus()
           event.accepted = true
@@ -761,7 +777,7 @@ Item {
           filterButton.implicitHeight,
           updatesButton.implicitHeight)
 
-        enabled: !dialog.opened
+        enabled: !dialog.opened && !screenshotLightbox.opened
         columns: root.toolbarSingleRow ? 3 : 2
         columnSpacing: Style.space(8)
         rowSpacing: Style.space(8)
@@ -868,7 +884,7 @@ Item {
       PluginList {
         id: pluginList
         focus: true
-        enabled: !dialog.opened
+        enabled: !dialog.opened && !screenshotLightbox.opened
         visible: root.wideLayout || !root.narrowShowingDetails
         x: storefront.frameLeft + Style.space(13)
         y: storefront.awningY + Style.space(20)
@@ -901,7 +917,7 @@ Item {
 
       PluginDetails {
         id: pluginDetails
-        enabled: !dialog.opened
+        enabled: !dialog.opened && !screenshotLightbox.opened
         visible: root.wideLayout || root.narrowShowingDetails
         x: root.wideLayout ? root.splitX + Style.space(18) : storefront.frameLeft + Style.space(18)
         y: root.bodyTop + Style.space(16)
@@ -921,6 +937,7 @@ Item {
         onUpdateRequested: function(plugin) { root.openActionDialog("update", plugin, []) }
         onPluginListRequested: root.focusPluginListFromSearch()
         onSearchRequested: searchField.forceActiveFocus()
+        onScreenshotRequested: function(index) { root.openScreenshotLightbox(index) }
       }
 
       BorderSurface {
@@ -948,6 +965,12 @@ Item {
           horizontalAlignment: Text.AlignHCenter
           wrapMode: Text.WordWrap
         }
+      }
+
+      ScreenshotLightbox {
+        id: screenshotLightbox
+        anchors.fill: parent
+        onDismissed: function(index) { pluginDetails.restoreScreenshot(index) }
       }
 
       ActionDialog {

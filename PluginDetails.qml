@@ -22,6 +22,7 @@ FocusScope {
   signal updateRequested(var plugin)
   signal pluginListRequested()
   signal searchRequested()
+  signal screenshotRequested(int index)
 
   readonly property bool hasPlugin: plugin !== null && plugin !== undefined
   readonly property bool installed: hasPlugin && plugin.installed === true
@@ -98,7 +99,15 @@ FocusScope {
   function resetScroll() {
     var flick = detailsScroll.contentItem
     if (flick && flick.contentY !== undefined) flick.contentY = 0
-    screenshotsView.currentIndex = 0
+    screenshotsView.reset()
+  }
+
+  function restoreScreenshot(index) {
+    screenshotsView.showInstant(index)
+    Qt.callLater(function() {
+      root.ensureVisible(screenshotsView)
+      screenshotsView.focusControls()
+    })
   }
 
   function focusFirstControl() {
@@ -494,6 +503,7 @@ FocusScope {
             : root.catalogRevision
           foreground: root.foreground
           accent: root.accent
+          onImageActivated: function(index) { root.screenshotRequested(index) }
           onActiveFocusChanged: if (activeFocus) Qt.callLater(function() {
             root.ensureVisible(screenshotsView)
           })

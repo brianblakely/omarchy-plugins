@@ -30,6 +30,7 @@ for file in \
   PluginList.qml \
   PluginDetails.qml \
   ScreenshotCarousel.qml \
+  ScreenshotLightbox.qml \
   ActionDialog.qml \
   Service.qml; do
   [[ -f $ROOT_DIR/$file ]] || fail "missing $file"
@@ -47,6 +48,7 @@ if command -v qmllint >/dev/null 2>&1; then
     "$ROOT_DIR/PluginList.qml" \
     "$ROOT_DIR/PluginDetails.qml" \
     "$ROOT_DIR/ScreenshotCarousel.qml" \
+    "$ROOT_DIR/ScreenshotLightbox.qml" \
     "$ROOT_DIR/ActionDialog.qml" \
     "$ROOT_DIR/Service.qml"
 fi
@@ -369,6 +371,8 @@ grep -Fq 'event.key === Qt.Key_Right || event.key === Qt.Key_L' \
   || fail "keyboard carousel L navigation is missing"
 grep -Fq 'event.key === Qt.Key_End' "$ROOT_DIR/ScreenshotCarousel.qml" \
   || fail "keyboard carousel end navigation is missing"
+grep -Fq 'event.key === Qt.Key_Home' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "keyboard carousel home navigation is missing"
 if grep -Fq 'BorderSurface {' "$ROOT_DIR/ScreenshotCarousel.qml"; then
   fail "plugin screenshots still have a surrounding frame"
 fi
@@ -378,15 +382,24 @@ grep -Fq 'model: root.imageCount' "$ROOT_DIR/ScreenshotCarousel.qml" \
   || fail "screenshot page dots do not represent every image"
 grep -Fq 'function focusControls()' "$ROOT_DIR/ScreenshotCarousel.qml" \
   || fail "screenshot carousel does not expose its keyboard controls"
+grep -Fq 'function reset()' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot carousel does not expose a complete transition reset"
 if ! sed -n '/function focusControls()/,/^  }/p' \
     "$ROOT_DIR/ScreenshotCarousel.qml" | grep -Fq 'root.forceActiveFocus()'; then
-  fail "screenshot carousel focuses an arrow instead of its neutral container"
+  fail "screenshot carousel does not focus its neutral keyboard container"
+fi
+grep -Fq 'screenshotsView.reset()' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin changes bypass the screenshot carousel transition reset"
+if grep -Fq 'screenshotsView.currentIndex =' "$ROOT_DIR/PluginDetails.qml"; then
+  fail "plugin changes mutate only part of the screenshot carousel state"
 fi
 if grep -Fq 'focusable: true' "$ROOT_DIR/ScreenshotCarousel.qml"; then
-  fail "screenshot carousel arrows still expose an active focus treatment"
+  fail "screenshot dots expose an unexpected active focus treatment"
 fi
-grep -Fq 'visible: index === root.currentIndex' "$ROOT_DIR/ScreenshotCarousel.qml" \
-  || fail "screenshot carousel does not switch between preloaded images"
+grep -Fq 'visible: index === root.displayedIndex' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot carousel does not retain its outgoing preloaded image"
+grep -Fq 'index === root.incomingIndex' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot carousel does not expose its incoming preloaded image"
 grep -Fq 'asynchronous: true' "$ROOT_DIR/ScreenshotCarousel.qml" \
   || fail "screenshot decoding still blocks plugin-list navigation"
 grep -Fq 'cache: true' "$ROOT_DIR/ScreenshotCarousel.qml" \
@@ -404,32 +417,96 @@ grep -Fq '!targetImage || targetImage.status !== Image.Ready' \
   || fail "screenshot carousel exposes an image before it is ready"
 grep -Fq 'root.imageBecameReady(index)' "$ROOT_DIR/ScreenshotCarousel.qml" \
   || fail "pending screenshot selection is not completed after decoding"
-[[ $(grep -Fc 'color: Color.background' \
-  "$ROOT_DIR/ScreenshotCarousel.qml") -eq 2 ]] \
-  || fail "screenshot arrows do not both retain a persistent background"
-[[ $(grep -Fc 'background: "transparent"' \
-  "$ROOT_DIR/ScreenshotCarousel.qml") -eq 2 ]] \
-  || fail "screenshot arrow state fills do not reveal their base backgrounds"
-[[ $(grep -Fc 'foreground: root.foreground' \
-  "$ROOT_DIR/ScreenshotCarousel.qml") -eq 2 ]] \
-  || fail "screenshot arrows do not both use the configured foreground"
-grep -Fq 'width: Style.space(24)' "$ROOT_DIR/ScreenshotCarousel.qml" \
-  || fail "screenshot carousel arrows are not compact"
-previous_line=$(grep -n -F 'id: previousButton' \
-  "$ROOT_DIR/ScreenshotCarousel.qml" | cut -d: -f1)
-dots_line=$(grep -n -F 'id: pageDots' \
-  "$ROOT_DIR/ScreenshotCarousel.qml" | cut -d: -f1)
-next_line=$(grep -n -F 'id: nextButton' \
-  "$ROOT_DIR/ScreenshotCarousel.qml" | cut -d: -f1)
-if [[ -z $previous_line || -z $dots_line || -z $next_line ]] \
-    || (( previous_line >= dots_line || dots_line >= next_line )); then
-  fail "screenshot arrows do not flank the page dots"
+grep -Fq 'import QtQuick.Effects' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot carousel cannot apply Omarchy's wallpaper reveal mask"
+grep -Fq 'import QtQuick.Shapes' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot carousel cannot draw Omarchy's wallpaper reveal mask"
+grep -Fq 'property: "revealProgress"' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot carousel does not animate its wipe progress"
+grep -Fq 'duration: 420' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot wipe does not match Omarchy's wallpaper duration"
+grep -Fq 'easing.type: Easing.InOutCubic' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot wipe does not match Omarchy's wallpaper easing"
+grep -Fq 'maskSource: revealMask' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot wipe does not use its reveal mask"
+grep -Fq 'maskThresholdMin: 0.5' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot wipe does not match Omarchy's mask threshold"
+grep -Fq 'maskSpreadAtMin: 0.02' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot wipe does not match Omarchy's mask edge spread"
+grep -Fq 'readonly property real slant: -0.18' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot wipe does not match Omarchy's diagonal slant"
+grep -Fq 'readonly property real spread: reach * root.revealProgress' \
+  "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot wipe does not expand Omarchy's center reveal"
+if grep -Fq 'id: previousButton' "$ROOT_DIR/ScreenshotCarousel.qml" \
+    || grep -Fq 'id: nextButton' "$ROOT_DIR/ScreenshotCarousel.qml" \
+    || grep -Fq 'Button {' "$ROOT_DIR/ScreenshotCarousel.qml"; then
+  fail "screenshot carousel still exposes onscreen arrow controls"
 fi
+grep -Fq 'implicitHeight: visible ? imageHeight + paginationGap + paginationHeight : 0' \
+  "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot carousel does not reserve layout space for its dots"
+grep -Fq 'anchors.top: carouselContent.bottom' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot dots are not laid out below the image"
+grep -Fq 'width: index === root.currentIndex ? Style.space(10) : Style.space(8)' \
+  "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot dots did not receive the larger visual sizes"
+grep -Fq 'width: Style.space(18)' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot dots do not have a generous click target"
+grep -Fq 'cursorShape: Qt.PointingHandCursor' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot dots do not advertise pointer interaction"
+grep -Fq 'onClicked: root.select(index)' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot dots do not select their corresponding image"
+grep -Fq 'Accessible.onPressAction: root.select(index)' \
+  "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot dots cannot be activated accessibly"
+grep -Fq 'signal imageActivated(int index)' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot images cannot request their larger view"
+grep -Fq 'onClicked: root.imageActivated(root.currentIndex)' \
+  "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "clicking a screenshot does not request its larger view"
+grep -Fq 'function showInstant(index)' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "thumbnail and lightbox carousels cannot synchronize selection"
 grep -Fq 'visible: root.screenshots.length > 0' "$ROOT_DIR/PluginDetails.qml" \
   || fail "zero-image omission is missing"
 grep -Fq 'String(root.plugin.catalogCommit || root.catalogRevision)' \
   "$ROOT_DIR/PluginDetails.qml" \
   || fail "screenshot cache is not keyed by the plugin repository commit"
+grep -Fq 'signal screenshotRequested(int index)' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin details do not forward screenshot expansion requests"
+grep -Fq 'onImageActivated: function(index) { root.screenshotRequested(index) }' \
+  "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin screenshots are not connected to the lightbox request"
+grep -Fq 'function restoreScreenshot(index)' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin details cannot restore lightbox selection and focus"
+grep -Fq 'screenshotsView.showInstant(index)' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "lightbox selection is not restored to the thumbnail carousel"
+grep -Fq 'function openFor(nextImages, nextRevision, index, nextPluginName)' \
+  "$ROOT_DIR/ScreenshotLightbox.qml" \
+  || fail "screenshot lightbox cannot open with the selected screenshot"
+grep -Fq 'anchors.margins: Style.space(16)' "$ROOT_DIR/ScreenshotLightbox.qml" \
+  || fail "screenshot lightbox does not span Okomart's interior"
+grep -Fq 'imageHeightOverride: Math.max(1, height - paginationGap - paginationHeight)' \
+  "$ROOT_DIR/ScreenshotLightbox.qml" \
+  || fail "screenshot lightbox does not give the image its available height"
+grep -Fq 'imageInteractive: false' "$ROOT_DIR/ScreenshotLightbox.qml" \
+  || fail "the enlarged screenshot recursively reopens its lightbox"
+grep -Fq 'text: "Open Original"' "$ROOT_DIR/ScreenshotLightbox.qml" \
+  || fail "screenshot lightbox is missing its Open Original action"
+grep -Fq 'Qt.openUrlExternally(Util.fileUrl(currentPath))' \
+  "$ROOT_DIR/ScreenshotLightbox.qml" \
+  || fail "Open Original does not use the default native image viewer"
+grep -Fq 'event.key === Qt.Key_Escape' "$ROOT_DIR/ScreenshotLightbox.qml" \
+  || fail "screenshot lightbox cannot be dismissed with Escape"
+grep -Fq 'event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab' \
+  "$ROOT_DIR/ScreenshotLightbox.qml" \
+  || fail "screenshot lightbox does not trap keyboard focus"
+grep -Fq 'onScreenshotRequested: function(index) { root.openScreenshotLightbox(index) }' \
+  "$ROOT_DIR/Okomart.qml" \
+  || fail "Okomart does not open its screenshot lightbox"
+grep -Fq 'onDismissed: function(index) { pluginDetails.restoreScreenshot(index) }' \
+  "$ROOT_DIR/Okomart.qml" \
+  || fail "closing the lightbox does not restore screenshot focus"
 grep -Fq 'mode === "updates"' "$ROOT_DIR/ActionDialog.qml" \
   || fail "update confirmation mode is missing"
 grep -Fq 'mode === "update"' "$ROOT_DIR/ActionDialog.qml" \
