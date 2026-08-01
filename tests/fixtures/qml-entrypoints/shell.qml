@@ -5,7 +5,6 @@ ShellRoot {
   id: root
 
   readonly property string sourceDir: Quickshell.env("OKOMART_SOURCE_DIR")
-  readonly property string omarchyPath: Quickshell.env("OMARCHY_PATH")
   property var createdObjects: []
 
   function manifestData() {
@@ -31,15 +30,14 @@ ShellRoot {
       return
     }
 
-    var object = component.createObject(host, {
-      manifest: manifestData(),
-      omarchyPath: omarchyPath,
-      shell: mockShell
-    })
+    var object = component.createObject(host)
     if (!object) {
       console.error("OKOMART_CREATE_ERROR " + kind + ": " + component.errorString())
       return
     }
+
+    if ("manifest" in object) object.manifest = manifestData()
+    if ("shell" in object) object.shell = mockShell
 
     createdObjects.push(object)
     console.log("OKOMART_LOAD_OK " + kind)
@@ -53,14 +51,6 @@ ShellRoot {
     id: mockShell
 
     function hide(pluginId) {
-      return true
-    }
-
-    function serviceFor(pluginId) {
-      return null
-    }
-
-    function summon(pluginId, payloadJson) {
       return true
     }
   }

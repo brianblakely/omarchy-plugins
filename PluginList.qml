@@ -149,7 +149,6 @@ FocusScope {
       accent: root.accent
 
       Column {
-        id: content
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter

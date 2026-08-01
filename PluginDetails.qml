@@ -35,8 +35,6 @@ FocusScope {
     hasPlugin && OkomartModel.canRemovePlugin(plugin)
   readonly property bool updateAvailable:
     installed && plugin.safeUpdate === true
-      && OkomartModel.hasVersionUpdate(plugin)
-      && normalizedUpdateState === "available"
 
   activeFocusOnTab: true
 
@@ -162,8 +160,8 @@ FocusScope {
 
   function sourceText() {
     if (!hasPlugin) return ""
-    return value(plugin.installedSourceUrl || plugin.sourceUrl || plugin.originUrl,
-      plugin.external ? "Installed source" : "Not declared")
+    return value(plugin.installedSourceUrl || plugin.sourceUrl,
+      plugin.installed === true ? "Installed source" : "Not declared")
   }
 
   function sourceUrl() {
@@ -279,13 +277,12 @@ FocusScope {
       }
 
       Row {
-        visible: root.hasPlugin && (root.installed
-          || (root.plugin.catalog && !root.plugin.invalid))
+        visible: root.hasPlugin && (root.installed || root.plugin.catalog)
         spacing: Style.space(10)
 
         Button {
           id: installButton
-          visible: root.hasPlugin && !root.installed && root.plugin.catalog && !root.plugin.invalid
+          visible: root.hasPlugin && !root.installed && root.plugin.catalog
           enabled: root.actionsEnabled
           focusable: true
           bordered: true
@@ -317,9 +314,8 @@ FocusScope {
           tooltipText: root.removalBlockReason
           text: {
             if (!root.hasPlugin) return "Remove"
-            if (root.plugin.installType === "development-link"
-                || root.plugin.installType === "symlink") return "Unlink"
-            if (root.plugin.installType === "local" || root.plugin.installType === "non-git")
+            if (root.plugin.installType === "development-link") return "Unlink"
+            if (root.plugin.installType === "local")
               return "Remove (backup)"
             return "Uninstall"
           }

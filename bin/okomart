@@ -43,9 +43,9 @@ init_paths() {
 
   local cache_base="${XDG_CACHE_HOME:-$home/.cache}"
   local state_base="${XDG_STATE_HOME:-$home/.local/state}"
-  CACHE_ROOT="$(realpath -m -- "${OKOMART_CACHE_DIR:-$cache_base/okomart}")"
-  STATE_ROOT="$(realpath -m -- "${OKOMART_STATE_DIR:-$state_base/okomart}")"
-  PLUGINS_DIR="$(realpath -m -- "${OKOMART_PLUGINS_DIR:-$home/.config/omarchy/plugins}")"
+  CACHE_ROOT="$(realpath -m -- "$cache_base/okomart")"
+  STATE_ROOT="$(realpath -m -- "$state_base/okomart")"
+  PLUGINS_DIR="$(realpath -m -- "$home/.config/omarchy/plugins")"
   CATALOG_DIR="$CACHE_ROOT/catalog"
   REGISTRY_MIRROR="$CACHE_ROOT/registry.git"
   REPOSITORY_CACHE="$CACHE_ROOT/repositories"
@@ -146,13 +146,7 @@ valid_worker_snapshot_path() {
 }
 
 git_with_timeout() {
-  local seconds="${OKOMART_GIT_TIMEOUT_SECONDS:-20}"
-  [[ $seconds =~ ^[1-9][0-9]*$ ]] || seconds=20
-  if command -v timeout >/dev/null 2>&1; then
-    timeout "${seconds}s" git "$@"
-  else
-    git "$@"
-  fi
+  timeout 20s git "$@"
 }
 
 version_is_higher() {
@@ -172,44 +166,36 @@ version_is_higher() {
 }
 
 prepare_window_command() {
-  local side="" position="" bar_size=0
+  local side position="${1:-}" bar_size="${2:-}"
   local monitor_output gap_output monitor_geometry gap
   local monitor_name monitor_scale screen_width screen_height transform
   local available_width available_height
   local -a monitor_fields=()
 
   require_tool hyprctl
+  (( $# == 2 )) || {
+    json_error "Usage: okomart prepare-window <bar-position> <bar-size>"
+    return 2
+  }
+  case "$position" in
+  top | bottom | left | right | none) ;;
+  *)
+    json_error "Bar position must be top, bottom, left, right, or none"
+    return 2
+    ;;
+  esac
+  [[ $bar_size =~ ^[0-9]+$ ]] && (( bar_size <= 4096 )) || {
+    json_error "Bar size must be an integer from 0 through 4096"
+    return 2
+  }
+  [[ $position != none ]] || bar_size=0
 
-  # Keep the old fixed-size form working while a self-update may still have
-  # the previous QML component loaded in the running shell.
-  if (( $# == 1 )); then
-    side="${1:-}"
-    [[ $side =~ ^[0-9]+$ ]] && (( side >= 320 && side <= 4096 )) || {
-      json_error "Window size must be an integer from 320 through 4096"
-      return 2
-    }
-  elif (( $# == 2 )); then
-    position="${1:-}"
-    bar_size="${2:-}"
-    case "$position" in
-    top | bottom | left | right | none) ;;
-    *)
-      json_error "Bar position must be top, bottom, left, right, or none"
-      return 2
-      ;;
-    esac
-    [[ $bar_size =~ ^[0-9]+$ ]] && (( bar_size <= 4096 )) || {
-      json_error "Bar size must be an integer from 0 through 4096"
-      return 2
-    }
-    [[ $position != none ]] || bar_size=0
-
-    monitor_output="$(hyprctl monitors -j 2>/dev/null)" || {
-      json_error "Could not read the focused Hyprland monitor"
-      return 1
-    }
-    monitor_geometry="$(
-      jq -cer '
+  monitor_output="$(hyprctl monitors -j 2>/dev/null)" || {
+    json_error "Could not read the focused Hyprland monitor"
+    return 1
+  }
+  monitor_geometry="$(
+    jq -cer '
         [.[] | select(.focused == true)][0] as $monitor
         | if $monitor == null then error("no focused monitor") else
             ($monitor.width | tonumber) as $rawWidth
@@ -230,62 +216,57 @@ prepare_window_command() {
                   }
               end
           end
-      ' <<<"$monitor_output"
-    )" || {
-      json_error "Could not read the focused Hyprland monitor"
-      return 1
-    }
-    mapfile -t monitor_fields < <(
-      jq -r '.monitor, .scale, .width, .height, .transform' <<<"$monitor_geometry"
-    )
-    monitor_name="${monitor_fields[0]:-}"
-    monitor_scale="${monitor_fields[1]:-}"
-    screen_width="${monitor_fields[2]:-}"
-    screen_height="${monitor_fields[3]:-}"
-    transform="${monitor_fields[4]:-}"
-    [[ $screen_width =~ ^[0-9]+$ && $screen_height =~ ^[0-9]+$ ]] || {
-      json_error "Could not read the focused Hyprland monitor"
-      return 1
-    }
+    ' <<<"$monitor_output"
+  )" || {
+    json_error "Could not read the focused Hyprland monitor"
+    return 1
+  }
+  mapfile -t monitor_fields < <(
+    jq -r '.monitor, .scale, .width, .height, .transform' <<<"$monitor_geometry"
+  )
+  monitor_name="${monitor_fields[0]:-}"
+  monitor_scale="${monitor_fields[1]:-}"
+  screen_width="${monitor_fields[2]:-}"
+  screen_height="${monitor_fields[3]:-}"
+  transform="${monitor_fields[4]:-}"
+  [[ $screen_width =~ ^[0-9]+$ && $screen_height =~ ^[0-9]+$ ]] || {
+    json_error "Could not read the focused Hyprland monitor"
+    return 1
+  }
 
-    gap_output="$(hyprctl -j getoption general:gaps_out 2>/dev/null)" || {
-      json_error "Could not read the Hyprland window gap"
-      return 1
-    }
-    gap="$(
-      jq -er '
+  gap_output="$(hyprctl -j getoption general:gaps_out 2>/dev/null)" || {
+    json_error "Could not read the Hyprland window gap"
+    return 1
+  }
+  gap="$(
+    jq -er '
         ([.custom, .css, .int]
           | map(select(. != null) | tostring | select(length > 0))
           | .[0] // "0")
         | capture("(?<number>-?[0-9]+(?:\\.[0-9]+)?)").number
         | tonumber
         | if . < 0 then error("negative gap") else round end
-      ' <<<"$gap_output"
-    )" || {
-      json_error "Could not read the Hyprland window gap"
-      return 1
-    }
+    ' <<<"$gap_output"
+  )" || {
+    json_error "Could not read the Hyprland window gap"
+    return 1
+  }
 
-    available_width=$screen_width
-    available_height=$screen_height
-    case "$position" in
-    left | right) available_width=$((available_width - bar_size)) ;;
-    top | bottom) available_height=$((available_height - bar_size)) ;;
-    esac
-    if (( available_width < available_height )); then
-      side=$((available_width - gap))
-    else
-      side=$((available_height - gap))
-    fi
-    (( side >= 1 && side <= 32768 )) || {
-      json_error "Focused screen does not have enough room for Okomart"
-      return 1
-    }
+  available_width=$screen_width
+  available_height=$screen_height
+  case "$position" in
+  left | right) available_width=$((available_width - bar_size)) ;;
+  top | bottom) available_height=$((available_height - bar_size)) ;;
+  esac
+  if (( available_width < available_height )); then
+    side=$((available_width - gap))
   else
-    json_error "Usage: okomart prepare-window <bar-position> <bar-size>"
-    return 2
+    side=$((available_height - gap))
   fi
-
+  (( side >= 1 && side <= 32768 )) || {
+    json_error "Focused screen does not have enough room for Okomart"
+    return 1
+  }
   local rule output="" status=0
   rule="hl.window_rule({ name = \"okomart-floating-window\", match = { class = \"^org.quickshell$\", title = \"^Okomart$\" }, float = true, center = true, size = { $side, $side }, border_size = 0 })"
   output="$(hyprctl eval "$rule" 2>&1)" || status=$?
@@ -294,40 +275,31 @@ prepare_window_command() {
     return 1
   fi
 
-  if [[ -z $position ]]; then
-    jq -cn --argjson side "$side" \
-      '{ok:true,prepared:true,width:$side,height:$side,legacy:true}'
-  else
-    jq -cn \
-      --argjson side "$side" \
-      --arg monitor "$monitor_name" \
-      --argjson scale "$monitor_scale" \
-      --argjson screenWidth "$screen_width" \
-      --argjson screenHeight "$screen_height" \
-      --argjson gap "$gap" \
-      --arg barPosition "$position" \
-      --argjson barSize "$bar_size" \
-      --argjson transform "$transform" \
-      '{
-        ok:true,
-        prepared:true,
-        width:$side,
-        height:$side,
-        monitor:$monitor,
-        outputScale:$scale,
-        screen:{width:$screenWidth,height:$screenHeight,transform:$transform},
-        gap:$gap,
-        bar:{position:$barPosition,size:$barSize}
-      }'
-  fi
+  jq -cn \
+    --argjson side "$side" \
+    --arg monitor "$monitor_name" \
+    --argjson scale "$monitor_scale" \
+    --argjson screenWidth "$screen_width" \
+    --argjson screenHeight "$screen_height" \
+    --argjson gap "$gap" \
+    --arg barPosition "$position" \
+    --argjson barSize "$bar_size" \
+    --argjson transform "$transform" \
+    '{
+      ok:true,
+      prepared:true,
+      width:$side,
+      height:$side,
+      monitor:$monitor,
+      outputScale:$scale,
+      screen:{width:$screenWidth,height:$screenHeight,transform:$transform},
+      gap:$gap,
+      bar:{position:$barPosition,size:$barSize}
+    }'
 }
 
 source_origin() {
   local source_dir="$1"
-  if [[ -n ${OKOMART_CATALOG_URL:-} ]]; then
-    printf '%s\n' "$OKOMART_CATALOG_URL"
-    return 0
-  fi
   plugin_owned_git_worktree "$source_dir" || return 1
   local origin
   origin="$(git -C "$source_dir" remote get-url origin 2>/dev/null)" ||
@@ -354,13 +326,6 @@ source_origin() {
 
 valid_registry_url() {
   local url="${1:-}"
-  if [[ ${OKOMART_TEST_ALLOW_LOCAL_REGISTRY_URLS:-0} == 1 ]]; then
-    [[ -n $url && $url == *.git && $url != -* &&
-      $url != *[[:space:]]* ]] || return 1
-    [[ $url =~ ^([A-Za-z][A-Za-z0-9+.-]*://|/|[^/@:[:space:]]+@[^/:[:space:]]+:).+\.git$ ]]
-    return
-  fi
-
   [[ $url == https://*.git &&
     $url != *[[:space:][:cntrl:]]* &&
     $url != *'?'* && $url != *'#'* && $url != *'\'* &&
@@ -423,7 +388,7 @@ fetch_mirror_head() {
       git -C "$target" rev-parse refs/heads/okomart-cache 2>/dev/null || true
     )"
     cached_origin="$(
-      git -C "$target" remote get-url origin 2>/dev/null || true
+      git -C "$target" config --get remote.origin.url 2>/dev/null || true
     )"
     if [[ $cached_head == "$remote_head" && $cached_origin == "$url" &&
       $(git -C "$target" rev-parse --is-shallow-repository 2>/dev/null) == true &&
@@ -571,9 +536,8 @@ REFRESH_PLUGIN_URLS=()
 REFRESH_PLUGIN_COMMITS=()
 REFRESH_PLUGIN_KEYS=()
 refresh_catalog() {
-  local source_dir="$1"
-  local url="$2"
-  local index_output="$3"
+  local url="$1"
+  local index_output="$2"
   REFRESH_ERROR=""
   REFRESH_PLUGIN_URLS=()
   REFRESH_PLUGIN_COMMITS=()
@@ -651,7 +615,7 @@ refresh_catalog() {
     fi
   done
 
-  if ! build_catalog_index "$stage" "$url" "$registry_commit" "$index_output"; then
+  if ! build_catalog_index "$stage" "$registry_commit" "$index_output"; then
     safe_remove_cache_stage "$stage" >/dev/null 2>&1 || true
     REFRESH_ERROR="Could not build a valid catalog index."
     return 1
@@ -738,9 +702,7 @@ manifest_metadata() {
     name: (.name | tostring),
     description: ((.description // "") | tostring),
     author: ((.author // "") | tostring),
-    version: (.version | tostring),
-    license: ((.license // "") | tostring),
-    kinds: (.kinds // [])
+    version: (.version | tostring)
   }' "$manifest"
 }
 
@@ -786,9 +748,8 @@ images_json() {
 
 build_catalog_index() {
   local stage="$1"
-  local source_url="$2"
-  local commit="$3"
-  local output="$4"
+  local commit="$2"
+  local output="$3"
 
   local entries_file errors_file
   entries_file="$(mktemp "$STATE_ROOT/.catalog-entries.XXXXXX")" || return 1
@@ -836,37 +797,24 @@ build_catalog_index() {
     jq -cn \
       --argjson metadata "$metadata" \
       --arg sourceUrl "$url" \
-      --arg catalogPath "$path" \
       --arg catalogCommit "$ref" \
       --argjson updatedAt "$updated_at" \
       --argjson images "$images" \
       '$metadata + {
         sourceUrl:$sourceUrl,
         images:$images,
-        catalogPath:$catalogPath,
         catalogCommit:$catalogCommit,
-        updatedAt:$updatedAt,
-        manifestValid:true
+        updatedAt:$updatedAt
       }' >>"$entries_file"
   done
 
   jq -cn \
     --arg catalogCommit "$commit" \
-    --arg sourceUrl "$source_url" \
     --slurpfile entries "$entries_file" \
     --slurpfile errors "$errors_file" \
     '{
       catalogCommit:$catalogCommit,
-      sourceUrl:$sourceUrl,
       entries:$entries,
-      refs:(
-        $entries
-        | map({
-            key:.id,
-            value:{sourceUrl:.sourceUrl,catalogCommit:.catalogCommit}
-          })
-        | from_entries
-      ),
       errors:$errors
     }' >"$output"
   local rc=$?
@@ -874,20 +822,8 @@ build_catalog_index() {
   return $rc
 }
 
-enabled_plugins_json() {
-  local omarchy_bin="${OKOMART_OMARCHY_BIN:-omarchy}"
-  local output
-  if output="$("$omarchy_bin" plugin list --json 2>/dev/null)" &&
-    jq -e 'type == "array"' <<<"$output" >/dev/null 2>&1; then
-    jq -c '[.[] | select(.enabled == true) | .id]' <<<"$output"
-  else
-    printf '[]\n'
-  fi
-}
-
 status_text_for() {
   case "$1" in
-  not-installed) printf 'Available' ;;
   up-to-date) printf 'Up to date' ;;
   update-available) printf 'Update available' ;;
   dirty) printf 'Local changes block automatic updates' ;;
@@ -1015,7 +951,6 @@ installed_update_json() {
     --arg currentCommit "$current" \
     --arg availableCommit "$available" \
     --arg availableVersion "$available_version" \
-    --arg remoteRelation "$relation" \
     --argjson dirty "$dirty" \
     --argjson versionUpdateAvailable "$version_update" \
     --argjson safeUpdate "$safe" \
@@ -1028,7 +963,6 @@ installed_update_json() {
       availableCommit:$availableCommit,
       availableVersion:$availableVersion,
       versionUpdateAvailable:$versionUpdateAvailable,
-      remoteRelation:$remoteRelation,
       dirty:$dirty,
       safeUpdate:$safeUpdate
     }'
@@ -1036,8 +970,6 @@ installed_update_json() {
 
 build_installed_index() {
   local output="$1"
-  local enabled
-  enabled="$(enabled_plugins_json)"
   local lines
   lines="$(mktemp "$STATE_ROOT/.installed.XXXXXX")" || return 1
   : >"$lines"
@@ -1049,7 +981,7 @@ build_installed_index() {
   fi
 
   local dir folder manifest_valid metadata id update installed_version images
-  local validation_error enabled_value updated_at
+  local validation_error updated_at
   shopt -s nullglob
   for dir in "$PLUGINS_DIR"/*; do
     [[ -d $dir || -L $dir ]] || continue
@@ -1068,8 +1000,7 @@ build_installed_index() {
       id="$folder"
       images='[]'
       metadata="$(jq -cn --arg id "$id" --arg name "$folder" '{
-        id:$id,name:$name,description:"",author:"",version:"",
-        license:"",kinds:[]
+        id:$id,name:$name,description:"",author:"",version:""
       }')"
     fi
 
@@ -1080,11 +1011,6 @@ build_installed_index() {
     installed_version="$(jq -r '.version' <<<"$metadata")"
     updated_at="$(installed_plugin_timestamp "$dir")"
     update="$(installed_update_json "$dir" "$manifest_valid" "$installed_version")"
-    if jq -e --arg id "$id" 'index($id) != null' <<<"$enabled" >/dev/null; then
-      enabled_value=true
-    else
-      enabled_value=false
-    fi
 
     jq -cn \
       --argjson metadata "$metadata" \
@@ -1092,17 +1018,13 @@ build_installed_index() {
       --arg installedVersion "$installed_version" \
       --arg installedPath "$(realpath -m -- "$dir")" \
       --arg validationError "$validation_error" \
-      --argjson manifestValid "$manifest_valid" \
-      --argjson enabled "$enabled_value" \
       --argjson updatedAt "$updated_at" \
       --argjson images "$images" \
       '$metadata + $update + {
         installed:true,
         installedVersion:$installedVersion,
         installedPath:$installedPath,
-        enabled:$enabled,
         updatedAt:$updatedAt,
-        manifestValid:$manifestValid,
         validationError:$validationError,
         images:$images
       }' >>"$lines"
@@ -1113,24 +1035,6 @@ build_installed_index() {
   local rc=$?
   rm -f -- "$lines"
   return $rc
-}
-
-catalog_changes_json() {
-  local previous="$1"
-  local current="$2"
-  if [[ ! -s $previous ]] || ! jq -e '.refs | type == "object"' "$previous" \
-    >/dev/null 2>&1; then
-    printf '{"added":[],"removed":[],"updated":[]}\n'
-    return
-  fi
-  jq -cn --slurpfile old "$previous" --slurpfile new "$current" '
-    ($old[0].refs // {}) as $o |
-    ($new[0].refs // {}) as $n |
-    {
-      added:([$n | keys[] | select($o[.] == null)] | sort),
-      removed:([$o | keys[] | select($n[.] == null)] | sort),
-      updated:([$n | keys[] | select($o[.] != null and $o[.] != $n[.])] | sort)
-    }'
 }
 
 merge_plugins_json() {
@@ -1151,12 +1055,9 @@ merge_plugins_json() {
         ([$i[] | select(.id == $available.id)][0] // null) as $local |
         if $local == null then
           $available + {
-            catalog:true,installed:false,enabled:false,removed:false,external:false,
-            installedVersion:"",availableVersion:$available.version,
+            catalog:true,installed:false,
             versionUpdateAvailable:false,
-            updateState:"not-installed",statusText:"Available",safeUpdate:false,
-            installType:"none",installedPath:"",currentCommit:"",
-            availableCommit:$available.catalogCommit,validationError:""
+            safeUpdate:false
           }
         else
           ($available + $local) + {
@@ -1164,17 +1065,14 @@ merge_plugins_json() {
             description:$available.description,
             author:$available.author,
             version:$available.version,
-            license:$available.license,
-            kinds:$available.kinds,
             sourceUrl:$available.sourceUrl,
             images:$available.images,
             catalogCommit:$available.catalogCommit,
-            catalogPath:$available.catalogPath,
             updatedAt:([
               ($available.updatedAt // 0),
               ($local.updatedAt // 0)
             ] | max),
-            catalog:true,installed:true,removed:false,external:false,
+            catalog:true,installed:true,
             installedVersion:$local.installedVersion,
             installedSourceUrl:$local.sourceUrl,
             availableVersion:(
@@ -1191,7 +1089,7 @@ merge_plugins_json() {
         ([$p[] | select(.id == $local.id)][0] // null) as $old |
         if $old == null then
           $local + {
-            catalog:false,installed:true,removed:false,external:true,
+            catalog:false,installed:true,
             availableVersion:(
               if ($local.availableVersion // "") != ""
               then $local.availableVersion else $local.installedVersion end
@@ -1203,15 +1101,13 @@ merge_plugins_json() {
             description:$old.description,
             author:$old.author,
             version:$old.version,
-            license:$old.license,
-            kinds:$old.kinds,
             sourceUrl:$old.sourceUrl,
             images:($local.images // []),
             updatedAt:([
               ($old.updatedAt // 0),
               ($local.updatedAt // 0)
             ] | max),
-            catalog:false,installed:true,removed:true,external:false,
+            catalog:false,installed:true,
             installedVersion:$local.installedVersion,
             installedSourceUrl:$local.sourceUrl,
             availableVersion:(
@@ -1230,9 +1126,9 @@ self_update_json() {
   local source_dir="$1"
   local development_link="${2:-false}"
   local installed_version="" available_version="" current="" available=""
-  local state="non-git" status safe=false dirty=false repository_dirty=false
+  local state="non-git" status safe=false dirty=false
   local version_update=false
-  local relation="" app_changed=false install_type="local"
+  local relation="" app_changed=false
   local -a runtime_paths=(manifest.json '*.qml' '*.js' bin assets)
 
   if [[ -f $source_dir/manifest.json ]]; then
@@ -1243,18 +1139,9 @@ self_update_json() {
   fi
 
   if [[ $development_link == true ]]; then
-    install_type="development-link"
     state="development-link"
-    if plugin_owned_git_worktree "$source_dir"; then
-      current="$(git -C "$source_dir" rev-parse HEAD 2>/dev/null || true)"
-      [[ -z $(git -C "$source_dir" status --porcelain 2>/dev/null) ]] ||
-        repository_dirty=true
-    fi
   elif plugin_owned_git_worktree "$source_dir"; then
-    install_type="git"
     current="$(git -C "$source_dir" rev-parse HEAD 2>/dev/null || true)"
-    [[ -z $(git -C "$source_dir" status --porcelain 2>/dev/null) ]] ||
-      repository_dirty=true
     [[ -z $(git -C "$source_dir" status --porcelain -- \
       "${runtime_paths[@]}" 2>/dev/null) ]] || dirty=true
     if ! git -C "$source_dir" remote get-url origin >/dev/null 2>&1; then
@@ -1318,37 +1205,23 @@ self_update_json() {
   [[ -n $available_version ]] || available_version="$installed_version"
 
   jq -cn \
-    --arg id "$OKOMART_ID" \
     --arg installedVersion "$installed_version" \
     --arg availableVersion "$available_version" \
     --arg currentCommit "$current" \
     --arg availableCommit "$available" \
     --arg updateState "$state" \
     --arg statusText "$status" \
-    --arg installType "$install_type" \
-    --arg remoteRelation "$relation" \
-    --argjson dirty "$dirty" \
-    --argjson repositoryDirty "$repository_dirty" \
-    --argjson appChanged "$app_changed" \
     --argjson versionUpdateAvailable "$version_update" \
     --argjson safeUpdate "$safe" \
-    --argjson developmentLink "$development_link" \
     '{
-      id:$id,
       installedVersion:$installedVersion,
       availableVersion:$availableVersion,
       currentCommit:$currentCommit,
       availableCommit:$availableCommit,
       updateState:$updateState,
       statusText:$statusText,
-      installType:$installType,
-      remoteRelation:$remoteRelation,
-      dirty:$dirty,
-      repositoryDirty:$repositoryDirty,
-      appChanged:$appChanged,
       versionUpdateAvailable:$versionUpdateAvailable,
-      safeUpdate:$safeUpdate,
-      developmentLink:$developmentLink
+      safeUpdate:$safeUpdate
     }'
 }
 
@@ -1385,7 +1258,7 @@ snapshot_command() {
 
   local url=""
   url="$(source_origin "$source_dir" || true)"
-  local previous current installed plugins changes self stale=false ok=true error=""
+  local previous current installed plugins self stale=false ok=true error=""
   previous="$(mktemp "$STATE_ROOT/.previous.XXXXXX")" || return 1
   current="$(mktemp "$STATE_ROOT/.current.XXXXXX")" || return 1
   installed="$(mktemp "$STATE_ROOT/.installed-index.XXXXXX")" || return 1
@@ -1422,7 +1295,7 @@ snapshot_command() {
   local refreshed=false
   if [[ -z $url ]]; then
     error="The Okomart source checkout has no catalog origin."
-  elif refresh_catalog "$source_dir" "$url" "$current"; then
+  elif refresh_catalog "$url" "$current"; then
     refreshed=true
   else
     error="$REFRESH_ERROR"
@@ -1453,7 +1326,6 @@ snapshot_command() {
       error="Could not preserve catalog removal history."
       ok=false
     fi
-    changes="$(catalog_changes_json "$previous" "$current")"
     atomic_write "$CATALOG_DIR/.okomart-index.json" "$(jq -c '.' "$current")" ||
       true
     atomic_write "$CATALOG_STATE" "$(jq -c '.' "$current")" || {
@@ -1464,14 +1336,10 @@ snapshot_command() {
     >/dev/null 2>&1; then
     cp -- "$previous" "$current"
     stale=true
-    changes='{"added":[],"removed":[],"updated":[]}'
   else
-    jq -cn --arg sourceUrl "$url" \
-      '{catalogCommit:"",sourceUrl:$sourceUrl,entries:[],refs:{},errors:[]}' \
-      >"$current"
+    jq -cn '{catalogCommit:"",entries:[],errors:[]}' >"$current"
     stale=true
     ok=false
-    changes='{"added":[],"removed":[],"updated":[]}'
   fi
 
   build_installed_index "$installed" || printf '[]\n' >"$installed"
@@ -1486,10 +1354,7 @@ snapshot_command() {
     --argjson ok "$ok" \
     --argjson stale "$stale" \
     --arg error "$error" \
-    --arg generatedAt "$generated" \
     --arg snapshotId "$snapshot_id" \
-    --arg catalogPath "$CATALOG_DIR" \
-    --argjson changes "$changes" \
     --argjson self "$self" \
     --slurpfile catalog "$current" \
     --slurpfile plugins "$plugins" \
@@ -1497,19 +1362,11 @@ snapshot_command() {
       ok:$ok,
       stale:$stale,
       error:$error,
-      generatedAt:$generatedAt,
       snapshotId:$snapshotId,
       catalogCommit:($catalog[0].catalogCommit // ""),
-      catalogSourceUrl:($catalog[0].sourceUrl // ""),
-      catalogPath:$catalogPath,
-      changes:$changes,
       catalogErrors:($catalog[0].errors // []),
       self:$self,
-      plugins:($plugins[0] // []),
-      hasUpdates:(
-        $self.safeUpdate == true
-        or any(($plugins[0] // [])[]; .safeUpdate == true)
-      )
+      plugins:($plugins[0] // [])
     }')"
   if ! atomic_write "$SNAPSHOT_STATE" "$output"; then
     ok=false
@@ -1531,7 +1388,7 @@ cached_command() {
   if [[ -f $SNAPSHOT_STATE && ! -L $SNAPSHOT_STATE ]] &&
     jq -e '
       type == "object"
-      and (.ok != false)
+      and (.ok == true)
       and (.plugins | type == "array")
       and (.snapshotId | type == "string" and length > 0)
     ' "$SNAPSHOT_STATE" >/dev/null 2>&1; then
@@ -1724,28 +1581,18 @@ append_action_message() {
     }]' <<<"$status"
 }
 
-action_timeout_seconds() {
-  local seconds="${OKOMART_ACTION_TIMEOUT_SECONDS:-300}"
-  if [[ ! $seconds =~ ^[1-9][0-9]{0,3}$ ]] ||
-    (( 10#$seconds > 3600 )); then
-    seconds=300
-  fi
-  printf '%s\n' "$seconds"
-}
-
 run_plugin_action() {
   local status="$1"
   local operation="$2"
   local id="$3"
   shift 3
-  local output_file rc=0 succeeded=true timeout_seconds
+  local output_file rc=0 succeeded=true
   output_file="$(mktemp "$STATE_ROOT/.action-output.XXXXXX")" || return 1
-  timeout_seconds="$(action_timeout_seconds)"
-  timeout --signal=TERM --kill-after=5s "${timeout_seconds}s" \
-    "${OKOMART_OMARCHY_BIN:-omarchy}" "$@" >"$output_file" 2>&1 || rc=$?
+  timeout --signal=TERM --kill-after=5s 300s \
+    omarchy "$@" >"$output_file" 2>&1 || rc=$?
   if (( rc == 124 || rc == 137 )); then
-    printf '\nOkomart timed out this %s after %s seconds. The command may have partially changed plugin state; refresh and review it before retrying.\n' \
-      "$operation" "$timeout_seconds" >>"$output_file"
+    printf '\nOkomart timed out this %s after 300 seconds. The command may have partially changed plugin state; refresh and review it before retrying.\n' \
+      "$operation" >>"$output_file"
   fi
   (( rc == 0 )) || succeeded=false
   status="$(append_action_result "$status" "$id" "$operation" "$succeeded" "$output_file")"
@@ -1956,8 +1803,7 @@ preflight_update() {
 
 resummon_okomart() {
   local source_dir="${1:-}"
-  local shell_bin="${OKOMART_SHELL_BIN:-omarchy-shell}"
-  local expected_version attempts attempt result loaded_version
+  local expected_version attempt result loaded_version
   expected_version="$(
     jq -r --arg id "$OKOMART_ID" '
       if type == "object"
@@ -1971,23 +1817,15 @@ resummon_okomart() {
   )"
   [[ -n $expected_version ]] || return 1
 
-  attempts="${OKOMART_RELAUNCH_ATTEMPTS:-40}"
-  if [[ $attempts =~ ^[1-9][0-9]{0,2}$ ]]; then
-    attempts=$((10#$attempts))
-    (( attempts <= 100 )) || attempts=40
-  else
-    attempts=40
-  fi
-
-  for (( attempt = 0; attempt < attempts; attempt++ )); do
+  for (( attempt = 0; attempt < 40; attempt++ )); do
     result="$(
       timeout --signal=TERM --kill-after=1s 1s \
-        "$shell_bin" shell summon "$OKOMART_ID" 2>/dev/null || true
+        omarchy-shell shell summon "$OKOMART_ID" 2>/dev/null || true
     )"
     if [[ $result == "ok" ]]; then
       loaded_version="$(
         timeout --signal=TERM --kill-after=1s 1s \
-          "$shell_bin" shell call "$OKOMART_ID" runtimeVersion "" \
+          omarchy-shell shell call "$OKOMART_ID" runtimeVersion "" \
           2>/dev/null || true
       )"
       [[ $loaded_version == "$expected_version" ]] && return 0
@@ -1999,22 +1837,13 @@ resummon_okomart() {
 
 SHELL_RESTART_ERROR=""
 restart_omarchy_shell() {
-  local seconds="${OKOMART_SHELL_RESTART_TIMEOUT_SECONDS:-30}"
-  if [[ $seconds =~ ^[1-9][0-9]{0,2}$ ]]; then
-    seconds=$((10#$seconds))
-    (( seconds <= 120 )) || seconds=30
-  else
-    seconds=30
-  fi
-
   local output_file rc=0
   SHELL_RESTART_ERROR=""
   output_file="$(mktemp "$STATE_ROOT/.shell-restart.XXXXXX")" || {
     SHELL_RESTART_ERROR="Could not prepare the Omarchy shell restart."
     return 1
   }
-  timeout --signal=TERM --kill-after=5s "${seconds}s" \
-    "${OKOMART_OMARCHY_BIN:-omarchy}" restart shell \
+  timeout --signal=TERM --kill-after=5s 30s omarchy restart shell \
     >"$output_file" 2>&1 || rc=$?
   if (( rc != 0 )); then
     SHELL_RESTART_ERROR="$(cat -- "$output_file" 2>/dev/null || true)"
@@ -2030,15 +1859,11 @@ restart_omarchy_shell() {
 
 complete_self_update_reload() {
   local source_dir="$1"
-  local lock_wait="${OKOMART_SELF_RELOAD_LOCK_TIMEOUT_SECONDS:-5}"
-  if [[ ! $lock_wait =~ ^[1-9][0-9]?$ ]]; then
-    lock_wait=5
-  fi
   if [[ -L $ACTION_LOCK || -d $ACTION_LOCK ]]; then
     return 1
   fi
   exec 6>>"$ACTION_LOCK" || return 1
-  if ! flock -w "$lock_wait" 6; then
+  if ! flock -w 5 6; then
     exec 6>&-
     return 1
   fi
@@ -2123,16 +1948,8 @@ recover_self_update_command() {
     && $(realpath -m -- "$source_dir/bin/okomart") == "$SCRIPT_PATH" ]] ||
     return 2
 
-  local attempts="${OKOMART_SELF_RECOVERY_ATTEMPTS:-200}"
-  if [[ $attempts =~ ^[1-9][0-9]{0,2}$ ]]; then
-    attempts=$((10#$attempts))
-    (( attempts <= 600 )) || attempts=200
-  else
-    attempts=200
-  fi
-
   local attempt status
-  for (( attempt = 0; attempt < attempts; attempt++ )); do
+  for (( attempt = 0; attempt < 200; attempt++ )); do
     [[ -f $ACTION_STATE && ! -L $ACTION_STATE ]] || return 0
     status="$(cat -- "$ACTION_STATE" 2>/dev/null)" || return 0
     jq -e 'type == "object"' <<<"$status" >/dev/null 2>&1 || return 0
@@ -2237,7 +2054,7 @@ worker_command() {
     status="$(append_action_message "$status" "${id:-catalog}" "$operation" false \
       "The catalog changed after confirmation. Reopen the action and review it again.")"
     overall=false
-  elif [[ $operation == update-all && -n $selected_updates_json ]] &&
+  elif [[ $operation == update-all ]] &&
     ! selected_updates_json="$(normalize_update_selection \
       "$selected_updates_json" "$confirmed_snapshot_file")"; then
     status="$(append_action_message "$status" selection "$operation" false \
@@ -2295,14 +2112,13 @@ worker_command() {
     ;;
   update-all)
     local -a targets=()
-    local selection_filter_json="${selected_updates_json:-null}"
+    local selection_filter_json="$selected_updates_json"
     mapfile -t targets < <(
       jq -r --argjson selected "$selection_filter_json" '
         .plugins[]
         | select(.safeUpdate == true)
         | .id
-        | select($selected == null
-            or (. as $id | ($selected | index($id)) != null))
+        | select(. as $id | ($selected | index($id)) != null)
         | select(
             test("^[A-Za-z0-9][A-Za-z0-9._-]*$")
             and (contains("..") | not)
@@ -2338,7 +2154,7 @@ worker_command() {
     if [[ $persistence_failed != true && $action_timed_out != true ]] &&
       jq -e --arg id "$OKOMART_ID" --argjson selected "$selection_filter_json" '
         .self.safeUpdate == true
-        and ($selected == null or ($selected | index($id)) != null)
+        and ($selected | index($id)) != null
       ' "$confirmed_snapshot_file" \
       >/dev/null 2>&1; then
       if ! preflight_update "$OKOMART_ID" "$confirmed_snapshot_file" "$source_dir"; then
@@ -2451,7 +2267,7 @@ action_command() {
     return 2
   }
   [[ -n $source_arg ]] || {
-    json_error "Usage: okomart action <source-dir> <install|remove|update|update-all> [id] [snapshot-id] [selected-update-ids-json]"
+    json_error "Usage: okomart action <source-dir> <install|remove|update|update-all> [id] [snapshot-id] <selected-update-ids-json-for-update-all>"
     return 2
   }
   local source_dir
@@ -2480,6 +2296,10 @@ action_command() {
       json_error "update-all does not take a plugin id"
       return 2
     }
+    [[ -n $selected_updates_json ]] || {
+      json_error "Select one or more updates from the confirmed list"
+      return 2
+    }
     ;;
   *)
     json_error "Unknown action '$operation'"
@@ -2501,7 +2321,7 @@ action_command() {
         error:"The catalog changed after confirmation. Review the action again."}'
     return 1
   fi
-  if [[ $operation == update-all && -n $selected_updates_json ]]; then
+  if [[ $operation == update-all ]]; then
     if ! selected_updates_json="$(normalize_update_selection \
       "$selected_updates_json" "$SNAPSHOT_STATE")"; then
       json_error "Select one or more updates from the confirmed list"
@@ -2585,16 +2405,6 @@ action_command() {
     return 1
   fi
 
-  if [[ ${OKOMART_ACTION_FOREGROUND:-0} == 1 ]]; then
-    local rc=0
-    worker_command "$source_dir" "$action_id" "$operation" "$id" \
-      "$confirmed_snapshot_id" "$confirmed_snapshot" \
-      "$selected_updates_json" || rc=$?
-    exec 9>&-
-    status_command
-    return $rc
-  fi
-
   if command -v setsid >/dev/null 2>&1; then
     setsid bash "$worker" _worker "$source_dir" "$action_id" "$operation" "$id" \
       "$confirmed_snapshot_id" "$confirmed_snapshot" "$selected_updates_json" \
@@ -2616,7 +2426,7 @@ action_command() {
 usage_json() {
   jq -cn '{
     ok:false,
-    error:"Usage: okomart snapshot <source-dir> | cached | prepare-window <bar-position> <bar-size> | action <source-dir> <install|remove|update|update-all> <id-or-empty> <snapshot-id> [selected-update-ids-json] | status | ack <action-id>"
+    error:"Usage: okomart snapshot <source-dir> | cached | prepare-window <bar-position> <bar-size> | action <source-dir> <install|remove|update|update-all> <id-or-empty> <snapshot-id> <selected-update-ids-json-for-update-all> | status | ack <action-id>"
   }'
 }
 

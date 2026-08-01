@@ -270,7 +270,6 @@ FocusScope {
   }
 
   Row {
-    id: pageDots
     visible: root.imageCount > 1
     anchors.top: carouselContent.bottom
     anchors.topMargin: root.paginationGap

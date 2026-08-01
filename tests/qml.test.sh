@@ -212,7 +212,8 @@ grep -Fq 'readonly property real controlHeight: Math.max(' "$ROOT_DIR/Okomart.qm
 [[ $(grep -Fc 'Layout.preferredHeight: toolbar.controlHeight' \
   "$ROOT_DIR/Okomart.qml") -eq 3 ]] \
   || fail "toolbar search field and buttons do not share a height"
-grep -Fq 'installedOnly ? "installed" : "all"' "$ROOT_DIR/Okomart.qml" \
+grep -Fq 'OkomartModel.filterPlugins(allPlugins, query, installedOnly)' \
+  "$ROOT_DIR/Okomart.qml" \
   || fail "installed-only filter is not wired"
 grep -Fq 'OkomartModel.filterPlugins' "$ROOT_DIR/Okomart.qml" \
   || fail "search/filter model is not wired"
@@ -328,10 +329,9 @@ if grep -Fq 'modelData.enabled' "$ROOT_DIR/PluginList.qml" \
     || grep -Eqi '"[^"]*enabled[^"]*"' "$ROOT_DIR/PluginList.qml"; then
   fail "plugin list still renders an enabled-state indicator"
 fi
-grep -Fq 'if (state === "current") return ""' "$ROOT_DIR/OkomartModel.js" \
-  || fail "plugin details still expose an up-to-date status snippet"
-grep -Fq 'if (state === "available") return ""' "$ROOT_DIR/OkomartModel.js" \
-  || fail "plugin details still expose an update-available status snippet"
+grep -Fq 'if (state === "available" || state === "current") return ""' \
+  "$ROOT_DIR/OkomartModel.js" \
+  || fail "plugin details expose routine update status snippets"
 if grep -Eq '\{ label: "(ID|Kinds|License|State)"' "$ROOT_DIR/PluginDetails.qml"; then
   fail "plugin details expose internal or unwanted metadata"
 fi
@@ -376,8 +376,6 @@ grep -Fq 'event.key === Qt.Key_Home' "$ROOT_DIR/ScreenshotCarousel.qml" \
 if grep -Fq 'BorderSurface {' "$ROOT_DIR/ScreenshotCarousel.qml"; then
   fail "plugin screenshots still have a surrounding frame"
 fi
-grep -Fq 'id: pageDots' "$ROOT_DIR/ScreenshotCarousel.qml" \
-  || fail "screenshot carousel does not use page dots"
 grep -Fq 'model: root.imageCount' "$ROOT_DIR/ScreenshotCarousel.qml" \
   || fail "screenshot page dots do not represent every image"
 grep -Fq 'function focusControls()' "$ROOT_DIR/ScreenshotCarousel.qml" \
@@ -625,7 +623,7 @@ grep -Fq 'p.versionUpdateAvailable === true' "$ROOT_DIR/Okomart.qml" \
 grep -Fq 'onUpdateRequested: function(plugin)' "$ROOT_DIR/Okomart.qml" \
   || fail "single-plugin update is not connected to the storefront"
 if ! sed -n \
-    '/function actionIncludesSelf(kind, plugin, selectedUpdateIds)/,/^  }/p' \
+    '/function actionIncludesSelf(kind, selectedUpdateIds)/,/^  }/p' \
     "$ROOT_DIR/Okomart.qml" \
     | grep -Fq 'selectedUpdateIds.indexOf(pluginId) >= 0'; then
   fail "selected batch updates do not detect when Okomart replaces itself"
@@ -643,9 +641,9 @@ if ! sed -n '/function actionStarted(raw, exitCode)/,/^  }/p' \
 fi
 grep -Fq '[helperPath, "cached"]' "$ROOT_DIR/Okomart.qml" \
   || fail "storefront does not load its persisted snapshot first"
-grep -Fq 'parsed && parsed.ok !== false && Array.isArray(parsed.plugins)' \
+grep -Fq 'parsed && parsed.ok === true && Array.isArray(parsed.plugins)' \
   "$ROOT_DIR/Okomart.qml" \
-  || fail "storefront accepts a failed snapshot as cached catalog data"
+  || fail "storefront does not require a successful cached snapshot"
 grep -Fq 'statusChecking = true' "$ROOT_DIR/Okomart.qml" \
   || fail "cached actions are enabled before action status is reconciled"
 grep -Fq 'if (catalogLoaded) loadActionStatus()' "$ROOT_DIR/Okomart.qml" \

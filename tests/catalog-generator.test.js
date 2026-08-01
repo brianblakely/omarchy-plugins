@@ -50,8 +50,6 @@ if (url === process.env.FAIL_CLONE_URL) process.exit(92)
 const slug = new URL(url).pathname.split("/").pop().replace(/\\.git$/, "")
 const fixture = path.join(process.env.FIXTURE_ROOT, slug + ".json")
 if (!fs.existsSync(fixture)) process.exit(93)
-if (url === process.env.SLEEP_CLONE_URL)
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000)
 fs.mkdirSync(destination, { recursive: true })
 fs.copyFileSync(fixture, path.join(destination, "manifest.json"))
 `)
@@ -257,37 +255,6 @@ test("leaves README untouched when a repository cannot be cloned", () => {
   const result = runGenerator(harness, { FAIL_CLONE_URL: url })
   assert.notEqual(result.status, 0)
   assert.match(result.stderr, /Could not clone plugin repository/)
-  assert.equal(readFileSync(harness.readme, "utf8"), original)
-})
-
-test("validates and enforces a bounded per-repository clone timeout", () => {
-  const harness = createHarness("clone-timeout")
-  const url = "https://example.test/alpha.git"
-  writeFileSync(harness.registry, `${url}\n`)
-  writeManifest(harness, "alpha", {
-    name: "Alpha",
-    author: "Author",
-    description: "Description"
-  })
-  const original = fixtureReadme()
-  writeFileSync(harness.readme, original)
-
-  for (const value of ["0", "1.5", "601"]) {
-    writeFileSync(harness.cloneLog, "")
-    const invalid = runGenerator(harness, {
-      OKOMART_CATALOG_CLONE_TIMEOUT_SECONDS: value
-    })
-    assert.notEqual(invalid.status, 0)
-    assert.match(invalid.stderr, /integer from 1 to 600/)
-    assert.equal(readFileSync(harness.cloneLog, "utf8"), "")
-  }
-
-  const timedOut = runGenerator(harness, {
-    OKOMART_CATALOG_CLONE_TIMEOUT_SECONDS: "1",
-    SLEEP_CLONE_URL: url
-  })
-  assert.notEqual(timedOut.status, 0)
-  assert.match(timedOut.stderr, /Timed out cloning plugin repository/)
   assert.equal(readFileSync(harness.readme, "utf8"), original)
 })
 

@@ -21,6 +21,7 @@ const BEGIN_MARKER = "<!-- BEGIN GENERATED PLUGIN CATALOG -->"
 const END_MARKER = "<!-- END GENERATED PLUGIN CATALOG -->"
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const REPOSITORY_ROOT = resolve(SCRIPT_DIR, "..")
+const CLONE_TIMEOUT_MILLISECONDS = 60000
 
 function fail(message) {
   throw new Error(message)
@@ -109,16 +110,6 @@ function readRegistry(path) {
   return urls.sort(compareCodeUnits)
 }
 
-function cloneTimeoutMilliseconds() {
-  const value = process.env.OKOMART_CATALOG_CLONE_TIMEOUT_SECONDS || "60"
-  if (!/^[1-9][0-9]*$/u.test(value))
-    fail("OKOMART_CATALOG_CLONE_TIMEOUT_SECONDS must be an integer from 1 to 600")
-  const seconds = Number(value)
-  if (!Number.isSafeInteger(seconds) || seconds > 600)
-    fail("OKOMART_CATALOG_CLONE_TIMEOUT_SECONDS must be an integer from 1 to 600")
-  return seconds * 1000
-}
-
 function normalizedMetadata(value, field, url) {
   if (typeof value !== "string" || value.trim().length === 0)
     fail(`${url} manifest field '${field}' must be a nonblank string`)
@@ -159,7 +150,7 @@ function readPluginRow(repository, url) {
   }
 }
 
-function clonePlugin(url, destination, timeout) {
+function clonePlugin(url, destination) {
   try {
     execFileSync("git", [
       "clone",
@@ -175,7 +166,7 @@ function clonePlugin(url, destination, timeout) {
         GIT_TERMINAL_PROMPT: "0",
         LC_ALL: "C"
       },
-      timeout,
+      timeout: CLONE_TIMEOUT_MILLISECONDS,
       killSignal: "SIGTERM",
       stdio: ["ignore", "ignore", "pipe"]
     })
@@ -291,13 +282,12 @@ function main() {
   replaceGeneratedCatalog(currentReadme, [BEGIN_MARKER, END_MARKER])
 
   const urls = readRegistry(registryPath)
-  const cloneTimeout = cloneTimeoutMilliseconds()
   const cloneRoot = mkdtempSync(join(tmpdir(), "okomart-plugin-catalog-"))
   let rows
   try {
     rows = urls.map((url, index) => {
       const destination = join(cloneRoot, `plugin-${String(index + 1).padStart(4, "0")}`)
-      clonePlugin(url, destination, cloneTimeout)
+      clonePlugin(url, destination)
       return readPluginRow(destination, url)
     })
   } finally {

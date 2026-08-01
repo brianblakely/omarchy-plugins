@@ -18,7 +18,6 @@ Item {
   readonly property real frameRight: width - frameInset
   readonly property real frameBottom: height - frameInset
   readonly property real eaveY: bodyTop - Style.space(42)
-  readonly property real supportDepth: Style.space(38)
   readonly property real awningY: bodyTop + Style.space(18)
   readonly property real awningRight: wideLayout ? splitX : frameRight
 

@@ -59,8 +59,7 @@ FocusScope {
   }
   readonly property bool canConfirm: !busy
     && (mode !== "updates" || selectedUpdateIds.length > 0)
-    && (mode !== "update" || (plugin && plugin.safeUpdate === true
-      && plugin.versionUpdateAvailable === true))
+    && (mode !== "update" || (plugin && plugin.safeUpdate === true))
   readonly property bool hasReviewList: mode === "updates" || mode === "results"
 
   function pluginName(item) {
@@ -95,34 +94,10 @@ FocusScope {
     selectedUpdateIds = next
   }
 
-  function shortCommit(value) {
-    var commit = String(value || "")
-    return commit ? commit.slice(0, 10) : ""
-  }
-
-  function installedReference(item) {
-    return String(item && (item.installedVersion || item.currentVersion)
-      || shortCommit(item && item.currentCommit) || "current")
-  }
-
-  function availableReference(item) {
-    return String(item && (item.availableVersion || item.remoteVersion)
-      || shortCommit(item && item.availableCommit) || "latest")
-  }
-
   function updateTransition(item) {
-    var installedVersion = String(item
-      && (item.installedVersion || item.currentVersion) || "")
-    var availableVersion = String(item
-      && (item.availableVersion || item.remoteVersion) || "")
-    var currentCommit = shortCommit(item && item.currentCommit)
-    var availableCommit = shortCommit(item && item.availableCommit)
-    if (installedVersion && availableVersion && installedVersion !== availableVersion)
-      return installedVersion + " → " + availableVersion
-    if (currentCommit && availableCommit && currentCommit !== availableCommit)
-      return (installedVersion ? installedVersion + " · " : "") + currentCommit
-        + " → " + (availableVersion ? availableVersion + " · " : "") + availableCommit
-    return installedReference(item) + " → " + availableReference(item)
+    var installedVersion = String(item && item.installedVersion || "")
+    var availableVersion = String(item && item.availableVersion || "")
+    return installedVersion + " → " + availableVersion
   }
 
   function reviewFlickable() {
@@ -193,13 +168,13 @@ FocusScope {
     if (mode === "install") {
       return "Okomart will clone, validate, and enable " + pluginName(plugin)
         + ". Omarchy plugins run unsandboxed inside the shell. Review the source before continuing.\n\n"
-        + String(plugin && (plugin.sourceUrl || plugin.originUrl) || "")
+        + String(plugin && plugin.sourceUrl || "")
     }
     if (mode === "remove") {
       var kind = plugin ? String(plugin.installType || "") : ""
-      if (kind === "development-link" || kind === "symlink")
+      if (kind === "development-link")
         return pluginName(plugin) + " is a development link. Okomart will unlink it without deleting its target."
-      if (kind === "local" || kind === "non-git")
+      if (kind === "local")
         return pluginName(plugin) + " is a local folder. Omarchy will disable it and move it to a timestamped backup."
       return "Omarchy will disable and delete the installed checkout for " + pluginName(plugin) + "."
     }

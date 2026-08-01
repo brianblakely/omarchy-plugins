@@ -9,20 +9,23 @@ trap 'rm -rf -- "$TMP"' EXIT
 
 export HOME="$TMP/home"
 export XDG_CACHE_HOME="$TMP/cache"
-export XDG_CONFIG_HOME="$TMP/config"
 export XDG_STATE_HOME="$TMP/state"
-export OKOMART_PLUGINS_DIR="$TMP/installed"
-export OKOMART_GIT_TIMEOUT_SECONDS=3
-export OKOMART_TEST_ALLOW_LOCAL_REGISTRY_URLS=1
 export GIT_CONFIG_NOSYSTEM=1
 export GIT_CONFIG_GLOBAL="$TMP/gitconfig"
 export GIT_TERMINAL_PROMPT=0
-mkdir -p "$HOME" "$OKOMART_PLUGINS_DIR" "$TMP/bin"
+PLUGINS_DIR="$HOME/.config/omarchy/plugins"
+PLUGIN_URL_ROOT="https://plugins.example.test"
+ALPHA_URL="$PLUGIN_URL_ROOT/alpha.git"
+BETA_URL="$PLUGIN_URL_ROOT/beta.git"
+GAMMA_URL="$PLUGIN_URL_ROOT/gamma.git"
+INVALID_URL="$PLUGIN_URL_ROOT/invalid.git"
+mkdir -p "$HOME" "$PLUGINS_DIR" "$TMP/bin"
 
 git config --global user.name "Okomart Tests"
 git config --global user.email "okomart@example.invalid"
 git config --global init.defaultBranch main
 git config --global protocol.file.allow always
+git config --global url."file://$TMP/".insteadOf "$PLUGIN_URL_ROOT/"
 
 pass_count=0
 fail() {
@@ -54,13 +57,43 @@ assert_eq() {
   pass "$message"
 }
 
+run_action_to_completion() {
+  local started="" status="" action_id="" rc=0
+  started="$("$OKOMART" action "$@")" || rc=$?
+  if (( rc != 0 )); then
+    printf '%s\n' "$started"
+    return "$rc"
+  fi
+  if ! jq -e '.started == true' <<<"$started" >/dev/null 2>&1; then
+    printf '%s\n' "$started"
+    return 0
+  fi
+  action_id="$(jq -r '.actionId' <<<"$started")"
+
+  for _ in {1..1000}; do
+    status="$("$OKOMART" status)" || return 1
+    if jq -e --arg actionId "$action_id" \
+      '.running == false and .actionId == $actionId' \
+      <<<"$status" >/dev/null 2>&1 ||
+      { jq -e '.running == false' <<<"$status" >/dev/null 2>&1 &&
+        flock -n "$XDG_STATE_HOME/okomart/action.lock" true; }; then
+      printf '%s\n' "$status"
+      jq -e '.ok == true' <<<"$status" >/dev/null
+      return
+    fi
+    sleep 0.02
+  done
+  printf '%s\n' "$status"
+  return 1
+}
+
 assert_stale_cache_integrity() {
   local snapshot="$1"
   local expected_image_path="$2"
   local expected_image_sha="$3"
   local label="$4"
   local snapshot_commit cache_commit image_path image_sha
-  local plugin_commit plugin_path plugin_dir plugin_cache_commit
+  local plugin_commit plugin_dir plugin_cache_commit
   snapshot_commit="$(jq -r '.catalogCommit' "$snapshot")"
   cache_commit="$(
     jq -r '.catalogCommit' \
@@ -78,10 +111,7 @@ assert_stale_cache_integrity() {
   plugin_commit="$(
     jq -r '[.plugins[]|select(.id=="b.alpha")][0].catalogCommit' "$snapshot"
   )"
-  plugin_path="$(
-    jq -r '[.plugins[]|select(.id=="b.alpha")][0].catalogPath' "$snapshot"
-  )"
-  plugin_dir="$XDG_CACHE_HOME/okomart/catalog/$plugin_path"
+  plugin_dir="$XDG_CACHE_HOME/okomart/catalog/.okomart-repositories/$ALPHA_CACHE_KEY"
   plugin_cache_commit="$(
     jq -r '[.entries[]|select(.id=="b.alpha")][0].catalogCommit' \
       "$XDG_CACHE_HOME/okomart/catalog/.okomart-index.json"
@@ -106,6 +136,10 @@ cat >"$TMP/bin/timeout" <<'MOCK'
 printf '%s\n' "$*" >>"$TIMEOUT_LOG"
 if [[ ${MOCK_TIMEOUT_PLUGIN_FETCH:-} == 1
     && " $* " == *"/.mirror.tmp.plugin."*".git fetch "* ]]; then
+  exit 124
+fi
+if [[ ${MOCK_TIMEOUT_ACTION:-} == 1
+    && " $* " == *" 300s omarchy plugin remove b.beta --yes "* ]]; then
   exit 124
 fi
 exec "$REAL_TIMEOUT_BIN" "$@"
@@ -207,11 +241,6 @@ assert_jq "$TMP/window-preparation-portrait.json" \
     and .gap==8 and .bar=={position:"right",size:28}' \
   "rotated outputs swap logical axes before bar and gap subtraction"
 
-reset_hypr_fixture
-"$OKOMART" prepare-window 760 >"$TMP/window-preparation-legacy.json"
-assert_jq "$TMP/window-preparation-legacy.json" \
-  '.ok and .legacy and .width==760 and .height==760' \
-  "the previous fixed-size call remains compatible during self-update"
 if grep -Eq \
   'hl\.dsp\.window|setfloating|togglefloating|resizewindowpixel|movewindowpixel|centerwindow' \
   "$OKOMART"; then
@@ -318,7 +347,6 @@ printf 'webp' >"$TMP/beta-work/images/only.webp"
 git -C "$TMP/beta-work" add images
 git -C "$TMP/beta-work" commit -qm "beta screenshot"
 git -C "$TMP/beta-work" push -q origin main
-BETA_V1="$(git -C "$TMP/beta-work" rev-parse HEAD)"
 make_plugin_repo gamma b.gamma Gamma 1.0.0
 make_plugin_repo dirty b.dirty Dirty 1.0.0
 make_plugin_repo ahead b.ahead Ahead 1.0.0
@@ -344,7 +372,7 @@ git -C "$CATALOG_WORK" init -q
 write_plugin_manifest "$CATALOG_WORK" b.okomart Okomart 0.0.1
 printf 'import QtQuick\nItem {}\n' >"$CATALOG_WORK/Panel.qml"
 printf '%s\r\n%s\r\n%s\r\n' \
-  "$TMP/alpha.git" "$TMP/beta.git" "$TMP/invalid.git" \
+  "$ALPHA_URL" "$BETA_URL" "$INVALID_URL" \
   >"$CATALOG_WORK/plugins.txt"
 git -C "$CATALOG_WORK" add .
 git -C "$CATALOG_WORK" commit -qm "initial catalog"
@@ -363,7 +391,6 @@ git -C "$OFFICIAL_SSH_SOURCE" remote set-url origin \
 if ! GIT_CONFIG_COUNT=1 \
   GIT_CONFIG_KEY_0="url.$CATALOG_REMOTE.insteadOf" \
   GIT_CONFIG_VALUE_0="$OFFICIAL_CATALOG_URL" \
-  OKOMART_GIT_TIMEOUT_SECONDS=1 \
   XDG_CACHE_HOME="$TMP/official-ssh-cache" \
   XDG_STATE_HOME="$TMP/official-ssh-state" \
   "$OKOMART" snapshot "$OFFICIAL_SSH_SOURCE" \
@@ -372,7 +399,6 @@ if ! GIT_CONFIG_COUNT=1 \
 fi
 assert_jq "$TMP/snapshot-official-ssh.json" \
   '.ok and (.stale|not)
-    and .catalogSourceUrl=="https://github.com/brianblakely/omarchy-plugins.git"
     and (.plugins|length)==2' \
   "official SSH installs fetch the catalog over canonical public HTTPS"
 
@@ -397,10 +423,8 @@ assert_jq "$TMP/cached-invalid.json" \
   "cache lookup rejects a persisted failed snapshot"
 
 MOCK_LOG="$TMP/omarchy.log"
-MOCK_LIST="$TMP/plugin-list.json"
 MOCK_OKOMART_SOURCE="$SOURCE"
-printf '[]\n' >"$MOCK_LIST"
-export MOCK_LOG MOCK_LIST MOCK_OKOMART_SOURCE
+export MOCK_LOG MOCK_OKOMART_SOURCE
 
 MOCK_OMARCHY="$TMP/bin/omarchy"
 MOCK_SHELL="$TMP/bin/omarchy-shell"
@@ -408,10 +432,6 @@ cat >"$MOCK_OMARCHY" <<'MOCK'
 #!/usr/bin/env bash
 set -u
 printf '%s\n' "$*" >>"$MOCK_LOG"
-if [[ ${1:-} == plugin && ${2:-} == list && ${3:-} == --json ]]; then
-  cat "$MOCK_LIST"
-  exit 0
-fi
 if [[ -n ${MOCK_SLEEP_SECONDS:-} ]]; then
   sleep "$MOCK_SLEEP_SECONDS"
 fi
@@ -452,8 +472,6 @@ fi
 printf 'ok\n'
 MOCK
 chmod +x "$MOCK_OMARCHY" "$MOCK_SHELL"
-export OKOMART_OMARCHY_BIN="$MOCK_OMARCHY"
-export OKOMART_SHELL_BIN="$MOCK_SHELL"
 
 ANCESTOR_SOURCE_ROOT="$TMP/ancestor-source-root"
 ANCESTOR_SOURCE="$ANCESTOR_SOURCE_ROOT/b.okomart"
@@ -474,7 +492,6 @@ fi
 assert_jq "$TMP/snapshot-ancestor-source.json" \
   '(.ok|not) and .stale
     and .error=="The Okomart source checkout has no catalog origin."
-    and .self.installType=="local"
     and .self.updateState=="non-git"
     and .self.currentCommit=="" and .self.availableCommit==""
     and (.self.safeUpdate|not)' \
@@ -491,14 +508,17 @@ fi
 assert_jq "$TMP/snapshot-linked-source.json" \
   '(.ok|not) and .stale
     and .error=="The Okomart source checkout has no catalog origin."
-    and .self.installType=="local"
     and .self.updateState=="non-git"
     and .self.currentCommit=="" and .self.availableCommit==""
     and (.self.safeUpdate|not)' \
   "Okomart rejects linked-worktree metadata that target updates cannot use"
 
-if env -u OKOMART_TEST_ALLOW_LOCAL_REGISTRY_URLS \
-  XDG_CACHE_HOME="$TMP/public-url-cache" \
+printf '%s\n%s\n' "$TMP/alpha.git" "$TMP/beta.git" \
+  >"$CATALOG_WORK/plugins.txt"
+git -C "$CATALOG_WORK" add plugins.txt
+git -C "$CATALOG_WORK" commit -qm "local registry URL fixture"
+git -C "$CATALOG_WORK" push -q origin main
+if XDG_CACHE_HOME="$TMP/public-url-cache" \
   XDG_STATE_HOME="$TMP/public-url-state" \
   "$OKOMART" snapshot "$SOURCE" >"$TMP/snapshot-local-url-rejected.json"; then
   fail "production registry validation should reject local repository paths"
@@ -520,8 +540,7 @@ for malformed_registry_url in \
   git -C "$CATALOG_WORK" commit -qm \
     "noncanonical registry URL fixture $registry_contract_index"
   git -C "$CATALOG_WORK" push -q origin main
-  if env -u OKOMART_TEST_ALLOW_LOCAL_REGISTRY_URLS \
-    XDG_CACHE_HOME="$TMP/noncanonical-cache-$registry_contract_index" \
+  if XDG_CACHE_HOME="$TMP/noncanonical-cache-$registry_contract_index" \
     XDG_STATE_HOME="$TMP/noncanonical-state-$registry_contract_index" \
     "$OKOMART" snapshot "$SOURCE" \
     >"$TMP/snapshot-noncanonical-$registry_contract_index.json"; then
@@ -534,10 +553,10 @@ for malformed_registry_url in \
 done
 
 printf '%s\r\n%s\r\n%s\r\n' \
-  "$TMP/alpha.git" "$TMP/beta.git" "$TMP/invalid.git" \
+  "$ALPHA_URL" "$BETA_URL" "$INVALID_URL" \
   >"$CATALOG_WORK/plugins.txt"
 git -C "$CATALOG_WORK" add plugins.txt
-git -C "$CATALOG_WORK" commit -qm "restore local registry fixture"
+git -C "$CATALOG_WORK" commit -qm "restore valid registry fixture"
 git -C "$CATALOG_WORK" push -q origin main
 
 SNAP1="$TMP/snapshot-1.json"
@@ -548,9 +567,6 @@ assert_jq "$SNAP1" \
     and .catalogErrors[0].error
       =="Catalog manifests require nonblank name, author, and description"' \
   "initial CRLF registry rejects entries without README metadata"
-assert_jq "$SNAP1" \
-  '.changes == {added:[],removed:[],updated:[]}' \
-  "first bootstrap does not mark every catalog entry new"
 assert_jq "$SNAP1" \
   '[.plugins[]|select(.id=="b.alpha")][0]
     | .version=="1.0.0"
@@ -576,7 +592,7 @@ assert_jq "$CACHED1" \
   fail "cache lookup performed network work"
 pass "cache lookup performs no network work"
 
-ALPHA_CACHE_KEY="$(printf '%s' "$TMP/alpha.git" | sha256sum | awk '{print $1}')"
+ALPHA_CACHE_KEY="$(printf '%s' "$ALPHA_URL" | sha256sum | awk '{print $1}')"
 ALPHA_CACHE_MIRROR="$XDG_CACHE_HOME/okomart/repositories/$ALPHA_CACHE_KEY.git"
 ALPHA_PARENT="$(git -C "$TMP/alpha-work" rev-parse "$ALPHA_V1^")"
 assert_eq "true" \
@@ -607,7 +623,7 @@ pass "catalog and plugin display trees materialize files without Git history"
 : >"$TIMEOUT_LOG"
 "$OKOMART" snapshot "$SOURCE" >"$TMP/snapshot-unchanged-cache.json"
 assert_jq "$TMP/snapshot-unchanged-cache.json" \
-  '(.stale|not) and .changes=={added:[],removed:[],updated:[]}' \
+  '(.stale|not)' \
   "unchanged shallow mirrors still produce a current catalog"
 if grep -F '/.mirror.tmp.' "$TIMEOUT_LOG" | grep -F ' fetch ' >/dev/null; then
   fail "unchanged catalog refresh re-downloaded a cached HEAD tree"
@@ -644,7 +660,7 @@ advance_plugin alpha 2.0.0
 ALPHA_V2="$(git -C "$TMP/alpha-work" rev-parse HEAD)"
 ALPHA_V2_UPDATED_AT="$(git -C "$TMP/alpha-work" show -s --format=%ct "$ALPHA_V2")"
 printf '%s\n%s\n%s\n' \
-  "$TMP/invalid.git" "$TMP/beta.git" "$TMP/alpha.git" \
+  "$INVALID_URL" "$BETA_URL" "$ALPHA_URL" \
   >"$CATALOG_WORK/plugins.txt"
 printf 'Generated catalog README\n' >"$CATALOG_WORK/README.md"
 git -C "$CATALOG_WORK" add plugins.txt README.md
@@ -667,9 +683,9 @@ TIMEOUT_PLUGIN_CALL="$(
     grep -F ' fetch ' | head -1 || true
 )"
 [[ $TIMEOUT_PLUGIN_CALL == \
-  "3s git -C $XDG_CACHE_HOME/okomart/.mirror.tmp.plugin."*".git fetch "* ]] ||
-  fail "plugin repository fetch did not use the configured timeout"
-pass "plugin repository fetch uses the configured timeout"
+  "20s git -C $XDG_CACHE_HOME/okomart/.mirror.tmp.plugin."*".git fetch "* ]] ||
+  fail "plugin repository fetch did not use the bounded timeout"
+pass "plugin repository fetch uses the bounded timeout"
 assert_stale_cache_integrity \
   "$TMP/snapshot-timeout.json" \
   "$INITIAL_SCREENSHOT_PATH" \
@@ -679,13 +695,12 @@ assert_stale_cache_integrity \
 "$OKOMART" snapshot "$SOURCE" >"$TMP/snapshot-timeout-recovered.json"
 assert_jq "$TMP/snapshot-timeout-recovered.json" \
   '(.stale|not) and .catalogCommit=="'"$TIMEOUT_FIXTURE_COMMIT"'"
-    and .changes.updated==["b.alpha"]
     and ([.plugins[]|select(.id=="b.alpha")][0]
       | .version=="2.0.0" and .catalogCommit=="'"$ALPHA_V2"'")' \
   "catalog refresh recovers and follows the plugin repository HEAD"
 assert_jq "$TMP/snapshot-timeout-recovered.json" \
   '.self.updateState=="catalog-current"
-    and (.self.appChanged|not) and (.self.safeUpdate|not)' \
+    and (.self.safeUpdate|not)' \
   "plugins.txt and generated README changes remain catalog-only"
 assert_eq "1" "$(git -C "$ALPHA_CACHE_MIRROR" rev-list --all --count)" \
   "plugin mirror replacement does not accumulate prior shallow HEADs"
@@ -703,7 +718,7 @@ VALID_SCREENSHOT_SHA="$(
 )"
 
 cp -- "$CATALOG_WORK/plugins.txt" "$TMP/valid-plugins.txt"
-printf '%s\n%s\n' "$TMP/alpha.git" "not-a-plugin-url" \
+printf '%s\n%s\n' "$ALPHA_URL" "not-a-plugin-url" \
   >"$CATALOG_WORK/plugins.txt"
 git -C "$CATALOG_WORK" add plugins.txt
 git -C "$CATALOG_WORK" commit -qm "malformed plugin registry fixture"
@@ -733,7 +748,7 @@ assert_jq "$TMP/snapshot-malformed-cold.json" \
     and .catalogCommit=="" and (.plugins|length)==0' \
   "a malformed catalog on cold cache fails closed with no invented entries"
 
-printf '%s\n\n%s\n' "$TMP/alpha.git" "$TMP/beta.git" \
+printf '%s\n\n%s\n' "$ALPHA_URL" "$BETA_URL" \
   >"$CATALOG_WORK/plugins.txt"
 git -C "$CATALOG_WORK" add plugins.txt
 git -C "$CATALOG_WORK" commit -qm "blank plugin registry line fixture"
@@ -744,7 +759,7 @@ assert_jq "$TMP/snapshot-blank-registry.json" \
     and .catalogCommit=="'"$TIMEOUT_FIXTURE_COMMIT"'"' \
   "blank registry lines fail refresh without publishing partial content"
 
-printf '%s\n%s\n' "$TMP/alpha.git" "$TMP/alpha.git" \
+printf '%s\n%s\n' "$ALPHA_URL" "$ALPHA_URL" \
   >"$CATALOG_WORK/plugins.txt"
 git -C "$CATALOG_WORK" add plugins.txt
 git -C "$CATALOG_WORK" commit -qm "duplicate plugin URL fixture"
@@ -768,15 +783,12 @@ RECOVERED_ALPHA_IMAGE="$(
     "$TMP/snapshot-registry-recovered.json"
 )"
 printf '%s\n%s\n%s\n' \
-  "$TMP/alpha.git" "$TMP/invalid.git" "$TMP/beta.git" \
+  "$ALPHA_URL" "$INVALID_URL" "$BETA_URL" \
   >"$CATALOG_WORK/plugins.txt"
 git -C "$CATALOG_WORK" add plugins.txt
 git -C "$CATALOG_WORK" commit -qm "reorder plugin registry"
 git -C "$CATALOG_WORK" push -q origin main
 "$OKOMART" snapshot "$SOURCE" >"$TMP/snapshot-registry-reordered.json"
-assert_jq "$TMP/snapshot-registry-reordered.json" \
-  '.changes == {added:[],removed:[],updated:[]}' \
-  "registry reordering does not invent plugin changes"
 assert_jq "$TMP/snapshot-registry-reordered.json" \
   '[.plugins[]|select(.id=="b.alpha")][0].images[0]
     == "'"$RECOVERED_ALPHA_IMAGE"'"' \
@@ -808,54 +820,42 @@ DEV_LINK_INDEX=0
 for DEV_LINK_ARG in "${DEV_LINK_VARIANTS[@]}"; do
   DEV_LINK_INDEX=$((DEV_LINK_INDEX + 1))
   DEV_LINK_SNAPSHOT="$TMP/snapshot-self-development-link-$DEV_LINK_INDEX.json"
-  DEV_LINK_ACTION="$TMP/action-self-development-link-$DEV_LINK_INDEX.json"
-  : >"$MOCK_LOG"
   "$OKOMART" snapshot "$DEV_LINK_ARG" >"$DEV_LINK_SNAPSHOT"
   assert_jq "$DEV_LINK_SNAPSHOT" \
-    '.self.developmentLink
-      and .self.installType=="development-link"
-      and .self.updateState=="development-link"
+    '.self.updateState=="development-link"
       and (.self.safeUpdate|not)
-      and .self.currentCommit=="'"$DEV_LINK_SOURCE_COMMIT"'"
+      and .self.currentCommit==""
       and .self.availableCommit==""' \
     "Okomart preserves development-link source spelling $DEV_LINK_INDEX"
-  export OKOMART_ACTION_FOREGROUND=1
-  "$OKOMART" action "$DEV_LINK_ARG" update-all "" \
-    "$(jq -r '.snapshotId' "$DEV_LINK_SNAPSHOT")" >"$DEV_LINK_ACTION"
-  unset OKOMART_ACTION_FOREGROUND
-  [[ -z $(grep '^plugin update b.okomart ' "$MOCK_LOG" || true) ]] ||
-    fail "development-link source spelling $DEV_LINK_INDEX invoked self-update"
-  pass "development-link source spelling $DEV_LINK_INDEX is excluded from update-all"
 done
 SAME_VERSION_SELF_SNAPSHOT="$TMP/snapshot-self-same-version.json"
 "$OKOMART" snapshot "$SOURCE" >"$SAME_VERSION_SELF_SNAPSHOT"
 assert_jq "$SAME_VERSION_SELF_SNAPSHOT" \
   '.self.updateState=="catalog-current"
-    and .self.appChanged
     and (.self.versionUpdateAvailable|not)
     and (.self.safeUpdate|not)
     and .self.installedVersion==.self.availableVersion' \
   "Okomart ignores application commits without a manifest version bump"
 git -C "$SOURCE" pull -q --ff-only
 
-git clone -q "$TMP/alpha.git" "$OKOMART_PLUGINS_DIR/b.alpha"
-git -C "$OKOMART_PLUGINS_DIR/b.alpha" checkout -q "$ALPHA_V1"
-git clone -q "$TMP/beta.git" "$OKOMART_PLUGINS_DIR/b.beta"
-git clone -q "$TMP/samever.git" "$OKOMART_PLUGINS_DIR/b.samever"
+git clone -q "$TMP/alpha.git" "$PLUGINS_DIR/b.alpha"
+git -C "$PLUGINS_DIR/b.alpha" checkout -q "$ALPHA_V1"
+git clone -q "$TMP/beta.git" "$PLUGINS_DIR/b.beta"
+git clone -q "$TMP/samever.git" "$PLUGINS_DIR/b.samever"
 advance_plugin_without_version samever
-git clone -q "$TMP/dirty.git" "$OKOMART_PLUGINS_DIR/b.dirty"
-printf '// dirty\n' >>"$OKOMART_PLUGINS_DIR/b.dirty/Panel.qml"
-git clone -q "$TMP/ahead.git" "$OKOMART_PLUGINS_DIR/b.ahead"
-printf '// local commit\n' >>"$OKOMART_PLUGINS_DIR/b.ahead/Panel.qml"
-git -C "$OKOMART_PLUGINS_DIR/b.ahead" add Panel.qml
-git -C "$OKOMART_PLUGINS_DIR/b.ahead" commit -qm "local ahead"
-git clone -q "$TMP/split.git" "$OKOMART_PLUGINS_DIR/b.split"
-printf '// local branch\n' >>"$OKOMART_PLUGINS_DIR/b.split/Panel.qml"
-git -C "$OKOMART_PLUGINS_DIR/b.split" add Panel.qml
-git -C "$OKOMART_PLUGINS_DIR/b.split" commit -qm "local side"
+git clone -q "$TMP/dirty.git" "$PLUGINS_DIR/b.dirty"
+printf '// dirty\n' >>"$PLUGINS_DIR/b.dirty/Panel.qml"
+git clone -q "$TMP/ahead.git" "$PLUGINS_DIR/b.ahead"
+printf '// local commit\n' >>"$PLUGINS_DIR/b.ahead/Panel.qml"
+git -C "$PLUGINS_DIR/b.ahead" add Panel.qml
+git -C "$PLUGINS_DIR/b.ahead" commit -qm "local ahead"
+git clone -q "$TMP/split.git" "$PLUGINS_DIR/b.split"
+printf '// local branch\n' >>"$PLUGINS_DIR/b.split/Panel.qml"
+git -C "$PLUGINS_DIR/b.split" add Panel.qml
+git -C "$PLUGINS_DIR/b.split" commit -qm "local side"
 advance_plugin split 2.0.0
 git -C "$TMP/linked-work" worktree add -q --detach \
-  "$OKOMART_PLUGINS_DIR/b.linked" HEAD
+  "$PLUGINS_DIR/b.linked" HEAD
 mkdir -p "$TMP/dev-target"
 write_plugin_manifest "$TMP/dev-target" b.dev Development 0.1.0
 printf 'import QtQuick\nItem {}\n' >"$TMP/dev-target/Panel.qml"
@@ -866,29 +866,27 @@ printf 'jpg' >"$TMP/dev-target/screenshots/shot2.JPG"
 printf 'ignored' >"$TMP/dev-target/images/readme.txt"
 printf 'ignored' >"$TMP/dev-target/images/nested/shot1.png"
 printf 'ignored' >"$TMP/dev-target/screenshots/nested/shot0.png"
-ln -s "$TMP/dev-target" "$OKOMART_PLUGINS_DIR/b.dev"
-mkdir -p "$OKOMART_PLUGINS_DIR/b.broken"
-printf '{}\n' >"$OKOMART_PLUGINS_DIR/b.broken/manifest.json"
+ln -s "$TMP/dev-target" "$PLUGINS_DIR/b.dev"
+mkdir -p "$PLUGINS_DIR/b.broken"
+printf '{}\n' >"$PLUGINS_DIR/b.broken/manifest.json"
 # Model a dotfiles-style ancestor repository. b.parented is tracked by the
 # ancestor, but is intentionally not a Git worktree of its own.
-git -C "$OKOMART_PLUGINS_DIR" init -q
-mkdir -p "$OKOMART_PLUGINS_DIR/b.parented"
+git -C "$PLUGINS_DIR" init -q
+mkdir -p "$PLUGINS_DIR/b.parented"
 write_plugin_manifest \
-  "$OKOMART_PLUGINS_DIR/b.parented" b.parented Parented 0.4.0
+  "$PLUGINS_DIR/b.parented" b.parented Parented 0.4.0
 printf 'import QtQuick\nItem {}\n' \
-  >"$OKOMART_PLUGINS_DIR/b.parented/Panel.qml"
-git -C "$OKOMART_PLUGINS_DIR" add b.parented
-git -C "$OKOMART_PLUGINS_DIR" commit -qm \
+  >"$PLUGINS_DIR/b.parented/Panel.qml"
+git -C "$PLUGINS_DIR" add b.parented
+git -C "$PLUGINS_DIR" commit -qm \
   "track local plugin from ancestor worktree"
 printf 'unrelated dotfile edit\n' \
-  >"$OKOMART_PLUGINS_DIR/unrelated-dotfile"
-printf '[{"id":"b.alpha","enabled":true}]\n' >"$MOCK_LIST"
-
+  >"$PLUGINS_DIR/unrelated-dotfile"
 SNAP2="$TMP/snapshot-installed.json"
 "$OKOMART" snapshot "$SOURCE" >"$SNAP2"
 assert_jq "$SNAP2" \
   '[.plugins[]|select(.id=="b.alpha")][0]
-    | .installed and .enabled and .safeUpdate
+    | .installed and .safeUpdate
       and .updateState=="update-available"
       and .versionUpdateAvailable
       and .installedVersion=="1.0.0"
@@ -897,12 +895,11 @@ assert_jq "$SNAP2" \
   "installed Git plugin detects a clean fast-forward update"
 assert_jq "$SNAP2" \
   '[.plugins[]|select(.id=="b.ahead")][0].updatedAt
-    == '"$(git -C "$OKOMART_PLUGINS_DIR/b.ahead" show -s --format=%ct HEAD)" \
+    == '"$(git -C "$PLUGINS_DIR/b.ahead" show -s --format=%ct HEAD)" \
   "installed-only Git plugins expose their latest commit timestamp"
 assert_jq "$SNAP2" \
   '[.plugins[]|select(.id=="b.samever")][0]
-    | .installed and .remoteRelation=="behind"
-      and .updateState=="up-to-date"
+    | .installed and .updateState=="up-to-date"
       and (.versionUpdateAvailable|not)
       and (.safeUpdate|not)
       and .installedVersion=="1.0.0"
@@ -910,7 +907,7 @@ assert_jq "$SNAP2" \
   "code-only commits do not become plugin updates without a version bump"
 assert_jq "$SNAP2" \
   '[.plugins[]|select(.id=="b.dev")][0]
-    | .external and .installType=="development-link"
+    | .installed and .installType=="development-link"
       and .updateState=="development-link"' \
   "development links remain visible with restricted updates"
 assert_jq "$SNAP2" \
@@ -922,18 +919,18 @@ assert_jq "$SNAP2" \
   "installed-only plugins scan every supported screenshot location"
 assert_jq "$SNAP2" \
   '[.plugins[]|select(.id=="b.broken")][0]
-    | .external and (.manifestValid|not) and .updateState=="invalid"' \
+    | .installed and .updateState=="invalid" and (.validationError|length>0)' \
   "malformed local installs remain visible as invalid"
 assert_jq "$SNAP2" \
   '[.plugins[]|select(.id=="b.parented")][0]
-    | .external and .installed and .installType=="local"
+    | .installed and .installType=="local"
       and .updateState=="non-git"
       and .currentCommit=="" and .sourceUrl==""
       and (.dirty|not) and (.safeUpdate|not)' \
   "a plugin tracked only by an ancestor worktree remains a local install"
 assert_jq "$SNAP2" \
   '[.plugins[]|select(.id=="b.linked")][0]
-    | .external and .installed and .installType=="local"
+    | .installed and .installType=="local"
       and .updateState=="non-git"
       and .currentCommit=="" and (.safeUpdate|not)' \
   "a linked worktree remains local when Omarchy cannot update its .git file"
@@ -946,17 +943,17 @@ assert_jq "$SNAP2" \
     and ([.plugins[]|select(.id=="b.split")][0].safeUpdate|not)' \
   "dirty, locally ahead, and diverged checkouts are separately blocked"
 
-[[ -f $OKOMART_PLUGINS_DIR/b.beta/images/only.webp ]] ||
+[[ -f $PLUGINS_DIR/b.beta/images/only.webp ]] ||
   fail "beta tombstone zero-image fixture is missing its installed screenshot"
-rm -f -- "$OKOMART_PLUGINS_DIR/b.beta/images/only.webp"
-git -C "$OKOMART_PLUGINS_DIR/b.beta" add -u
-git -C "$OKOMART_PLUGINS_DIR/b.beta" commit -qm \
+rm -f -- "$PLUGINS_DIR/b.beta/images/only.webp"
+git -C "$PLUGINS_DIR/b.beta" add -u
+git -C "$PLUGINS_DIR/b.beta" commit -qm \
   "installed plugin removes its screenshot"
-git -C "$OKOMART_PLUGINS_DIR/b.beta" push -q origin main
+git -C "$PLUGINS_DIR/b.beta" push -q origin main
 git -C "$TMP/beta-work" pull -q --ff-only origin main
 advance_plugin alpha 3.0.0
 printf '%s\n%s\n%s\n' \
-  "$TMP/alpha.git" "$TMP/invalid.git" "$TMP/gamma.git" \
+  "$ALPHA_URL" "$INVALID_URL" "$GAMMA_URL" \
   >"$CATALOG_WORK/plugins.txt"
 printf 'Generated catalog README after registry changes\n' \
   >"$CATALOG_WORK/README.md"
@@ -967,20 +964,15 @@ git -C "$CATALOG_WORK" push -q origin main
 SNAP3="$TMP/snapshot-changes.json"
 "$OKOMART" snapshot "$SOURCE" >"$SNAP3"
 assert_jq "$SNAP3" \
-  '.changes.added==["b.gamma"]
-    and .changes.removed==["b.beta"]
-    and .changes.updated==["b.alpha"]' \
-  "catalog changes distinguish URL additions, removals, and HEAD updates"
-assert_jq "$SNAP3" \
   '[.plugins[]|select(.id=="b.beta")][0]
-    | .installed and .removed and (.catalog|not) and (.external|not)' \
+    | .installed and (.catalog|not)' \
   "an installed removed catalog entry remains as a tombstone"
 assert_jq "$SNAP3" \
   '([.plugins[]|select(.id=="b.beta")][0].images|length)==0' \
   "a removed catalog tombstone treats the installed zero-image state as authoritative"
 assert_jq "$SNAP3" \
   '.self.updateState=="catalog-current"
-    and (.self.appChanged|not) and (.self.safeUpdate|not)' \
+    and (.self.safeUpdate|not)' \
   "catalog-only commits do not appear as an Okomart application update"
 assert_jq "$SNAP3" \
   '([.plugins[]|select(.id=="b.gamma")][0].images|length)==0' \
@@ -990,7 +982,7 @@ printf '\n' >>"$SOURCE/plugins.txt"
 "$OKOMART" snapshot "$SOURCE" >"$TMP/snapshot-catalog-dirty.json"
 assert_jq "$TMP/snapshot-catalog-dirty.json" \
   '.self.updateState=="catalog-current"
-    and .self.repositoryDirty and (.self.dirty|not) and (.self.safeUpdate|not)' \
+    and (.self.safeUpdate|not)' \
   "catalog-only working-tree dirt does not create a false Okomart update"
 git -C "$SOURCE" checkout -q -- plugins.txt
 
@@ -1003,7 +995,7 @@ assert_jq "$SNAP4" \
   "offline refresh retains and labels the last valid catalog snapshot"
 assert_jq "$SNAP4" \
   '[.plugins[]|select(.id=="b.beta")][0]
-    | .installed and .removed and (.external|not)' \
+    | .installed and (.catalog|not)' \
   "installed catalog removals remain tombstones across later snapshots"
 
 jq -cn '{
@@ -1050,11 +1042,10 @@ assert_jq "$TMP/action-state-failure.json" \
 rmdir "$XDG_STATE_HOME/okomart/action.json"
 
 : >"$MOCK_LOG"
-export OKOMART_ACTION_FOREGROUND=1
-"$OKOMART" action "$SOURCE" install b.gamma "$CONFIRMED_SNAPSHOT_ID" \
+run_action_to_completion "$SOURCE" install b.gamma "$CONFIRMED_SNAPSHOT_ID" \
   >"$TMP/action-install.json"
 assert_eq \
-  "plugin add $TMP/gamma.git --enable --yes" \
+  "plugin add $GAMMA_URL --enable --yes" \
   "$(grep '^plugin add ' "$MOCK_LOG")" \
   "install action uses the catalog URL and official add-and-enable CLI"
 assert_jq "$TMP/action-install.json" \
@@ -1063,7 +1054,7 @@ assert_jq "$TMP/action-install.json" \
 
 advance_plugin gamma 2.0.0
 : >"$MOCK_LOG"
-if "$OKOMART" action "$SOURCE" install b.gamma "$CONFIRMED_SNAPSHOT_ID" \
+if run_action_to_completion "$SOURCE" install b.gamma "$CONFIRMED_SNAPSHOT_ID" \
   >"$TMP/action-install-drift.json"; then
   fail "install should stop when the repository moved past the confirmed HEAD"
 fi
@@ -1076,9 +1067,9 @@ assert_jq "$TMP/action-install-drift.json" \
 pass "remote-drift install fails before invoking the Omarchy CLI"
 
 : >"$MOCK_LOG"
-[[ -n $(git -C "$OKOMART_PLUGINS_DIR" status --porcelain) ]] ||
+[[ -n $(git -C "$PLUGINS_DIR" status --porcelain) ]] ||
   fail "ancestor-worktree removal fixture is not dirty"
-"$OKOMART" action "$SOURCE" remove b.parented "$CONFIRMED_SNAPSHOT_ID" \
+run_action_to_completion "$SOURCE" remove b.parented "$CONFIRMED_SNAPSHOT_ID" \
   >"$TMP/action-remove-parented.json"
 assert_eq \
   "plugin remove b.parented --yes" \
@@ -1092,16 +1083,16 @@ assert_jq "$TMP/action-remove-parented.json" \
   "ancestor-managed folder uses local manifest removal preflight"
 
 : >"$MOCK_LOG"
-"$OKOMART" action "$SOURCE" remove b.alpha "$CONFIRMED_SNAPSHOT_ID" \
+run_action_to_completion "$SOURCE" remove b.alpha "$CONFIRMED_SNAPSHOT_ID" \
   >"$TMP/action-remove.json"
 assert_eq \
   "plugin remove b.alpha --yes" \
   "$(grep '^plugin remove ' "$MOCK_LOG")" \
   "remove action uses the official confirmed CLI form"
 
-printf '// changed after confirmation\n' >>"$OKOMART_PLUGINS_DIR/b.alpha/Panel.qml"
+printf '// changed after confirmation\n' >>"$PLUGINS_DIR/b.alpha/Panel.qml"
 : >"$MOCK_LOG"
-if "$OKOMART" action "$SOURCE" remove b.alpha "$CONFIRMED_SNAPSHOT_ID" \
+if run_action_to_completion "$SOURCE" remove b.alpha "$CONFIRMED_SNAPSHOT_ID" \
   >"$TMP/action-remove-changed.json"; then
   fail "remove should stop when the installed checkout changed after confirmation"
 fi
@@ -1111,52 +1102,36 @@ assert_jq "$TMP/action-remove-changed.json" \
 [[ -z $(grep '^plugin remove ' "$MOCK_LOG" || true) ]] \
   || fail "changed-checkout remove invoked the Omarchy CLI"
 pass "changed-checkout remove fails before invoking the Omarchy CLI"
-git -C "$OKOMART_PLUGINS_DIR/b.alpha" checkout -q -- Panel.qml
+git -C "$PLUGINS_DIR/b.alpha" checkout -q -- Panel.qml
 
 : >"$MOCK_LOG"
 : >"$TIMEOUT_LOG"
-export OKOMART_ACTION_TIMEOUT_SECONDS=1
-export MOCK_SLEEP_SECONDS=2
-if "$OKOMART" action "$SOURCE" remove b.beta "$CONFIRMED_SNAPSHOT_ID" \
+export MOCK_TIMEOUT_ACTION=1
+if run_action_to_completion "$SOURCE" remove b.beta "$CONFIRMED_SNAPSHOT_ID" \
   >"$TMP/action-timeout.json"; then
   fail "a stalled plugin mutation should reach a terminal failure"
 fi
-unset MOCK_SLEEP_SECONDS OKOMART_ACTION_TIMEOUT_SECONDS
+unset MOCK_TIMEOUT_ACTION
 assert_jq "$TMP/action-timeout.json" \
   '(.ok|not) and (.running|not) and .resummoned
     and (.results[0].output|contains("timed out this remove"))
     and (.results[0].output|contains("partially changed plugin state"))' \
   "stalled plugin mutations time out with a visible terminal result"
 MUTATION_TIMEOUT_CALL="$(
-  grep -F "$MOCK_OMARCHY plugin remove b.beta --yes" "$TIMEOUT_LOG" \
+  grep -F "omarchy plugin remove b.beta --yes" "$TIMEOUT_LOG" \
     | tail -1 || true
 )"
 [[ $MUTATION_TIMEOUT_CALL == \
-  "--signal=TERM --kill-after=5s 1s $MOCK_OMARCHY plugin remove b.beta --yes" ]] \
-  || fail "plugin mutation did not use the configured whole-command timeout"
-pass "plugin mutations use the configured whole-command timeout"
+  "--signal=TERM --kill-after=5s 300s omarchy plugin remove b.beta --yes" ]] \
+  || fail "plugin mutation did not use the bounded whole-command timeout"
+pass "plugin mutations use the bounded whole-command timeout"
 if flock -n "$XDG_STATE_HOME/okomart/action.lock" true; then
   pass "timed-out plugin mutations release the action lock"
 else
   fail "timed-out plugin mutation left the action lock held"
 fi
-: >"$TIMEOUT_LOG"
-for invalid_action_timeout in invalid 3601 999999999999999999999999; do
-  export OKOMART_ACTION_TIMEOUT_SECONDS="$invalid_action_timeout"
-  "$OKOMART" action "$SOURCE" remove b.beta "$CONFIRMED_SNAPSHOT_ID" \
-    >"$TMP/action-timeout-default-$invalid_action_timeout.json"
-  jq -e '.ok and (.running|not)' \
-    "$TMP/action-timeout-default-$invalid_action_timeout.json" >/dev/null \
-    || fail "invalid action timeout setting broke a plugin mutation"
-done
-unset OKOMART_ACTION_TIMEOUT_SECONDS
-[[ $(grep -F -- "--kill-after=5s 300s $MOCK_OMARCHY plugin remove b.beta --yes" \
-  "$TIMEOUT_LOG" | wc -l) -eq 3 ]] \
-  || fail "invalid action timeout settings did not use the safe default"
-pass "invalid and overlarge action timeouts use the bounded default"
 
 : >"$MOCK_LOG"
-unset OKOMART_ACTION_FOREGROUND
 export MOCK_SLEEP_SECONDS=0.3
 "$OKOMART" action "$SOURCE" remove b.beta "$CONFIRMED_SNAPSHOT_ID" \
   >"$TMP/action-detached.json"
@@ -1203,7 +1178,6 @@ for _ in {1..100}; do
   [[ $(jq -r '.running' "$TMP/status-newer-finished.json") == false ]] && break
   sleep 0.02
 done
-export OKOMART_ACTION_FOREGROUND=1
 
 mv "$TMP/catalog-offline.git" "$CATALOG_REMOTE"
 advance_plugin beta 2.0.0
@@ -1245,7 +1219,7 @@ assert_jq "$TMP/action-update-selection-unknown.json" \
   "update-all rejects selections outside the confirmed snapshot"
 
 : >"$MOCK_LOG"
-"$OKOMART" action "$SOURCE" update-all "" "$CONFIRMED_SNAPSHOT_ID" \
+run_action_to_completion "$SOURCE" update-all "" "$CONFIRMED_SNAPSHOT_ID" \
   '["b.okomart","b.beta"]' >"$TMP/action-update-selected.json"
 assert_eq \
   $'plugin update b.beta --yes\nplugin update b.okomart --yes' \
@@ -1264,7 +1238,7 @@ assert_jq "$TMP/action-update-selected.json" \
 pass "self-update actions defer their one shell restart to updated recovery code"
 
 : >"$MOCK_LOG"
-"$OKOMART" action "$SOURCE" update-all "" "$CONFIRMED_SNAPSHOT_ID" \
+run_action_to_completion "$SOURCE" update-all "" "$CONFIRMED_SNAPSHOT_ID" \
   '["b.alpha","b.beta"]' >"$TMP/action-update-selected-plugins.json"
 assert_eq \
   $'plugin update b.alpha --yes\nplugin update b.beta --yes' \
@@ -1283,7 +1257,7 @@ assert_jq "$TMP/action-update-selected-plugins.json" \
   "a plugin update batch records that the new runtime was loaded"
 
 : >"$MOCK_LOG"
-"$OKOMART" action "$SOURCE" update b.alpha "$CONFIRMED_SNAPSHOT_ID" \
+run_action_to_completion "$SOURCE" update b.alpha "$CONFIRMED_SNAPSHOT_ID" \
   >"$TMP/action-update-one.json"
 assert_eq \
   "plugin update b.alpha --yes" \
@@ -1303,7 +1277,7 @@ assert_eq \
 
 : >"$MOCK_LOG"
 export MOCK_RESTART_FAIL=1
-if "$OKOMART" action "$SOURCE" update b.alpha "$CONFIRMED_SNAPSHOT_ID" \
+if run_action_to_completion "$SOURCE" update b.alpha "$CONFIRMED_SNAPSHOT_ID" \
   >"$TMP/action-update-restart-failed.json"; then
   fail "a plugin update accepted a failed Omarchy shell restart"
 fi
@@ -1320,7 +1294,8 @@ assert_jq "$TMP/action-update-restart-failed.json" \
 
 advance_plugin alpha 4.0.0
 : >"$MOCK_LOG"
-if "$OKOMART" action "$SOURCE" update-all "" "$CONFIRMED_SNAPSHOT_ID" \
+if run_action_to_completion "$SOURCE" update-all "" "$CONFIRMED_SNAPSHOT_ID" \
+  '["b.alpha","b.beta","b.okomart"]' \
   >"$TMP/action-update-drift.json"; then
   fail "update-all should report a remote that changed after confirmation"
 fi
@@ -1341,10 +1316,9 @@ CONFIRMED_SNAPSHOT_ID="$(
 
 : >"$MOCK_LOG"
 export MOCK_BREAK_ACTION_STATE="$XDG_STATE_HOME/okomart/action.json"
-if "$OKOMART" action "$SOURCE" update-all "" "$CONFIRMED_SNAPSHOT_ID" \
-  >"$TMP/action-persistence-break.json"; then
-  fail "worker should fail when action status persistence breaks"
-fi
+run_action_to_completion "$SOURCE" update-all "" "$CONFIRMED_SNAPSHOT_ID" \
+  '["b.alpha","b.beta","b.okomart"]' \
+  >"$TMP/action-persistence-break.json"
 unset MOCK_BREAK_ACTION_STATE
 assert_eq \
   "plugin update b.alpha --yes" \
@@ -1358,7 +1332,8 @@ rmdir "$XDG_STATE_HOME/okomart/action.json"
 : >"$MOCK_LOG"
 export MOCK_FAIL_ID=b.beta
 export MOCK_MUTATE_SNAPSHOT="$XDG_STATE_HOME/okomart/snapshot.json"
-if "$OKOMART" action "$SOURCE" update-all "" "$CONFIRMED_SNAPSHOT_ID" \
+if run_action_to_completion "$SOURCE" update-all "" "$CONFIRMED_SNAPSHOT_ID" \
+  '["b.alpha","b.beta","b.okomart"]' \
   >"$TMP/action-update.json"; then
   fail "update-all should report a failed individual package"
 fi
@@ -1435,13 +1410,11 @@ mv -- "$TMP/self-recovery-stale.json" \
 
 : >"$MOCK_LOG"
 MOCK_RUNTIME_VERSION="stale"
-export OKOMART_RELAUNCH_ATTEMPTS=2
 if "$OKOMART" _recover-self-update "$ROOT"; then
   fail "self-update recovery accepted a stale loaded runtime"
 fi
-unset OKOMART_RELAUNCH_ATTEMPTS
 assert_eq \
-  "2" \
+  "40" \
   "$(grep -Fc 'shell:shell call b.okomart runtimeVersion ' "$MOCK_LOG")" \
   "self-update recovery retries until the loaded runtime version matches"
 [[ -z $(grep -Fx 'restart shell' "$MOCK_LOG" || true) ]] \

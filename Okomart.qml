@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Controls as QQC
 import QtQuick.Layouts
 import QtQuick.Window
 import Quickshell
@@ -11,11 +10,8 @@ import "OkomartModel.js" as OkomartModel
 Item {
   id: root
 
-  property string omarchyPath: Quickshell.env("OMARCHY_PATH") || ""
   property var shell: null
   property var manifest: null
-  property var pluginRegistry: null
-  property var barWidgetRegistry: null
 
   readonly property string pluginId: manifest && manifest.id ? String(manifest.id) : "b.okomart"
   readonly property string sourceDir: manifest && manifest.__sourceDir
@@ -52,7 +48,6 @@ Item {
   property var allPlugins: []
   property var visiblePlugins: []
   property var updateRows: []
-  property var pendingActionPlugin: null
   property color inactiveBorderColor: Qt.rgba(
     0x59 / 255, 0x59 / 255, 0x59 / 255, 0xaa / 255)
 
@@ -101,7 +96,7 @@ Item {
   }
 
   readonly property bool snapshotActionable: !!(snapshot
-    && snapshot.snapshotId && snapshot.ok !== false)
+    && snapshot.snapshotId && snapshot.ok === true)
 
   onWideLayoutChanged: if (wideLayout) narrowShowingDetails = false
   onWindowSideChanged: Qt.callLater(applyCurrentWindowSize)
@@ -303,70 +298,32 @@ Item {
   }
 
   function rebuildView() {
-    var filter = installedOnly ? "installed" : "all"
-    var next
-    try {
-      next = OkomartModel.filterPlugins(allPlugins, query, filter)
-    } catch (e) {
-      next = Array.isArray(allPlugins) ? allPlugins.slice() : []
-    }
+    var next = OkomartModel.filterPlugins(allPlugins, query, installedOnly)
     visiblePlugins = next
-
-    var nextId = ""
-    try {
-      var resolved = OkomartModel.resolveSelection(next, selectedId)
-      nextId = typeof resolved === "string" ? resolved
-        : (resolved && resolved.id ? String(resolved.id) : "")
-    } catch (e2) {
-      nextId = selectedId
-    }
-    if (!nextId && next.length > 0) nextId = String(next[0].id || "")
-    selectedId = nextId
-    if (!nextId) narrowShowingDetails = false
+    selectedId = OkomartModel.resolveSelection(next, selectedId)
+    if (!selectedId) narrowShowingDetails = false
   }
 
   function buildUpdates(data) {
-    if (data && Array.isArray(data.updates)) {
-      var declaredRows = []
-      for (var declaredIndex = 0; declaredIndex < data.updates.length; declaredIndex++) {
-        var declared = data.updates[declaredIndex]
-        if (declared && declared.versionUpdateAvailable === true)
-          declaredRows.push(declared)
-      }
-      return declaredRows
-    }
     var rows = []
-    var plugins = data && Array.isArray(data.plugins) ? data.plugins : []
+    var plugins = data.plugins
     for (var i = 0; i < plugins.length; i++) {
       var p = plugins[i]
-      if (p && p.installed && p.versionUpdateAvailable === true) rows.push(p)
+      if (p.installed && p.versionUpdateAvailable === true) rows.push(p)
     }
-    if (data && data.self) {
-      if (data.self.versionUpdateAvailable === true) {
-        var selfRow = {}
-        for (var key in data.self) selfRow[key] = data.self[key]
-        selfRow.id = selfRow.id || pluginId
-        selfRow.name = selfRow.name || "Okomart"
-        selfRow.self = true
-        rows.push(selfRow)
-      }
+    if (data.self.versionUpdateAvailable === true) {
+      var selfRow = {}
+      for (var key in data.self) selfRow[key] = data.self[key]
+      selfRow.id = pluginId
+      selfRow.name = "Okomart"
+      rows.push(selfRow)
     }
     return rows
   }
 
   function setSnapshotData(parsed) {
-    var displayPlugins = []
-    for (var pluginIndex = 0; pluginIndex < parsed.plugins.length; pluginIndex++) {
-      var plugin = parsed.plugins[pluginIndex]
-      if (!plugin) continue
-      var changedId = String(plugin.id || "")
-      if (changedId === pluginId) continue
-      if (Array.isArray(plugin.images))
-        plugin.images = OkomartModel.supportedScreenshots(plugin.images)
-      displayPlugins.push(plugin)
-    }
     snapshot = parsed
-    allPlugins = displayPlugins
+    allPlugins = parsed.plugins
     updateRows = buildUpdates(parsed)
     catalogLoaded = true
     rebuildView()
@@ -389,7 +346,7 @@ Item {
     cacheLoading = false
     var parsed = null
     try { parsed = JSON.parse(String(raw || "")) } catch (e) {}
-    if (parsed && parsed.ok !== false && Array.isArray(parsed.plugins))
+    if (parsed && parsed.ok === true && Array.isArray(parsed.plugins))
       setSnapshotData(parsed)
     loadActionStatus()
   }
@@ -486,35 +443,20 @@ Item {
       return
     }
 
-    var state = String(parsed.state || parsed.status || "")
     var results = Array.isArray(parsed.results) ? parsed.results : []
-    if (state === "running" || state === "started") {
-      actionInProgress = true
-      bannerText = "Plugin operation in progress…"
-      bannerUrgent = false
-      actionPoll.restart()
-      return
-    }
     var failedResults = []
     for (var i = 0; i < results.length; i++)
       if (results[i] && results[i].ok === false) failedResults.push(results[i])
-    if (parsed.running === false || state === "complete"
-        || state === "completed" || state === "success") {
-      actionInProgress = false
-      acknowledgeAction(String(parsed.actionId || ""))
-      bannerText = failedResults.length > 0
-        ? "Plugin operation completed with " + failedResults.length + " failure"
-          + (failedResults.length === 1 ? "." : "s.")
-        : String(parsed.message || "Plugin operation completed.")
-      bannerUrgent = failedResults.length > 0 || parsed.ok === false
-      refresh()
-      if (failedResults.length > 0)
-        dialog.openFor("results", null, failedResults)
-    } else if (state === "failed" || parsed.ok === false) {
-      actionInProgress = false
-      bannerText = String(parsed.error || parsed.message || "Plugin operation failed.")
-      bannerUrgent = true
-    }
+    actionInProgress = false
+    acknowledgeAction(String(parsed.actionId || ""))
+    bannerText = failedResults.length > 0
+      ? "Plugin operation completed with " + failedResults.length + " failure"
+        + (failedResults.length === 1 ? "." : "s.")
+      : String(parsed.message || "Plugin operation completed.")
+    bannerUrgent = failedResults.length > 0 || parsed.ok === false
+    refresh()
+    if (failedResults.length > 0)
+      dialog.openFor("results", null, failedResults)
   }
 
   function acknowledgeAction(actionId) {
@@ -548,21 +490,16 @@ Item {
     dialog.openFor(mode, plugin, updates)
   }
 
-  function actionIncludesSelf(kind, plugin, selectedUpdateIds) {
-    if (kind === "update")
-      return !!(plugin && String(plugin.id || "") === pluginId)
-    if (kind === "update-all" && Array.isArray(selectedUpdateIds))
-      return selectedUpdateIds.indexOf(pluginId) >= 0
-    return kind === "update-all" && !!(snapshot && snapshot.self
-      && snapshot.self.safeUpdate === true)
+  function actionIncludesSelf(kind, selectedUpdateIds) {
+    return kind === "update-all" && Array.isArray(selectedUpdateIds)
+      && selectedUpdateIds.indexOf(pluginId) >= 0
   }
 
   function beginAction(kind, plugin, selectedUpdateIds) {
     if (actionStarting || actionInProgress || statusChecking || refreshing || !helperPath
         || !snapshotActionable) return
     actionStarting = true
-    actionReplacesOkomart = actionIncludesSelf(kind, plugin, selectedUpdateIds)
-    pendingActionPlugin = plugin || null
+    actionReplacesOkomart = actionIncludesSelf(kind, selectedUpdateIds)
     actionOutput = ""
     actionError = ""
     var command = [helperPath, "action", sourceDir, kind,
@@ -754,7 +691,6 @@ Item {
       }
 
       Text {
-        id: brand
         x: storefront.frameLeft + root.headerEdgeInset
         y: root.wideLayout
           ? root.bodyTop - Style.space(50)
