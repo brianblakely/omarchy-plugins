@@ -448,6 +448,10 @@ Item {
     for (var i = 0; i < results.length; i++)
       if (results[i] && results[i].ok === false) failedResults.push(results[i])
     actionInProgress = false
+    var reconciledSnapshot = OkomartModel.reconcileActionSnapshot(
+      snapshot, results, pluginId)
+    if (reconciledSnapshot && Array.isArray(reconciledSnapshot.plugins))
+      setSnapshotData(reconciledSnapshot)
     acknowledgeAction(String(parsed.actionId || ""))
     bannerText = failedResults.length > 0
       ? "Plugin operation completed with " + failedResults.length + " failure"

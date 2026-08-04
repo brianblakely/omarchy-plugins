@@ -732,6 +732,13 @@ if grep -Fq 'toolbar.controlSpacing' "$ROOT_DIR/Okomart.qml" \
 fi
 grep -Fq '[helperPath, "ack", actionId]' "$ROOT_DIR/Okomart.qml" \
   || fail "completed action status is not acknowledged"
+grep -Fq 'OkomartModel.reconcileActionSnapshot(' "$ROOT_DIR/Okomart.qml" \
+  || fail "completed plugin actions wait for a network refresh before updating the UI"
+if ! sed -n '/var results = Array.isArray(parsed.results)/,/refresh()/p' \
+    "$ROOT_DIR/Okomart.qml" \
+    | grep -Fq 'OkomartModel.reconcileActionSnapshot('; then
+  fail "completed plugin actions are not reconciled before the network refresh"
+fi
 
 run_entrypoint_load_test
 

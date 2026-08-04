@@ -129,6 +129,95 @@ function snapshotConfirmsUpdates(snapshot, exitCode) {
     && Number(exitCode) === 0
 }
 
+function copyRecord(record) {
+  var copy = {}
+  if (!isRecord(record)) return copy
+  for (var key in record) copy[key] = record[key]
+  return copy
+}
+
+function reconciledInstalledPlugin(plugin, operation) {
+  var next = copyRecord(plugin)
+  if (operation === "install") {
+    next.installed = true
+    next.installedVersion = metadataValue(next.version, "")
+    next.installedSourceUrl = metadataValue(next.sourceUrl, "")
+    next.installType = "git"
+    next.availableVersion = metadataValue(next.version, "")
+    if (trimmedString(next.catalogCommit).length > 0) {
+      next.currentCommit = String(next.catalogCommit)
+      next.availableCommit = String(next.catalogCommit)
+    }
+  } else if (operation === "update") {
+    next.installed = true
+    next.installedVersion = metadataValue(next.availableVersion,
+      metadataValue(next.version, metadataValue(next.installedVersion, "")))
+    if (trimmedString(next.availableCommit).length > 0)
+      next.currentCommit = String(next.availableCommit)
+  }
+  next.updateState = "up-to-date"
+  next.statusText = "Up to date"
+  next.versionUpdateAvailable = false
+  next.safeUpdate = false
+  next.dirty = false
+  return next
+}
+
+function reconciledRemovedPlugin(plugin) {
+  if (plugin.catalog !== true) return null
+
+  var next = copyRecord(plugin)
+  next.installed = false
+  next.versionUpdateAvailable = false
+  next.safeUpdate = false
+  var installedFields = [
+    "installedVersion", "installedPath", "installedSourceUrl", "installType",
+    "updateState", "statusText", "currentCommit", "availableCommit",
+    "availableVersion", "dirty", "validationError"
+  ]
+  for (var i = 0; i < installedFields.length; i++) delete next[installedFields[i]]
+  return next
+}
+
+function reconcileActionSnapshot(snapshot, results, selfId) {
+  if (!isRecord(snapshot) || !Array.isArray(snapshot.plugins)) return snapshot
+
+  var actions = {}
+  var values = Array.isArray(results) ? results : []
+  for (var i = 0; i < values.length; i++) {
+    var result = values[i]
+    var id = pluginId(result)
+    var operation = isRecord(result) ? trimmedString(result.operation) : ""
+    if (result && result.ok === true && id.length > 0
+        && (operation === "install" || operation === "remove"
+          || operation === "update"))
+      actions["$" + id] = operation
+  }
+
+  var next = copyRecord(snapshot)
+  var plugins = []
+  for (var pluginIndex = 0; pluginIndex < snapshot.plugins.length; pluginIndex++) {
+    var plugin = snapshot.plugins[pluginIndex]
+    if (!isRecord(plugin)) continue
+    var action = actions["$" + pluginId(plugin)] || ""
+    if (action === "remove") {
+      var remaining = reconciledRemovedPlugin(plugin)
+      if (remaining !== null) plugins.push(remaining)
+    } else if (action === "install" || action === "update") {
+      plugins.push(reconciledInstalledPlugin(plugin, action))
+    } else {
+      plugins.push(plugin)
+    }
+  }
+  next.plugins = plugins
+
+  var resolvedSelfId = trimmedString(selfId)
+  if (resolvedSelfId.length > 0 && actions["$" + resolvedSelfId] === "update"
+      && isRecord(snapshot.self))
+    next.self = reconciledInstalledPlugin(snapshot.self, "update")
+  return next
+}
+
 function hyprlandColorComponents(raw) {
   var option = raw
   if (typeof raw === "string") {

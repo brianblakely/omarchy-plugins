@@ -12,6 +12,7 @@ const modelNames = [
   "hyprlandColorComponents",
   "metadataValue",
   "pluginVersionText",
+  "reconcileActionSnapshot",
   "removalBlockReason",
   "resolveSelection",
   "selectableUpdates",
@@ -33,6 +34,7 @@ const {
   hyprlandColorComponents,
   metadataValue,
   pluginVersionText,
+  reconcileActionSnapshot,
   removalBlockReason,
   resolveSelection,
   selectableUpdates,
@@ -102,6 +104,105 @@ test("confirms updates only from a fresh successful snapshot", () => {
   assert.equal(snapshotConfirmsUpdates({ ...current, stale: true }, 0), false)
   assert.equal(snapshotConfirmsUpdates({ ...current, ok: false }, 0), false)
   assert.equal(snapshotConfirmsUpdates(current, 1), false)
+})
+
+test("reconciles successful plugin actions before the next network snapshot", () => {
+  const snapshot = {
+    ok: true,
+    snapshotId: "snapshot-before-actions",
+    self: {
+      installedVersion: "0.0.51",
+      availableVersion: "0.0.52",
+      currentCommit: "self-old",
+      availableCommit: "self-new",
+      updateState: "update-available",
+      versionUpdateAvailable: true,
+      safeUpdate: true
+    },
+    plugins: [
+      plugin({
+        id: "b.install",
+        version: "2.0.0",
+        sourceUrl: "https://github.com/example/install.git",
+        catalogCommit: "install-head",
+        catalog: true
+      }),
+      plugin({
+        id: "b.remove-catalog",
+        installed: true,
+        installedVersion: "1.0.0",
+        installedPath: "/plugins/b.remove-catalog",
+        installedSourceUrl: "https://github.com/example/remove.git",
+        installType: "git",
+        currentCommit: "remove-head",
+        catalog: true
+      }),
+      plugin({
+        id: "b.remove-local",
+        installed: true,
+        installType: "local",
+        catalog: false
+      }),
+      plugin({
+        id: "b.update",
+        installed: true,
+        installedVersion: "1.0.0",
+        availableVersion: "2.0.0",
+        currentCommit: "update-old",
+        availableCommit: "update-new",
+        updateState: "update-available",
+        versionUpdateAvailable: true,
+        safeUpdate: true,
+        catalog: true
+      }),
+      plugin({
+        id: "b.failed",
+        installed: false,
+        catalog: true
+      })
+    ]
+  }
+  const before = JSON.parse(JSON.stringify(snapshot))
+  const reconciled = reconcileActionSnapshot(snapshot, [
+    { id: "b.install", operation: "install", ok: true },
+    { id: "b.remove-catalog", operation: "remove", ok: true },
+    { id: "b.remove-local", operation: "remove", ok: true },
+    { id: "b.update", operation: "update", ok: true },
+    { id: "b.failed", operation: "install", ok: false },
+    { id: "b.okomart", operation: "update", ok: true },
+    { id: "Omarchy shell", operation: "reload", ok: true }
+  ], "b.okomart")
+  const plain = JSON.parse(JSON.stringify(reconciled))
+
+  assert.deepEqual(snapshot, before)
+  assert.equal(plain.plugins.length, 4)
+
+  const installed = plain.plugins.find(item => item.id === "b.install")
+  assert.equal(installed.installed, true)
+  assert.equal(installed.installedVersion, "2.0.0")
+  assert.equal(installed.installedSourceUrl,
+    "https://github.com/example/install.git")
+  assert.equal(installed.currentCommit, "install-head")
+  assert.equal(installed.updateState, "up-to-date")
+
+  const removed = plain.plugins.find(item => item.id === "b.remove-catalog")
+  assert.equal(removed.installed, false)
+  assert.equal("installedPath" in removed, false)
+  assert.equal("updateState" in removed, false)
+  assert.equal(plain.plugins.some(item => item.id === "b.remove-local"), false)
+
+  const updated = plain.plugins.find(item => item.id === "b.update")
+  assert.equal(updated.installedVersion, "2.0.0")
+  assert.equal(updated.currentCommit, "update-new")
+  assert.equal(updated.updateState, "up-to-date")
+  assert.equal(updated.versionUpdateAvailable, false)
+  assert.equal(updated.safeUpdate, false)
+
+  assert.equal(plain.plugins.find(item => item.id === "b.failed").installed, false)
+  assert.equal(plain.self.installedVersion, "0.0.52")
+  assert.equal(plain.self.currentCommit, "self-new")
+  assert.equal(plain.self.versionUpdateAvailable, false)
+  assert.equal(plain.self.safeUpdate, false)
 })
 
 test("compacts high-DPI content only enough to retain the wide layout", () => {
