@@ -111,8 +111,8 @@ test("reconciles successful plugin actions before the next network snapshot", ()
     ok: true,
     snapshotId: "snapshot-before-actions",
     self: {
-      installedVersion: "0.0.52",
-      availableVersion: "0.0.53",
+      installedVersion: "0.0.53",
+      availableVersion: "0.0.54",
       currentCommit: "self-old",
       availableCommit: "self-new",
       updateState: "update-available",
@@ -199,7 +199,7 @@ test("reconciles successful plugin actions before the next network snapshot", ()
   assert.equal(updated.safeUpdate, false)
 
   assert.equal(plain.plugins.find(item => item.id === "b.failed").installed, false)
-  assert.equal(plain.self.installedVersion, "0.0.53")
+  assert.equal(plain.self.installedVersion, "0.0.54")
   assert.equal(plain.self.currentCommit, "self-new")
   assert.equal(plain.self.versionUpdateAvailable, false)
   assert.equal(plain.self.safeUpdate, false)

@@ -61,6 +61,8 @@ FocusScope {
     && (mode !== "updates" || selectedUpdateIds.length > 0)
     && (mode !== "update" || (plugin && plugin.safeUpdate === true))
   readonly property bool hasReviewList: mode === "updates" || mode === "results"
+  readonly property string installSourceUrl: mode === "install"
+    ? OkomartModel.clickableSourceUrl(plugin) : ""
 
   function pluginName(item) {
     return item ? String(item.name || item.id || "plugin") : "plugin"
@@ -127,6 +129,8 @@ FocusScope {
     } else if (reviewScroll.visible && reviewScroll.enabled) {
       out.push(reviewScroll)
     }
+    if (installSourceLink.visible && installSourceLink.enabled)
+      out.push(installSourceLink)
     if (cancelButton.visible && cancelButton.enabled) out.push(cancelButton)
     if (confirmButton.visible && confirmButton.enabled) out.push(confirmButton)
     return out
@@ -168,8 +172,7 @@ FocusScope {
     if (mode === "install") {
       return "Okomart will clone, validate, and enable " + pluginName(plugin)
         + ", then restart the Omarchy shell so every entry point gets a clean load."
-        + " Omarchy plugins run unsandboxed inside the shell. Review the source before continuing.\n\n"
-        + String(plugin && plugin.sourceUrl || "")
+        + " Omarchy plugins run unsandboxed inside the shell. Review the source before continuing."
     }
     if (mode === "remove") {
       var kind = plugin ? String(plugin.installType || "") : ""
@@ -184,6 +187,10 @@ FocusScope {
         + updateTransition(plugin)
     }
     return ""
+  }
+
+  function openInstallSource(url) {
+    if (url !== "" && url === installSourceUrl) Qt.openUrlExternally(url)
   }
 
   function openFor(nextMode, nextPlugin, nextUpdates) {
@@ -298,6 +305,7 @@ FocusScope {
       // height can otherwise push the buttons beyond the card.
       readonly property int visibleItemCount: 3
         + (detailText.visible ? 1 : 0)
+        + (installSourceLink.visible ? 1 : 0)
         + (errorMessage.visible ? 1 : 0)
         + (reviewScroll.visible ? 1 : 0)
       readonly property real contentSpacingHeight:
@@ -306,6 +314,7 @@ FocusScope {
         height
           - titleText.height
           - detailText.height
+          - installSourceLink.height
           - errorMessage.height
           - buttons.height
           - contentSpacingHeight)
@@ -334,6 +343,43 @@ FocusScope {
         font.family: Style.font.family
         font.pixelSize: Style.font.body
         wrapMode: Text.WrapAnywhere
+      }
+
+      Text {
+        id: installSourceLink
+        visible: root.mode === "install" && root.installSourceUrl !== ""
+        height: visible ? implicitHeight : 0
+        width: parent.width
+        text: root.installSourceUrl
+        textFormat: Text.PlainText
+        color: root.accent
+        font.family: Style.font.family
+        font.pixelSize: Style.font.body
+        font.underline: activeFocus || sourceMouse.containsMouse
+        wrapMode: Text.WrapAnywhere
+        activeFocusOnTab: visible
+
+        Keys.onReturnPressed: root.openInstallSource(root.installSourceUrl)
+        Keys.onEnterPressed: root.openInstallSource(root.installSourceUrl)
+        Keys.onSpacePressed: root.openInstallSource(root.installSourceUrl)
+
+        MouseArea {
+          id: sourceMouse
+          anchors.left: parent.left
+          anchors.top: parent.top
+          width: Math.min(parent.width, parent.contentWidth)
+          height: parent.height
+          hoverEnabled: true
+          cursorShape: Qt.PointingHandCursor
+          onClicked: {
+            installSourceLink.forceActiveFocus()
+            root.openInstallSource(root.installSourceUrl)
+          }
+        }
+
+        Accessible.name: "Open plugin source " + text
+        Accessible.description: "Opens in the default browser"
+        Accessible.role: Accessible.Link
       }
 
       Text {
@@ -544,6 +590,7 @@ FocusScope {
         height: Math.max(0, parent.height
           - titleText.height
           - detailText.height
+          - installSourceLink.height
           - errorMessage.height
           - reviewScroll.height
           - buttons.height

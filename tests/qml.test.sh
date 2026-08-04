@@ -547,6 +547,19 @@ grep -Fq 'mode === "update"' "$ROOT_DIR/ActionDialog.qml" \
 grep -Fq 'then restart the Omarchy shell so every entry point gets a clean load' \
   "$ROOT_DIR/ActionDialog.qml" \
   || fail "install confirmation does not disclose its shell restart"
+grep -Fq 'OkomartModel.clickableSourceUrl(plugin)' \
+  "$ROOT_DIR/ActionDialog.qml" \
+  || fail "install confirmation source does not use the tested URL guard"
+grep -Fq 'function openInstallSource(url)' "$ROOT_DIR/ActionDialog.qml" \
+  || fail "install confirmation source link has no guarded opener"
+grep -Fq 'Qt.openUrlExternally(url)' "$ROOT_DIR/ActionDialog.qml" \
+  || fail "install confirmation source does not open externally"
+grep -Fq 'id: installSourceLink' "$ROOT_DIR/ActionDialog.qml" \
+  || fail "install confirmation source is not independently interactive"
+grep -Fq 'Accessible.role: Accessible.Link' "$ROOT_DIR/ActionDialog.qml" \
+  || fail "install confirmation source link is not exposed accessibly"
+grep -Fq 'cursorShape: Qt.PointingHandCursor' "$ROOT_DIR/ActionDialog.qml" \
+  || fail "install confirmation source link does not expose a pointing cursor"
 grep -Fq 'return "Okomart will update " + pluginName(plugin)' \
   "$ROOT_DIR/ActionDialog.qml" \
   || fail "single-plugin update confirmation uses unexpected scope wording"
