@@ -2195,23 +2195,25 @@ worker_command() {
   elif jq -e '
     any(
       (.results // [])[];
-      .operation == "update" and .ok == true
+      (.operation == "install" or .operation == "update") and .ok == true
     )
   ' <<<"$status" >/dev/null 2>&1; then
-    # Omarchy's in-process rescan can leave live loaders or compiled QML at
-    # the same URL attached to the previous checkout. A process restart is the
-    # activation boundary that guarantees every updated plugin runs its new
-    # code. Do this once after the whole action, never once per package.
+    # Omarchy's asynchronous in-process rescan can return from an install
+    # before a newly enabled service finishes loading. It can also leave live
+    # loaders or compiled QML attached to a plugin's previous checkout after
+    # an update. A process restart is the activation boundary that guarantees
+    # every installed or updated plugin gets a clean load. Do this once after
+    # the whole action, never once per package.
     if restart_omarchy_shell; then
       shell_restarted=true
       if resummon_okomart "$source_dir"; then
         runtime_reloaded=true
         resummoned=true
       else
-        reload_error="The Omarchy shell restarted, but Okomart could not reopen to confirm the updated plugin runtime."
+        reload_error="The Omarchy shell restarted, but Okomart could not reopen to confirm the plugin runtime."
       fi
     else
-      reload_error="The plugin code was updated, but the Omarchy shell could not restart automatically. $SHELL_RESTART_ERROR"
+      reload_error="The plugin change succeeded, but the Omarchy shell could not restart automatically. $SHELL_RESTART_ERROR"
     fi
 
     if [[ -n $reload_error ]]; then

@@ -544,6 +544,9 @@ grep -Fq 'mode === "updates"' "$ROOT_DIR/ActionDialog.qml" \
   || fail "update confirmation mode is missing"
 grep -Fq 'mode === "update"' "$ROOT_DIR/ActionDialog.qml" \
   || fail "single-plugin update confirmation mode is missing"
+grep -Fq 'then restart the Omarchy shell so every entry point gets a clean load' \
+  "$ROOT_DIR/ActionDialog.qml" \
+  || fail "install confirmation does not disclose its shell restart"
 grep -Fq 'return "Okomart will update " + pluginName(plugin)' \
   "$ROOT_DIR/ActionDialog.qml" \
   || fail "single-plugin update confirmation uses unexpected scope wording"

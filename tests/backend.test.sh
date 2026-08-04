@@ -1048,9 +1048,14 @@ assert_eq \
   "plugin add $GAMMA_URL --enable --yes" \
   "$(grep '^plugin add ' "$MOCK_LOG")" \
   "install action uses the catalog URL and official add-and-enable CLI"
+assert_eq \
+  $'restart shell\nshell:shell summon b.okomart\nshell:shell call b.okomart runtimeVersion ' \
+  "$(grep -v '^plugin add ' "$MOCK_LOG")" \
+  "install action restarts the shell and verifies the new plugin runtime"
 assert_jq "$TMP/action-install.json" \
-  '.ok and (.running|not) and .resummoned and .results[0].id=="b.gamma"' \
-  "install action records an atomic successful result and re-summons Okomart"
+  '.ok and (.running|not) and .shellRestarted and .runtimeReloaded
+    and .resummoned and .results[0].id=="b.gamma"' \
+  "install action records an atomic successful result and a clean runtime load"
 
 advance_plugin gamma 2.0.0
 : >"$MOCK_LOG"

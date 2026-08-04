@@ -167,7 +167,8 @@ FocusScope {
   function detailMessage() {
     if (mode === "install") {
       return "Okomart will clone, validate, and enable " + pluginName(plugin)
-        + ". Omarchy plugins run unsandboxed inside the shell. Review the source before continuing.\n\n"
+        + ", then restart the Omarchy shell so every entry point gets a clean load."
+        + " Omarchy plugins run unsandboxed inside the shell. Review the source before continuing.\n\n"
         + String(plugin && plugin.sourceUrl || "")
     }
     if (mode === "remove") {
