@@ -1,0 +1,22 @@
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.codex
+
+# JavaScript dependencies and test output
+node_modules/
+coverage/
+.nyc_output/
+
+# Logs and local environment overrides
+*.log
+.env
+.env.*
+!.env.example
