@@ -12,3 +12,4 @@ https://github.com/brianblakely/omadoro.git
 https://github.com/nightdevil00/bt.codecs.git
 https://github.com/yuters/omarchy-flight-radar.git
 https://github.com/brianblakely/omarchy-codex-notifications.git
+https://github.com/keithnyc/omanetwatch.git
