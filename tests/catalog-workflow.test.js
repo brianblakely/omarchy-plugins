@@ -9,6 +9,12 @@ const workflow = readFileSync(
 )
 const registry = readFileSync(resolve(ROOT, "plugins.txt"), "utf8")
 const readme = readFileSync(resolve(ROOT, "README.md"), "utf8")
+const generator = readFileSync(
+  resolve(ROOT, "scripts/generate-plugin-catalog.mjs"),
+  "utf8"
+)
+const backend = readFileSync(resolve(ROOT, "bin/okomart"), "utf8")
+const marketplaceRegistryUrl = "https://raw.githubusercontent.com/HANCORE-linux/omarchy-plugin-marketplace/refs/heads/main/registry.json"
 const expectedUrls = [
   "https://github.com/brianblakely/blink.git",
   "https://github.com/brianblakely/omacal.git",
@@ -22,7 +28,9 @@ const expectedUrls = [
   "https://github.com/mwikala/omarchy-world-time.git",
   "https://github.com/brianblakely/omadoro.git",
   "https://github.com/nightdevil00/bt.codecs.git",
-  "https://github.com/yuters/omarchy-flight-radar.git"
+  "https://github.com/yuters/omarchy-flight-radar.git",
+  "https://github.com/brianblakely/omarchy-codex-notifications.git",
+  "https://github.com/keithnyc/omanetwatch.git"
 ]
 let passed = 0
 
@@ -32,12 +40,12 @@ function test(name, callback) {
   process.stdout.write(`ok ${passed} - ${name}\n`)
 }
 
-test("plugins.txt contains the thirteen canonical standalone URLs in deterministic order", () => {
+test("plugins.txt contains the fifteen locally curated standalone URLs in deterministic order", () => {
   assert.equal(registry.endsWith("\n"), true)
   assert.deepEqual(registry.trimEnd().split("\n"), expectedUrls)
 })
 
-test("workflow has only the requested registry push and manual triggers", () => {
+test("workflow refreshes after plugins.txt changes and on demand", () => {
   assert.match(workflow, /^on:\n {2}push:\n {4}paths:\n {6}- plugins\.txt\n {2}workflow_dispatch:\n/m)
   assert.doesNotMatch(workflow, /\bpull_request:/)
   assert.doesNotMatch(workflow, /\bschedule:/)
@@ -53,6 +61,11 @@ test("workflow uses the current official checkout major and local generator", ()
   assert.match(workflow, /name: Generate the alphabetized catalog table/)
   assert.match(workflow, /run: node scripts\/generate-plugin-catalog\.mjs/)
   assert.equal((workflow.match(/\buses:/g) || []).length, 1)
+})
+
+test("only runtime uses the external marketplace registry", () => {
+  assert.equal(generator.split(marketplaceRegistryUrl).length - 1, 0)
+  assert.equal(backend.split(marketplaceRegistryUrl).length - 1, 1)
 })
 
 test("workflow rejects unrelated changes and stages only README before pushing", () => {
@@ -82,8 +95,21 @@ test("README exposes exactly one marker-owned generated catalog region", () => {
     readme.indexOf("<!-- BEGIN GENERATED PLUGIN CATALOG -->"),
     readme.indexOf("<!-- END GENERATED PLUGIN CATALOG -->")
   )
-  const names = generated.split("\n")
+  const rows = generated.split("\n")
     .filter(line => line.startsWith("| ["))
+  const urls = rows.map(line => {
+    const match = line.match(/\]\(<(https:[^>]+)>\)/u)
+    assert.ok(match, `could not parse generated catalog URL: ${line}`)
+    return match[1]
+  })
+  const identities = urls.map(url => {
+    const parsed = new URL(url)
+    return parsed.hostname === "github.com" ? url.toLowerCase() : url
+  })
+  assert.equal(new Set(identities).size, identities.length)
+  assert.deepEqual(urls.slice().sort(), expectedUrls.slice().sort())
+
+  const names = rows
     .map(line => {
       const match = line.match(/^\| \[((?:\\.|[^\]])+)\]\(<https:/u)
       assert.ok(match, `could not parse generated catalog row: ${line}`)

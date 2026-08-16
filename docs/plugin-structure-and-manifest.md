@@ -7,8 +7,9 @@ Use this reference when creating or changing plugin folders, entry points, manif
 An installable Omarchy plugin is one Git repository with `manifest.json` at the repository root. `omarchy plugin add <git-url>` clones that repository and validates its root as one plugin.
 
 This repository deliberately has two layers. Its root is the installable
-`b.okomart` plugin and the repository also acts as Okomart's catalog.
-`plugins.txt` lists independently installable plugin repositories by URL:
+`b.okomart` plugin and the repository also acts as Okomart's local catalog.
+`plugins.txt` lists locally curated, independently installable plugin
+repositories by URL:
 
 ```text
 omarchy-plugins/
@@ -25,19 +26,32 @@ omarchy-plugins/
 The root repository is a valid argument to `omarchy plugin add` because it is
 exactly one plugin: Okomart. Installing it does not install the catalog entries.
 The installer still cannot select a subdirectory from a remote repository.
-Every catalog entry therefore needs its own real Git URL in `plugins.txt`, and
-its manifest must remain at that repository's root. Do not add or document a
-per-plugin URL until that standalone repository actually exists.
+Every locally curated catalog entry therefore needs its own real Git URL in
+`plugins.txt`, and its manifest must remain at that repository's root. Do not
+add or document a per-plugin URL until that standalone repository actually
+exists.
 
-The registry format is deliberately small and strict: one canonical public
-HTTPS URL ending in `.git` per line, no blank lines, and no duplicates. Okomart
-checks the registered repositories and actual installation uses the exact
-standalone URL from `plugins.txt`.
+The local registry format is deliberately small and strict: one canonical
+public HTTPS URL ending in `.git` per line, no blank lines, and no duplicates.
+Okomart merges those URLs with the compatible entries from the HANCORE
+marketplace's public
+[`registry.json`](https://raw.githubusercontent.com/HANCORE-linux/omarchy-plugin-marketplace/refs/heads/main/registry.json).
+It imports only `plugin-source` entries that describe one root plugin and do
+not declare manual installation, and it excludes shell suites, multi-plugin
+repositories, nested manifests, and Okomart itself. HANCORE GitHub repository
+root URLs are normalized to HTTPS `.git` clone URLs.
 
-The marker-owned README catalog is documentation derived from the registry.
-`node scripts/generate-plugin-catalog.mjs` clones each URL, reads the root
-manifest's `name`, `author`, and `description`, validates those fields, escapes
-them for a Markdown table, and replaces only the generated region.
+The local list is merged first, so it wins when both sources name the same
+GitHub repository. GitHub repository identity is compared case-insensitively
+after clone-URL normalization, and each effective URL is fetched only once.
+Actual installation uses that deduplicated standalone URL.
+
+The marker-owned README catalog documents only the locally curated
+`plugins.txt` entries; external runtime entries are intentionally not mirrored
+into the README. `node scripts/generate-plugin-catalog.mjs` clones each local
+URL, reads the root manifest's `name`, `author`, and `description`, validates
+those fields, escapes them for a Markdown table, and replaces only the
+generated region.
 
 Installed plugins live at `~/.config/omarchy/plugins/<id>/`. The destination
 name is determined by `manifest.id`, not by the remote repository or local

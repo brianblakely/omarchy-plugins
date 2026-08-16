@@ -14,7 +14,7 @@ export GIT_CONFIG_NOSYSTEM=1
 export GIT_CONFIG_GLOBAL="$TMP/gitconfig"
 export GIT_TERMINAL_PROMPT=0
 PLUGINS_DIR="$HOME/.config/omarchy/plugins"
-PLUGIN_URL_ROOT="https://plugins.example.test"
+PLUGIN_URL_ROOT="https://github.com/okomart-tests"
 ALPHA_URL="$PLUGIN_URL_ROOT/alpha.git"
 BETA_URL="$PLUGIN_URL_ROOT/beta.git"
 GAMMA_URL="$PLUGIN_URL_ROOT/gamma.git"
@@ -130,7 +130,9 @@ assert_stale_cache_integrity() {
 REAL_TIMEOUT_BIN="$(command -v timeout)"
 REAL_TAR_BIN="$(command -v tar)"
 TIMEOUT_LOG="$TMP/timeout.log"
-export REAL_TIMEOUT_BIN REAL_TAR_BIN TIMEOUT_LOG
+MARKETPLACE_FIXTURE="$TMP/marketplace-registry.json"
+printf '%s\n' '{"sources":[]}' >"$MARKETPLACE_FIXTURE"
+export REAL_TIMEOUT_BIN REAL_TAR_BIN TIMEOUT_LOG MARKETPLACE_FIXTURE
 cat >"$TMP/bin/timeout" <<'MOCK'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$TIMEOUT_LOG"
@@ -151,7 +153,24 @@ if [[ ${MOCK_TAR_FAILURE:-} == 1 ]]; then
 fi
 exec "$REAL_TAR_BIN" "$@"
 MOCK
-chmod +x "$TMP/bin/timeout" "$TMP/bin/tar"
+cat >"$TMP/bin/curl" <<'MOCK'
+#!/usr/bin/env bash
+set -u
+output=""
+while (( $# > 0 )); do
+  case "$1" in
+  --output)
+    output="${2:-}"
+    shift 2
+    ;;
+  *) shift ;;
+  esac
+done
+[[ -n $output ]] || exit 90
+[[ ${MOCK_MARKETPLACE_FETCH_FAILURE:-0} != 1 ]] || exit 91
+cp -- "$MARKETPLACE_FIXTURE" "$output"
+MOCK
+chmod +x "$TMP/bin/timeout" "$TMP/bin/tar" "$TMP/bin/curl"
 export PATH="$TMP/bin:$PATH"
 
 HYPRCTL_LOG="$TMP/hyprctl.log"
@@ -382,6 +401,66 @@ git -C "$CATALOG_WORK" push -q -u origin main
 
 SOURCE="$TMP/source"
 git clone -q --no-recurse-submodules "$CATALOG_REMOTE" "$SOURCE"
+
+jq -n \
+  --arg alpha "${ALPHA_URL%.git}" \
+  --arg gamma "${GAMMA_URL%.git}" \
+  '{
+    sources:[
+      {repo:$alpha,type:"plugin-source",plugins:{"b.alpha":{}}},
+      {repo:$gamma,type:"plugin-source",plugins:{"b.gamma":{}}},
+      {
+        repo:"https://github.com/okomart-tests/manual",
+        type:"plugin-source",
+        plugins:{
+          "b.manual":{
+            installation:{mode:"manual",note:"Follow upstream setup."}
+          }
+        }
+      },
+      {
+        repo:"https://github.com/okomart-tests/monorepo",
+        type:"plugin-source",
+        plugins:{"b.one":{},"b.two":{}}
+      },
+      {
+        repo:"https://github.com/okomart-tests/suite",
+        type:"suite"
+      },
+      {
+        repo:"https://github.com/brianblakely/omarchy-plugins",
+        type:"plugin-source",
+        plugins:{"b.okomart":{}}
+      }
+    ]
+  }' >"$MARKETPLACE_FIXTURE"
+MERGED_SNAPSHOT="$TMP/snapshot-merged-registries.json"
+XDG_CACHE_HOME="$TMP/merged-registry-cache" \
+XDG_STATE_HOME="$TMP/merged-registry-state" \
+  "$OKOMART" snapshot "$SOURCE" >"$MERGED_SNAPSHOT"
+assert_jq "$MERGED_SNAPSHOT" \
+  '.ok and (.stale|not)
+    and ([.plugins[].id]|sort)==["b.alpha","b.beta","b.gamma"]
+    and ([.plugins[]|select(.id=="b.alpha")]|length)==1
+    and ([.plugins[]|select(.id=="b.gamma")][0].sourceUrl
+      =="https://github.com/okomart-tests/gamma.git")
+    and (.catalogErrors|length)==1' \
+  "local and HANCORE registries merge compatible repositories without duplicates"
+[[ $(jq -r '.catalogCommit' "$MERGED_SNAPSHOT") != \
+  $(git -C "$CATALOG_WORK" rev-parse HEAD) ]] ||
+  fail "merged catalog revision ignored the external registry"
+pass "merged catalog revision identifies the effective two-source registry"
+MOCK_MARKETPLACE_FETCH_FAILURE=1 \
+XDG_CACHE_HOME="$TMP/merged-registry-cache" \
+XDG_STATE_HOME="$TMP/merged-registry-state" \
+  "$OKOMART" snapshot "$SOURCE" >"$TMP/snapshot-marketplace-offline.json"
+assert_jq "$TMP/snapshot-marketplace-offline.json" \
+  '.ok and .stale
+    and .error=="Could not fetch the HANCORE marketplace registry."
+    and .catalogCommit=="'"$(jq -r '.catalogCommit' "$MERGED_SNAPSHOT")"'"
+    and ([.plugins[].id]|sort)==["b.alpha","b.beta","b.gamma"]' \
+  "an unavailable external registry preserves the last merged catalog"
+printf '%s\n' '{"sources":[]}' >"$MARKETPLACE_FIXTURE"
 
 OFFICIAL_CATALOG_URL="https://github.com/brianblakely/omarchy-plugins.git"
 OFFICIAL_SSH_SOURCE="$TMP/official-ssh-source"

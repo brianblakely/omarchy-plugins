@@ -167,6 +167,10 @@ test("rejects blank, duplicate, non-HTTPS, and non-.git registry entries before 
       "https://example.test/alpha.git\nhttps://example.test/alpha.git\n",
       /duplicate URL/
     ],
+    [
+      "https://github.com/Example/alpha.git\nhttps://github.com/example/ALPHA.git\n",
+      /duplicate URL/
+    ],
     ["http://example.test/alpha.git\n", /must use https/],
     ["https://example.test/alpha\n", /must end in \.git/],
     [

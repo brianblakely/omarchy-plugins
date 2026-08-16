@@ -53,29 +53,29 @@ function requireRegularFile(path, label) {
   return stat
 }
 
-function canonicalPluginUrl(value, lineNumber) {
+function canonicalPluginUrl(value, label) {
   if (value.length === 0)
-    fail(`plugins.txt line ${lineNumber} is blank`)
+    fail(`${label} is blank`)
   if (value.trim() !== value || /[\u0000-\u001f\u007f]/u.test(value))
-    fail(`plugins.txt line ${lineNumber} contains whitespace or control characters`)
+    fail(`${label} contains whitespace or control characters`)
   if (!value.endsWith(".git"))
-    fail(`plugins.txt line ${lineNumber} must end in .git`)
+    fail(`${label} must end in .git`)
   if (value.includes("%"))
-    fail(`plugins.txt line ${lineNumber} must use a canonical public DNS URL`)
+    fail(`${label} must use a canonical public DNS URL`)
 
   let parsed
   try {
     parsed = new URL(value)
   } catch {
-    fail(`plugins.txt line ${lineNumber} is not a valid URL`)
+    fail(`${label} is not a valid URL`)
   }
   if (parsed.protocol !== "https:")
-    fail(`plugins.txt line ${lineNumber} must use https`)
+    fail(`${label} must use https`)
   if (!parsed.hostname || parsed.username || parsed.password
       || parsed.search || parsed.hash)
-    fail(`plugins.txt line ${lineNumber} is not a public canonical HTTPS URL`)
+    fail(`${label} is not a public canonical HTTPS URL`)
   if (parsed.href !== value)
-    fail(`plugins.txt line ${lineNumber} is not in canonical URL form`)
+    fail(`${label} is not in canonical URL form`)
   const labels = parsed.hostname.split(".")
   if (labels.length < 2
       || parsed.hostname.length > 253
@@ -85,9 +85,9 @@ function canonicalPluginUrl(value, lineNumber) {
         || label.length > 63
         || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u.test(label))
       || parsed.port === "0")
-    fail(`plugins.txt line ${lineNumber} must use a canonical public DNS URL`)
+    fail(`${label} must use a canonical public DNS URL`)
   if (!/^\/[-A-Za-z0-9._~/]+\.git$/u.test(parsed.pathname))
-    fail(`plugins.txt line ${lineNumber} must use a canonical repository path`)
+    fail(`${label} must use a canonical repository path`)
   return value
 }
 
@@ -101,13 +101,21 @@ function readRegistry(path) {
 
   const seen = new Set()
   const urls = source.split("\n").map((line, index) => {
-    const url = canonicalPluginUrl(line, index + 1)
-    if (seen.has(url))
+    const url = canonicalPluginUrl(line, `plugins.txt line ${index + 1}`)
+    const identity = repositoryIdentity(url)
+    if (seen.has(identity))
       fail(`plugins.txt contains a duplicate URL: ${url}`)
-    seen.add(url)
+    seen.add(identity)
     return url
   })
   return urls.sort(compareCodeUnits)
+}
+
+function repositoryIdentity(url) {
+  const parsed = new URL(url)
+  if (parsed.hostname === "github.com")
+    return `${parsed.protocol}//${parsed.host}${parsed.pathname}`.toLowerCase()
+  return parsed.href
 }
 
 function normalizedMetadata(value, field, url) {

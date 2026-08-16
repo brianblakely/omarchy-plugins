@@ -13,6 +13,8 @@ export LC_ALL=C
 
 OKOMART_ID="b.okomart"
 OFFICIAL_CATALOG_URL="https://github.com/brianblakely/omarchy-plugins.git"
+MARKETPLACE_REGISTRY_URL="https://raw.githubusercontent.com/HANCORE-linux/omarchy-plugin-marketplace/refs/heads/main/registry.json"
+MARKETPLACE_REGISTRY_MAXIMUM_BYTES=$((1024 * 1024))
 SCRIPT_PATH="$(realpath -m -- "${BASH_SOURCE[0]}")"
 
 json_error() {
@@ -362,6 +364,23 @@ valid_registry_url() {
   esac
 }
 
+registry_url_identity() {
+  local url="$1"
+  case "${url,,}" in
+  https://github.com/*) printf '%s\n' "${url,,}" ;;
+  *) printf '%s\n' "$url" ;;
+  esac
+}
+
+canonical_marketplace_repository_url() {
+  local url="${1:-}"
+  [[ $url =~ ^https://github\.com/[-A-Za-z0-9._]+/[-A-Za-z0-9._]+(\.git)?$ ]] ||
+    return 1
+  [[ $url == *.git ]] || url="$url.git"
+  valid_registry_url "$url" || return 1
+  printf '%s\n' "$url"
+}
+
 MIRROR_COMMIT=""
 fetch_mirror_head() {
   local target="$1"
@@ -465,11 +484,29 @@ fetch_mirror_head() {
 }
 
 REGISTRY_URLS=()
+declare -A REGISTRY_URL_IDENTITIES=()
+MARKETPLACE_IMPORTED_URLS=0
+
+append_registry_url() {
+  local url="$1"
+  local duplicate_policy="${2:-reject}"
+  local identity
+  identity="$(registry_url_identity "$url")"
+  if [[ -n ${REGISTRY_URL_IDENTITIES[$identity]+x} ]]; then
+    [[ $duplicate_policy == skip ]]
+    return
+  fi
+  REGISTRY_URL_IDENTITIES[$identity]=1
+  REGISTRY_URLS+=("$url")
+}
+
 parse_registry_urls() {
   local mirror="$1"
   local commit="$2"
   local list_file="$3"
   REGISTRY_URLS=()
+  REGISTRY_URL_IDENTITIES=()
+  MARKETPLACE_IMPORTED_URLS=0
 
   local mode type
   read -r mode type _ _ < <(git -C "$mirror" ls-tree "$commit" -- plugins.txt)
@@ -485,7 +522,7 @@ parse_registry_urls() {
   git -C "$mirror" show "$commit:plugins.txt" >"$list_file" 2>/dev/null ||
     return 1
 
-  local line seen_url read_status
+  local line read_status
   while true; do
     line=""
     if IFS= read -r line; then
@@ -499,13 +536,87 @@ parse_registry_urls() {
     fi
     [[ -n $line ]] || return 1
     valid_registry_url "$line" || return 1
-    for seen_url in "${REGISTRY_URLS[@]}"; do
-      [[ $seen_url != "$line" ]] || return 1
-    done
-    REGISTRY_URLS+=("$line")
+    append_registry_url "$line" reject || return 1
     (( read_status == 0 )) || break
   done <"$list_file"
   (( ${#REGISTRY_URLS[@]} > 0 ))
+}
+
+fetch_marketplace_registry() {
+  local destination="$1"
+  curl --fail --silent --show-error --location \
+    --proto '=https' --proto-redir '=https' \
+    --connect-timeout 10 --max-time 30 \
+    --max-filesize "$MARKETPLACE_REGISTRY_MAXIMUM_BYTES" \
+    --user-agent 'Okomart marketplace registry fetcher' \
+    --output "$destination" \
+    "$MARKETPLACE_REGISTRY_URL" >/dev/null 2>&1 || return 1
+  [[ -f $destination && ! -L $destination ]] || return 1
+  (( $(stat -c %s -- "$destination" 2>/dev/null) <=
+    MARKETPLACE_REGISTRY_MAXIMUM_BYTES ))
+}
+
+parse_marketplace_registry() {
+  local registry="$1"
+  [[ -f $registry && ! -L $registry ]] || return 1
+  jq -e '
+      type == "object"
+      and (.sources | type == "array")
+      and all(.sources[];
+        type == "object"
+        and (.type | type == "string")
+        and if .type == "plugin-source" then
+          (.repo | type == "string")
+          and (.plugins | type == "object" and length > 0)
+          and all(.plugins | to_entries[];
+            (.key | type == "string"
+              and test("^[A-Za-z0-9][A-Za-z0-9._-]*$"))
+            and (.value | type == "object")
+            and ((.value.manifestPath? // "manifest.json") | type == "string")
+            and ((.value.installation? // null) as $installation
+              | $installation == null
+                or ($installation | type == "object"
+                  and .mode == "manual"
+                  and (.note | type == "string" and test("\\S")))))
+        else true end)
+    ' "$registry" >/dev/null 2>&1 || return 1
+
+  local plugin_id repository url before
+  while IFS=$'\t' read -r plugin_id repository; do
+    [[ -n $plugin_id && -n $repository ]] || return 1
+    [[ $plugin_id != "$OKOMART_ID" ]] || continue
+    url="$(canonical_marketplace_repository_url "$repository")" || return 1
+    [[ $(registry_url_identity "$url") != \
+      $(registry_url_identity "$OFFICIAL_CATALOG_URL") ]] || continue
+    before=${#REGISTRY_URLS[@]}
+    append_registry_url "$url" skip || return 1
+    if (( ${#REGISTRY_URLS[@]} > before )); then
+      MARKETPLACE_IMPORTED_URLS=$((MARKETPLACE_IMPORTED_URLS + 1))
+    fi
+  done < <(
+    jq -r '
+      .sources[]
+      | select(.type == "plugin-source")
+      | select((.plugins | length) == 1)
+      | (.plugins | to_entries[0]) as $plugin
+      | select(($plugin.value.manifestPath? // "manifest.json") == "manifest.json")
+      | select($plugin.value.installation? == null)
+      | [$plugin.key, .repo]
+      | @tsv
+    ' "$registry"
+  )
+}
+
+catalog_registry_revision() {
+  local registry_commit="$1"
+  if (( MARKETPLACE_IMPORTED_URLS == 0 )); then
+    printf '%s\n' "$registry_commit"
+    return
+  fi
+  {
+    printf '%s\0' "$registry_commit"
+    printf '%s\0' "${REGISTRY_URLS[@]}"
+  } | sha256sum | awk '{print $1}'
 }
 
 materialize_cached_commit() {
@@ -575,6 +686,30 @@ refresh_catalog() {
   fi
   rm -f -- "$list_file"
 
+  local marketplace_file
+  marketplace_file="$(mktemp "$STATE_ROOT/.marketplace-registry.XXXXXX")" || {
+    REFRESH_ERROR="Could not prepare the HANCORE marketplace registry."
+    return 1
+  }
+  if ! fetch_marketplace_registry "$marketplace_file"; then
+    rm -f -- "$marketplace_file"
+    REFRESH_ERROR="Could not fetch the HANCORE marketplace registry."
+    return 1
+  fi
+  if ! parse_marketplace_registry "$marketplace_file"; then
+    rm -f -- "$marketplace_file"
+    REFRESH_ERROR="The HANCORE marketplace registry is invalid."
+    return 1
+  fi
+  rm -f -- "$marketplace_file"
+
+  local catalog_revision
+  catalog_revision="$(catalog_registry_revision "$registry_commit")"
+  [[ $catalog_revision =~ ^[0-9a-f]{40,64}$ ]] || {
+    REFRESH_ERROR="Could not identify the merged catalog registry."
+    return 1
+  }
+
   local plugin_url key mirror
   for plugin_url in "${REGISTRY_URLS[@]}"; do
     key="$(printf '%s' "$plugin_url" | sha256sum | awk '{print $1}')"
@@ -615,7 +750,7 @@ refresh_catalog() {
     fi
   done
 
-  if ! build_catalog_index "$stage" "$registry_commit" "$index_output"; then
+  if ! build_catalog_index "$stage" "$catalog_revision" "$index_output"; then
     safe_remove_cache_stage "$stage" >/dev/null 2>&1 || true
     REFRESH_ERROR="Could not build a valid catalog index."
     return 1
@@ -2449,6 +2584,8 @@ main() {
   require_tool tar
   require_tool timeout
   require_tool sort
+  require_tool curl
+  require_tool stat
   init_paths
 
   case "$command" in

@@ -20,13 +20,16 @@ This repository is the one intentional dual-purpose case:
 
 - The root is the installable `b.okomart` plugin, published at
   `https://github.com/brianblakely/omarchy-plugins.git`.
-- `plugins.txt` lists separate installable plugin repositories by their
+- `plugins.txt` lists locally curated installable plugin repositories by their
   canonical public HTTPS `.git` URLs.
+- Okomart also imports compatible standalone repositories from the HANCORE
+  marketplace registry, with local URLs taking precedence when the sources
+  overlap.
 
 Installing Okomart does not install or embed a catalog repository. The current
 CLI still cannot select a plugin subdirectory from a remote repository. Publish
-catalog installation commands only with the real standalone URL recorded in
-`plugins.txt`; do not substitute the Okomart catalog URL, sparse-checkout
+catalog installation commands only with the real standalone URL from the
+merged catalog; do not substitute the Okomart catalog URL, sparse-checkout
 recipe, synthetic source id, or undocumented subdirectory syntax.
 
 ## Install And Enable
@@ -140,10 +143,13 @@ Validate Okomart from this repository root:
 omarchy plugin validate .
 ```
 
-Validate each catalog plugin from the root of its standalone repository before
-adding its URL to `plugins.txt`. The README generator requires nonblank
-`name`, `author`, and `description` strings, but that metadata check is not a
-substitute for `omarchy plugin validate .`.
+Validate each locally curated catalog plugin from the root of its standalone
+repository before adding its URL to `plugins.txt`. Externally sourced entries
+must satisfy the HANCORE registry's one-root-plugin contract before Okomart
+imports them. For local `plugins.txt` entries, the README generator requires
+nonblank `name`, `author`, and `description` strings, but that metadata check is
+not a substitute for `omarchy plugin validate .`. External entries are not
+included in the README table.
 
 The current validator checks:
 
@@ -216,8 +222,8 @@ source and the documented command, file, and network behavior before installing 
 
 Replace every angle-bracket placeholder before publishing. The finished plugin
 README should contain a real URL and copy-pastable commands. The catalog URL is
-correct only for Okomart itself; use each `plugins.txt` standalone URL for catalog
-plugins.
+correct only for Okomart itself; use each plugin's standalone URL from the
+merged catalog for catalog plugins.
 
 ## Pre-Publish Checklist
 
@@ -230,8 +236,11 @@ Before announcing or tagging a release, verify:
       repository.
 - [ ] The actual public repository URL exists. Only Okomart uses the catalog
       repository URL as its install URL.
-- [ ] A catalog URL is a unique canonical public HTTPS URL ending in `.git`,
-      recorded as one nonblank `plugins.txt` line.
+- [ ] A locally curated catalog URL is a unique canonical public HTTPS URL
+      ending in `.git`, recorded as one nonblank `plugins.txt` line.
+- [ ] An externally sourced URL is a compatible root plugin entry in the
+      HANCORE marketplace registry and remains unique after normalization with
+      the local list.
 - [ ] `node scripts/generate-plugin-catalog.mjs` succeeds and the marker-owned
       README table is current.
 - [ ] The plugin contains no symlinks, install hooks, post-install scripts, or privileged setup.
