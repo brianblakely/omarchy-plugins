@@ -87,5 +87,6 @@ against
 | [Omashot](<https://github.com/brianblakely/omasnap.git>) | Brian Blakely | Screenshot and screen-recording overlay for Omarchy |
 | [Omastonk](<https://github.com/brianblakely/omastonk.git>) | Brian Blakely | Omarchy bar widget for a selected market symbol |
 | [Peek](<https://github.com/brianblakely/peek.git>) | Brian Blakely | Fades floating Hyprland windows to minimal opacity so you can see and interact with the content underneath |
+| [Sound Blaster](<https://github.com/VillainRU/omarchy-soundblaster.git>) | VillainRU | Show device-aware output icons for supported Creative Sound Blaster hardware in the Omarchy audio widget. |
 | [World Time](<https://github.com/mwikala/omarchy-world-time.git>) | Mwikala Kangwa | Compare a selected time across time zones. |
 <!-- END GENERATED PLUGIN CATALOG -->
