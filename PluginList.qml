@@ -85,7 +85,9 @@ FocusScope {
     if (event.key === Qt.Key_Down || event.key === Qt.Key_J) {
       move(1); event.accepted = true
     } else if (event.key === Qt.Key_Up || event.key === Qt.Key_K) {
-      if (list.currentIndex <= 0) root.searchRequested()
+      if (list.currentIndex <= 0) {
+        if (!event.isAutoRepeat) root.searchRequested()
+      }
       else move(-1)
       event.accepted = true
     } else if (event.key === Qt.Key_Right || event.key === Qt.Key_L) {
@@ -96,11 +98,11 @@ FocusScope {
       movePage(1); event.accepted = true
     } else if (event.key === Qt.Key_PageUp) {
       movePage(-1); event.accepted = true
-    } else if (event.key === Qt.Key_Home) {
+    } else if (event.key === Qt.Key_Home || event.text === "g") {
       if (plugins.length > 0) list.currentIndex = 0
       list.positionViewAtBeginning()
       event.accepted = true
-    } else if (event.key === Qt.Key_End) {
+    } else if (event.key === Qt.Key_End || event.text === "G") {
       if (plugins.length > 0) list.currentIndex = plugins.length - 1
       list.positionViewAtEnd()
       event.accepted = true

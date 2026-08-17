@@ -475,17 +475,18 @@ FocusScope {
       Item { width: 1; height: Style.space(2) }
     }
 
-    Text {
-      visible: !root.hasPlugin
-      width: Math.max(0, detailsScroll.availableWidth - Style.space(20))
-      anchors.centerIn: parent
-      text: "Select a plugin to see its details."
-      color: Util.alpha(root.foreground, 0.68)
-      font.family: Style.font.family
-      font.pixelSize: Style.font.body
-      horizontalAlignment: Text.AlignHCenter
-      wrapMode: Text.WordWrap
-    }
+  }
+
+  Text {
+    visible: !root.hasPlugin
+    width: Math.max(0, root.width - Style.space(20))
+    anchors.centerIn: root
+    text: "Select a plugin to see its details."
+    color: Util.alpha(root.foreground, 0.68)
+    font.family: Style.font.family
+    font.pixelSize: Style.font.body
+    horizontalAlignment: Text.AlignHCenter
+    wrapMode: Text.WordWrap
   }
 
   Accessible.name: root.hasPlugin

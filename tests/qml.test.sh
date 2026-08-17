@@ -228,6 +228,16 @@ grep -Fq 'event.key === Qt.Key_Down || event.key === Qt.Key_J' \
 grep -Fq 'event.key === Qt.Key_Up || event.key === Qt.Key_K' \
   "$ROOT_DIR/PluginList.qml" \
   || fail "plugin-list K navigation is missing"
+grep -Fq 'event.key === Qt.Key_Home || event.text === "g"' \
+  "$ROOT_DIR/PluginList.qml" \
+  || fail "lowercase g does not select the first plugin"
+grep -Fq 'event.key === Qt.Key_End || event.text === "G"' \
+  "$ROOT_DIR/PluginList.qml" \
+  || fail "uppercase G does not select the last plugin"
+grep -Fq 'list.positionViewAtBeginning()' "$ROOT_DIR/PluginList.qml" \
+  || fail "first-plugin navigation does not reveal the top of the list"
+grep -Fq 'list.positionViewAtEnd()' "$ROOT_DIR/PluginList.qml" \
+  || fail "last-plugin navigation does not reveal the bottom of the list"
 grep -Fq 'event.key === Qt.Key_Right || event.key === Qt.Key_L' \
   "$ROOT_DIR/PluginList.qml" \
   || fail "plugin-list detail handoff is missing its L alias"
@@ -235,9 +245,13 @@ grep -Fq 'signal detailsRequested(var plugin)' "$ROOT_DIR/PluginList.qml" \
   || fail "plugin list does not expose directional detail focus"
 grep -Fq 'signal searchRequested()' "$ROOT_DIR/PluginList.qml" \
   || fail "plugin list does not expose its top-boundary search handoff"
-grep -Fq 'if (list.currentIndex <= 0) root.searchRequested()' \
+grep -Fq 'if (!event.isAutoRepeat) root.searchRequested()' \
   "$ROOT_DIR/PluginList.qml" \
-  || fail "up from the first plugin does not focus search"
+  || fail "plugin-list key repeat can carry focus past the first entry"
+if grep -Fq 'if (list.currentIndex <= 0) root.searchRequested()' \
+    "$ROOT_DIR/PluginList.qml"; then
+  fail "up from the first plugin still hands off during key repeat"
+fi
 grep -Fq 'if (indexForId(selectedId) !== list.currentIndex)' \
   "$ROOT_DIR/PluginList.qml" \
   || fail "list navigation still queues redundant selection resynchronization"
@@ -285,6 +299,14 @@ grep -Fq 'modelData.installed === true' "$ROOT_DIR/PluginList.qml" \
   || fail "plugin-list installed marker does not use the catalog installation state"
 grep -Fq 'contentHeight: detailsColumn.implicitHeight' "$ROOT_DIR/PluginDetails.qml" \
   || fail "plugin details do not expose their scrollable content height"
+grep -Fq 'text: "Select a plugin to see its details."' \
+  "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin details are missing their empty selection prompt"
+grep -Fq 'anchors.centerIn: root' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "empty plugin selection prompt is not centered in the details pane"
+grep -Fq 'width: Math.max(0, root.width - Style.space(20))' \
+  "$ROOT_DIR/PluginDetails.qml" \
+  || fail "empty plugin selection prompt is not sized against the details pane"
 grep -Fq 'scrollDownAndMaybeFocus(detailsScroll.height * 0.8)' \
   "$ROOT_DIR/PluginDetails.qml" \
   || fail "keyboard details scrolling is missing"
