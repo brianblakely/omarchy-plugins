@@ -6,6 +6,11 @@ Okomart keeps one persistent catalog document at
 There is no persistent Git mirror, materialized catalog checkout, repository
 cache, or duplicate snapshot file.
 
+At storefront startup, Okomart preserves only a valid `catalog.json` in its
+cache root and removes every other file, directory, or symlink there. Catalog
+locking lives under the state root, while refresh, enrichment, and GitHub tree
+scratch data use the private runtime directory and are removed after use.
+
 ## Open, Refresh, And Activation
 
 Opening the storefront reads `active` and installed manifests without network
@@ -53,6 +58,12 @@ relative entry-point declarations, catalog metadata, ids, and duplicates. It
 cannot prove that entry points exist or that the repository tree has no
 symlinks because refresh intentionally does not download full trees. Those
 authoritative checks remain part of `omarchy plugin add`.
+
+Local `plugins.txt` entries take precedence over HANCORE entries by normalized
+repository URL and by validated plugin id. A HANCORE repository that resolves
+to an id already supplied by a valid local entry is omitted without recording
+an error. Duplicate ids within the same source tier remain catalog validation
+errors.
 
 ## Lazy Screenshots
 

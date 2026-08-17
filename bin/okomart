@@ -61,7 +61,7 @@ init_paths() {
   LEGACY_CATALOG_DIR="$CACHE_ROOT/catalog"
   LEGACY_REGISTRY_MIRROR="$CACHE_ROOT/registry.git"
   LEGACY_REPOSITORY_CACHE="$CACHE_ROOT/repositories"
-  CATALOG_LOCK="$CACHE_ROOT/catalog.lock"
+  CATALOG_LOCK="$STATE_ROOT/catalog.lock"
   LEGACY_CATALOG_STATE="$STATE_ROOT/catalog.json"
   LEGACY_SNAPSHOT_STATE="$STATE_ROOT/snapshot.json"
   ACTION_STATE="$STATE_ROOT/action.json"
@@ -71,9 +71,10 @@ init_paths() {
   if [[ -n ${XDG_RUNTIME_DIR:-} ]]; then
     runtime_base="$(realpath -m -- "$XDG_RUNTIME_DIR")"
   else
-    runtime_base="$CACHE_ROOT/runtime"
+    runtime_base="$STATE_ROOT/runtime"
   fi
   MEDIA_ROOT="$(realpath -m -- "$runtime_base/okomart")"
+  WORK_ROOT="$(realpath -m -- "$runtime_base/okomart-work")"
 
   [[ $CACHE_ROOT == /* && $CACHE_ROOT != "/" &&
     $(basename -- "$CACHE_ROOT") == "okomart" ]] || {
@@ -87,6 +88,11 @@ init_paths() {
   [[ $MEDIA_ROOT == /* && $MEDIA_ROOT != "/" &&
     $(basename -- "$MEDIA_ROOT") == okomart ]] || {
     json_error "refusing unsafe Okomart runtime path"
+    exit 1
+  }
+  [[ $WORK_ROOT == /* && $WORK_ROOT != "/" &&
+    $(basename -- "$WORK_ROOT") == okomart-work ]] || {
+    json_error "refusing unsafe Okomart work path"
     exit 1
   }
   if ! mkdir -p -- "$CACHE_ROOT" "$STATE_ROOT"; then
@@ -133,6 +139,39 @@ cleanup_legacy_catalog_data() {
   safe_remove_legacy_path "$LEGACY_REPOSITORY_CACHE" "$CACHE_ROOT" repositories || return 1
   safe_remove_legacy_path "$LEGACY_CATALOG_STATE" "$STATE_ROOT" catalog.json || return 1
   safe_remove_legacy_path "$LEGACY_SNAPSHOT_STATE" "$STATE_ROOT" snapshot.json || return 1
+}
+
+cleanup_cache_extras() (
+  local entry name normalized
+  shopt -s dotglob nullglob
+  for entry in "$CACHE_ROOT"/*; do
+    name="${entry##*/}"
+    if [[ $name == catalog.json && -f $entry && ! -L $entry ]]; then
+      continue
+    fi
+    normalized="$(realpath -ms -- "$entry")" || return 1
+    [[ $(dirname -- "$normalized") == "$CACHE_ROOT" &&
+      $(basename -- "$normalized") == "$name" ]] || return 1
+    if [[ -L $entry || ! -d $entry ]]; then
+      rm -f -- "$entry" || return 1
+    else
+      rm -rf --one-file-system -- "$entry" || return 1
+    fi
+  done
+)
+
+startup_cache_cleanup() {
+  [[ ! -L $CATALOG_LOCK && ! -d $CATALOG_LOCK ]] || return 1
+  exec 9>>"$CATALOG_LOCK" || return 1
+  # A writer can briefly own this lock while atomically replacing catalog.json.
+  # Keep startup local and immediate instead of waiting on network-bound work.
+  flock -w 1 9 || return 0
+  cleanup_cache_extras
+}
+
+ensure_work_root() {
+  [[ ! -L $WORK_ROOT && ( ! -e $WORK_ROOT || -d $WORK_ROOT ) ]] || return 1
+  mkdir -p -m 700 -- "$WORK_ROOT" && chmod 700 -- "$WORK_ROOT"
 }
 
 catalog_default() {
@@ -794,7 +833,11 @@ stage_refresh_worker() {
   }
 
   local work marketplace_file
-  work="$(mktemp -d "$CACHE_ROOT/.refresh.XXXXXX")" || {
+  ensure_work_root || {
+    refresh_failure "Could not prepare Okomart's runtime work directory."
+    return 1
+  }
+  work="$(mktemp -d "$WORK_ROOT/refresh.XXXXXX")" || {
     refresh_failure "Could not prepare catalog refresh working files."
     return 1
   }
@@ -807,6 +850,7 @@ stage_refresh_worker() {
     refresh_failure "The local plugins.txt registry is invalid."
     return 1
   fi
+  local local_registry_url_count=${#REGISTRY_URLS[@]}
   if ! fetch_marketplace_registry "$marketplace_file"; then
     rm -rf --one-file-system -- "$work"
     refresh_failure "Could not fetch the HANCORE marketplace registry."
@@ -871,11 +915,18 @@ stage_refresh_worker() {
       continue
     fi
     if [[ -n ${ids[$id]+x} ]]; then
+      if [[ ${ids[$id]} == local ]] && (( index >= local_registry_url_count )); then
+        continue
+      fi
       jq -cn --arg sourceUrl "$url" --arg error "Duplicate plugin id '$id'" \
         '{sourceUrl:$sourceUrl,error:$error,phase:"validation"}' >>"$errors"
       continue
     fi
-    ids[$id]=1
+    if (( index < local_registry_url_count )); then
+      ids[$id]=local
+    else
+      ids[$id]=marketplace
+    fi
     revision="$(jq -c '.revision' "$record")"
     head_timestamp="$(jq -c '.headTimestamp' "$record")"
     jq -c --arg sourceUrl "$url" \
@@ -1087,7 +1138,8 @@ enrich_command() {
     return
   fi
   local work tasks updates errors index=0 url fallback
-  work="$(mktemp -d "$CACHE_ROOT/.enrich.XXXXXX")" || return 1
+  ensure_work_root || return 1
+  work="$(mktemp -d "$WORK_ROOT/enrich.XXXXXX")" || return 1
   chmod 700 "$work"
   tasks="$work/tasks"; updates="$work/updates.jsonl"; errors="$work/errors.jsonl"
   : >"$tasks"; : >"$updates"; : >"$errors"
@@ -1276,7 +1328,8 @@ github_screenshots_json() {
   [[ $revision =~ ^[0-9a-f]{40,64}$ ]] || return 1
   mapfile -t parts < <(github_repository_parts "$url")
   (( ${#parts[@]} == 2 )) || return 1
-  body="$(mktemp "$CACHE_ROOT/.github-tree.XXXXXX")" || return 1
+  ensure_work_root || return 1
+  body="$(mktemp "$WORK_ROOT/github-tree.XXXXXX")" || return 1
   local endpoint="$GITHUB_API_BASE/repos/${parts[0]}/${parts[1]}/git/trees/$revision?recursive=1"
   if ! curl --fail --silent --show-error --location \
       --proto '=https' --proto-redir '=https' --connect-timeout 8 --max-time 25 \
@@ -1888,6 +1941,10 @@ snapshot_command() {
   [[ -n $source_arg && $# == 1 ]] || {
     json_error "Usage: okomart snapshot <source-dir>"
     return 2
+  }
+  startup_cache_cleanup || {
+    json_error "Could not safely clean Okomart's startup cache"
+    return 1
   }
   cleanup_legacy_catalog_data || {
     json_error "Could not safely remove legacy Okomart catalog data"

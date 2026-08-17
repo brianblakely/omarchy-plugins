@@ -263,13 +263,7 @@ FocusScope {
       implicitWidth: Style.space(10)
       implicitHeight: Style.space(72)
       radius: 0
-      color: Util.alpha(root.accent,
-        pluginListScrollNub.pressed || pluginListScrollNub.hovered
-          ? 0.92 : 0.58)
-
-      Behavior on color {
-        ColorAnimation { duration: 120 }
-      }
+      color: Util.alpha(root.accent, 0.92)
     }
 
     background: Item {}

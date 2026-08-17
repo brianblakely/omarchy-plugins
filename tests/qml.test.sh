@@ -276,6 +276,13 @@ grep -Fq 'minimumSize: Math.min(1, Style.space(72)' "$ROOT_DIR/PluginList.qml" \
   || fail "plugin-list scroll nub can shrink below its usable minimum"
 grep -Fq 'radius: 0' "$ROOT_DIR/PluginList.qml" \
   || fail "plugin-list scroll nub is not rectangular"
+grep -Fq 'color: Util.alpha(root.accent, 0.92)' "$ROOT_DIR/PluginList.qml" \
+  || fail "plugin-list scroll nub does not retain its hover treatment"
+if sed -n '/contentItem: Rectangle {/,/background: Item {}/p' \
+    "$ROOT_DIR/PluginList.qml" \
+    | grep -Eq 'pluginListScrollNub\.(hovered|pressed)|Behavior on color'; then
+  fail "plugin-list scroll nub still changes treatment by interaction state"
+fi
 grep -Fq 'scrollNubRightOffset: Style.space(13)' "$ROOT_DIR/Okomart.qml" \
   || fail "storefront does not align the plugin-list nub with its divider"
 grep -Fq 'maximumLineCount: 2' "$ROOT_DIR/PluginList.qml" \
@@ -789,6 +796,22 @@ fi
 grep -Fq 'selectedId = OkomartModel.resolveSelection(next, selectedId)' \
   "$ROOT_DIR/Okomart.qml" \
   || fail "catalog activation cannot preserve the selected plugin when it remains visible"
+selection_line=$(grep -n -F \
+  'selectedId = OkomartModel.resolveSelection(next, selectedId)' \
+  "$ROOT_DIR/Okomart.qml" | head -n 1 | cut -d: -f1)
+model_line=$(grep -n -F 'visiblePlugins = next' "$ROOT_DIR/Okomart.qml" \
+  | head -n 1 | cut -d: -f1)
+if [[ -z $selection_line || -z $model_line ]] || (( selection_line >= model_line )); then
+  fail "plugin-list model is replaced before its selected id is preserved"
+fi
+grep -Fq 'property bool pluginListResetting: false' "$ROOT_DIR/Okomart.qml" \
+  || fail "plugin-list model resets cannot suppress transient selection changes"
+grep -Fq 'if (!root.pluginListResetting) root.selectedId = pluginId' \
+  "$ROOT_DIR/Okomart.qml" \
+  || fail "plugin-list reset can overwrite the preserved selected plugin"
+grep -Fq 'if (resetSerial === pluginListResetSerial) pluginListResetting = false' \
+  "$ROOT_DIR/Okomart.qml" \
+  || fail "plugin-list reset guard is not released after index synchronization"
 grep -Fq 'onDetailsRequested: function(plugin)' "$ROOT_DIR/Okomart.qml" \
   || fail "plugin-list directional focus is not connected"
 grep -Fq 'Qt.callLater(pluginDetails.focusFirstAction)' "$ROOT_DIR/Okomart.qml" \

@@ -57,6 +57,12 @@ mkdir -p -- "$HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME" "$XDG_RUNTIME_DIR" \
 chmod 700 "$XDG_RUNTIME_DIR"
 : >"$MOCK_LOG"; : >"$MOCK_GIT_LOG"; printf '0\n' >"$MOCK_COUNTER"; printf '0\n' >"$MOCK_MAX_COUNTER"
 
+mkdir -p -- "$XDG_CACHE_HOME/okomart/abandoned-work" "$TMP/outside-cache"
+printf 'keep\n' >"$TMP/outside-cache/sentinel"
+printf 'stale\n' >"$XDG_CACHE_HOME/okomart/abandoned-work/result"
+printf 'stale\n' >"$XDG_CACHE_HOME/okomart/stray-file"
+ln -s -- "$TMP/outside-cache" "$XDG_CACHE_HOME/okomart/stray-link"
+
 git -c init.defaultBranch=main init -q "$MOCK_GENERIC_REPO"
 git -C "$MOCK_GENERIC_REPO" config user.email test@example.com
 git -C "$MOCK_GENERIC_REPO" config user.name Test
@@ -128,7 +134,7 @@ set -euo pipefail
 printf 'shell %s\n' "$*" >>"$MOCK_LOG"
 if [[ $* == 'shell summon b.okomart' ]]; then printf 'ok\n'
 elif [[ $* == 'shell call b.okomart runtimeVersion ' ]]; then
-  printf '%s\n' "${MOCK_RUNTIME_VERSION:-0.0.57}"
+  printf '%s\n' "${MOCK_RUNTIME_VERSION:-0.0.58}"
 else
   exit 1
 fi
@@ -233,6 +239,7 @@ commit_feed() {
 printf -v LARGE_DESCRIPTION '%*s' 45000 ''
 LARGE_DESCRIPTION=${LARGE_DESCRIPTION// /x}
 manifest alpha b.alpha Alpha 1.0.0 "$LARGE_DESCRIPTION"
+manifest alpha-fork b.alpha 'Alpha marketplace alias' 9.0.0
 manifest beta b.beta Beta 1.0.0 "$LARGE_DESCRIPTION"
 manifest gamma b.gamma Gamma 1.0.0 "$LARGE_DESCRIPTION"
 ALPHA_REV=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -243,6 +250,7 @@ commit_feed beta "$BETA_REV" 2025-01-02T00:00:00Z
 commit_feed gamma "$GAMMA_REV" 2025-01-03T00:00:00Z
 jq -n '{sources:[
   {type:"plugin-source",repo:"https://github.com/example/alpha",plugins:{"b.alpha":{}}},
+  {type:"plugin-source",repo:"https://github.com/example/alpha-fork",plugins:{"b.alpha":{}}},
   {type:"plugin-source",repo:"https://github.com/example/gamma",plugins:{"b.gamma":{}}},
   {type:"plugin-source",repo:"https://github.com/example/suite",plugins:{one:{},two:{}}},
   {type:"plugin-source",repo:"https://github.com/example/manual",plugins:{manual:{installation:{mode:"manual",note:"manual"}}}},
@@ -255,6 +263,11 @@ assert_jq "$TMP/cold-local.json" '.ok == false and .localOnly and .plugins == []
   'cold local snapshot returns immediately without an active catalog'
 [[ ! -s $MOCK_LOG ]] || fail 'local-only snapshot accessed the network'
 pass 'local-only snapshot performs no network work'
+[[ -z $(find "$XDG_CACHE_HOME/okomart" -mindepth 1 -print -quit) ]] \
+  || fail 'cold startup retained non-registry cache data'
+[[ -f $TMP/outside-cache/sentinel ]] \
+  || fail 'startup cache cleanup followed an out-of-root symlink target'
+pass 'cold startup deletes every cache entry when no registry is present'
 [[ ! -e $XDG_STATE_HOME/okomart/snapshot.json ]] || fail 'snapshot duplicate was persisted'
 pass 'local-only snapshot does not persist a duplicate snapshot'
 
@@ -287,14 +300,35 @@ assert_jq "$CATALOG" '.schemaVersion == 1 and (.active.entries|length) == 4
 (( $(jq -c '.active.entries' "$CATALOG" | wc -c) > 131072 )) \
   || fail 'large-catalog fixture did not exceed the Linux per-argument limit'
 pass 'large catalog assembly is independent of process argument limits'
+catalog_generation=$(jq -r '.active.generation' "$CATALOG")
+mkdir -p -- "$XDG_CACHE_HOME/okomart/leftover-directory"
+printf 'stale\n' >"$XDG_CACHE_HOME/okomart/leftover-file"
+"$OKOMART" snapshot "$SOURCE" >"$TMP/startup-clean.json"
+assert_eq "$catalog_generation" \
+  "$(jq -r '.activeGeneration' "$TMP/startup-clean.json")" \
+  'warm startup preserves the registry while removing other cache data'
+mapfile -t cache_entries < <(
+  find "$XDG_CACHE_HOME/okomart" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort
+)
+[[ ${#cache_entries[@]} -eq 1 && ${cache_entries[0]} == catalog.json ]] \
+  || fail "warm startup left unexpected cache entries: ${cache_entries[*]}"
+pass 'catalog.json is the only persistent cache entry after startup'
 assert_eq 1 "$(grep -Fc 'alpha/HEAD/manifest.json' "$MOCK_LOG")" \
   'local URL wins over the normalized marketplace duplicate'
+assert_jq "$CATALOG" '
+  any(.active.entries[];
+    .id == "b.alpha"
+    and .sourceUrl == "https://github.com/example/alpha.git")
+  and all(.active.errors[];
+    .sourceUrl != "https://github.com/example/alpha-fork.git")' \
+  'local plugin id wins over a marketplace alias without a catalog error'
 [[ -z $(grep -E '^clone https://github\.com/' "$MOCK_GIT_LOG" || true) ]] \
   || fail 'GitHub catalog metadata used git clone'
 pass 'GitHub manifest metadata never uses git clone'
 assert_eq 1 "$(grep -Fc 'clone https://git.example.com/catalog/generic.git' "$MOCK_GIT_LOG")" \
   'generic host uses one temporary partial clone'
-[[ -z $(find "$XDG_CACHE_HOME/okomart" -maxdepth 1 -name '.refresh.*' -o -name '.manifest-fetch.*') ]] \
+[[ -z $(find "$XDG_RUNTIME_DIR/okomart-work" -maxdepth 1 \
+  \( -name 'refresh.*' -o -name 'manifest-fetch.*' \) -print 2>/dev/null) ]] \
   || fail 'temporary manifest repository survived refresh'
 pass 'generic manifest repository is deleted immediately'
 (( $(<"$MOCK_MAX_COUNTER") >= 2 )) || fail 'manifest requests did not overlap'
@@ -460,7 +494,8 @@ assert_jq "$TMP/timeout.json" '.ok == false and (.error|contains("overall time l
   'overall refresh timeout rejects the candidate'
 assert_eq "$ACTIVE_BEFORE" "$(jq -r '.active.generation' "$CATALOG")" \
   'overall refresh timeout preserves active generation'
-[[ -z $(find "$XDG_CACHE_HOME/okomart" -maxdepth 1 -name '.refresh.*' -print -quit) ]] \
+[[ -z $(find "$XDG_RUNTIME_DIR/okomart-work" -maxdepth 1 \
+  -name 'refresh.*' -print -quit 2>/dev/null) ]] \
   || fail 'timed-out refresh left working data behind'
 pass 'timed-out refresh cleans temporary repositories'
 

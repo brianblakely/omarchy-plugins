@@ -41,6 +41,8 @@ Item {
   property bool actionReplacesOkomart: false
   property string query: ""
   property string selectedId: ""
+  property bool pluginListResetting: false
+  property int pluginListResetSerial: 0
   property string cachedOutput: ""
   property string inactiveBorderOutput: ""
   property string refreshOutput: ""
@@ -401,9 +403,15 @@ Item {
 
   function rebuildView() {
     var next = OkomartModel.filterPlugins(allPlugins, query, installedOnly)
-    visiblePlugins = next
+    pluginListResetting = true
+    pluginListResetSerial += 1
+    var resetSerial = pluginListResetSerial
     selectedId = OkomartModel.resolveSelection(next, selectedId)
+    visiblePlugins = next
     if (!selectedId) narrowShowingDetails = false
+    Qt.callLater(function() {
+      if (resetSerial === pluginListResetSerial) pluginListResetting = false
+    })
   }
 
   function buildUpdates(data) {
@@ -1216,7 +1224,9 @@ Item {
           : (root.cacheLoading || root.refreshing
             ? "Loading plugins…" : "No cached plugins available.")
         activateOnSingleClick: !root.wideLayout
-        onSelected: function(pluginId) { root.selectedId = pluginId }
+        onSelected: function(pluginId) {
+          if (!root.pluginListResetting) root.selectedId = pluginId
+        }
         onActivated: function(plugin) {
           root.selectedId = String(plugin.id || "")
           if (!root.wideLayout) {
