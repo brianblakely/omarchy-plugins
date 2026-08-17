@@ -29,8 +29,6 @@ FocusScope {
   readonly property bool hasPlugin: plugin !== null && plugin !== undefined
   readonly property bool installed: hasPlugin && plugin.installed === true
   readonly property var screenshots: Array.isArray(screenshotImages) ? screenshotImages : []
-  readonly property string normalizedUpdateState:
-    hasPlugin ? OkomartModel.updateState(plugin) : ""
   readonly property string removalBlockReason:
     hasPlugin ? OkomartModel.removalBlockReason(plugin) : ""
   readonly property bool removalAllowed:
@@ -172,10 +170,6 @@ FocusScope {
 
   function openSourceUrl(url) {
     if (url !== "" && url === sourceUrl()) Qt.openUrlExternally(url)
-  }
-
-  function updateText() {
-    return hasPlugin ? OkomartModel.updateDetailText(plugin) : ""
   }
 
   onPluginChanged: Qt.callLater(resetScroll)
@@ -448,33 +442,6 @@ FocusScope {
             }
           }
         }
-      }
-
-      Text {
-        visible: root.hasPlugin && root.updateText() !== ""
-        width: parent.width
-        text: root.updateText()
-        textFormat: Text.PlainText
-        color: {
-          var normalized = root.normalizedUpdateState
-          return normalized === "dirty" || normalized === "diverged"
-            || normalized === "offline" || normalized === "unknown"
-            ? root.urgent : root.accent
-        }
-        font.family: Style.font.family
-        font.pixelSize: Style.font.bodySmall
-        wrapMode: Text.WordWrap
-      }
-
-      Text {
-        visible: root.hasPlugin && root.plugin.validationError
-        width: parent.width
-        text: root.hasPlugin ? String(root.plugin.validationError || "") : ""
-        textFormat: Text.PlainText
-        color: root.urgent
-        font.family: Style.font.family
-        font.pixelSize: Style.font.bodySmall
-        wrapMode: Text.WordWrap
       }
 
       Column {

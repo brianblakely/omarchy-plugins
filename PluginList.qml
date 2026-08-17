@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls as QQC
 import qs.Commons
 import qs.Ui
 
@@ -11,6 +12,7 @@ FocusScope {
   property bool activateOnSingleClick: false
   property color foreground: Color.foreground
   property color accent: Color.accent
+  property real scrollNubRightOffset: 0
 
   signal selected(string pluginId)
   signal activated(var plugin)
@@ -229,6 +231,47 @@ FocusScope {
       horizontalAlignment: Text.AlignHCenter
       wrapMode: Text.WordWrap
     }
+  }
+
+  QQC.ScrollBar {
+    id: pluginListScrollNub
+    anchors.top: root.top
+    anchors.right: root.right
+    anchors.bottom: root.bottom
+    anchors.rightMargin: -root.scrollNubRightOffset
+    orientation: Qt.Vertical
+    position: list.visibleArea.yPosition
+    size: list.visibleArea.heightRatio
+    policy: list.contentHeight > list.height + 0.5
+      ? QQC.ScrollBar.AlwaysOn : QQC.ScrollBar.AlwaysOff
+    z: 10
+    interactive: true
+    width: Style.space(10)
+    padding: 0
+    minimumSize: Math.min(1, Style.space(72) / Math.max(1, list.height))
+
+    onPositionChanged: {
+      if (!pressed) return
+      var maximumPosition = Math.max(0, 1 - size)
+      var nextPosition = Math.max(0, Math.min(maximumPosition, position))
+      list.contentY = list.originY + nextPosition * list.contentHeight
+    }
+
+    contentItem: Rectangle {
+      implicitWidth: Style.space(10)
+      implicitHeight: Style.space(72)
+      radius: 0
+      color: Util.alpha(root.accent,
+        pluginListScrollNub.pressed || pluginListScrollNub.hovered
+          ? 0.92 : 0.58)
+
+      Behavior on color {
+        ColorAnimation { duration: 120 }
+      }
+    }
+
+    background: Item {}
+    Accessible.name: "Plugin list scroll position"
   }
 
   Accessible.name: "Plugin list"

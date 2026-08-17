@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 import QtQuick.Layouts
 import QtQuick.Window
 import Quickshell
@@ -945,6 +946,9 @@ Item {
 
       FocusScope {
         id: catalogSign
+        property real glowPulse: 0.18
+        property real glowFlicker: 1.0
+
         x: storefront.frameLeft + root.headerEdgeInset
         y: root.wideLayout
           ? root.bodyTop - Style.space(50)
@@ -956,35 +960,87 @@ Item {
         enabled: root.pendingReady && !root.activatingCatalog
         activeFocusOnTab: enabled
 
-        Rectangle {
+        MultiEffect {
           id: signGlow
           anchors.fill: signText
-          anchors.margins: -Style.space(6)
-          radius: Style.cornerRadius
-          color: "transparent"
-          border.width: Math.max(1, Style.normalBorderWidth)
-          border.color: Color.accent
-          opacity: 0
+          source: signText
+          autoPaddingEnabled: true
+          colorization: 1.0
+          colorizationColor: Color.accent
+          blurEnabled: true
+          blur: 0.72
+          blurMax: 32
+          opacity: root.pendingReady
+            ? catalogSign.glowPulse * catalogSign.glowFlicker : 0
         }
 
         SequentialAnimation {
           running: root.pendingReady
           loops: Animation.Infinite
           NumberAnimation {
-            target: signGlow
-            property: "opacity"
-            from: 0.08
-            to: 0.72
+            target: catalogSign
+            property: "glowPulse"
+            from: 0.18
+            to: 0.66
             duration: 1700
             easing.type: Easing.InOutSine
           }
           NumberAnimation {
-            target: signGlow
-            property: "opacity"
-            from: 0.72
-            to: 0.08
+            target: catalogSign
+            property: "glowPulse"
+            from: 0.66
+            to: 0.18
             duration: 1700
             easing.type: Easing.InOutSine
+          }
+        }
+
+        Timer {
+          id: signFlickerTimer
+          running: root.pendingReady
+          repeat: true
+          interval: 7000 + Math.floor(Math.random() * 9000)
+          onTriggered: {
+            interval = 7000 + Math.floor(Math.random() * 9000)
+            signFlickerAnimation.restart()
+          }
+        }
+
+        SequentialAnimation {
+          id: signFlickerAnimation
+          NumberAnimation {
+            target: catalogSign
+            property: "glowFlicker"
+            to: 0.08
+            duration: 45
+          }
+          NumberAnimation {
+            target: catalogSign
+            property: "glowFlicker"
+            to: 0.9
+            duration: 65
+          }
+          NumberAnimation {
+            target: catalogSign
+            property: "glowFlicker"
+            to: 0.24
+            duration: 35
+          }
+          PauseAnimation { duration: 40 }
+          NumberAnimation {
+            target: catalogSign
+            property: "glowFlicker"
+            to: 1.0
+            duration: 90
+          }
+        }
+
+        Connections {
+          target: root
+          function onPendingReadyChanged() {
+            if (root.pendingReady) return
+            signFlickerAnimation.stop()
+            catalogSign.glowFlicker = 1.0
           }
         }
 
@@ -1152,6 +1208,7 @@ Item {
           ? root.splitX - x - Style.space(13)
           : storefront.frameRight - x - Style.space(13)
         height: storefront.frameBottom - y - Style.space(10)
+        scrollNubRightOffset: Style.space(13)
         plugins: root.visiblePlugins
         selectedId: root.selectedId
         emptyText: root.catalogLoaded

@@ -128,7 +128,7 @@ set -euo pipefail
 printf 'shell %s\n' "$*" >>"$MOCK_LOG"
 if [[ $* == 'shell summon b.okomart' ]]; then printf 'ok\n'
 elif [[ $* == 'shell call b.okomart runtimeVersion ' ]]; then
-  printf '%s\n' "${MOCK_RUNTIME_VERSION:-0.0.56}"
+  printf '%s\n' "${MOCK_RUNTIME_VERSION:-0.0.57}"
 else
   exit 1
 fi
@@ -227,9 +227,14 @@ commit_feed() {
     >"$MOCK_DATA/commits/$repository.json"
 }
 
-manifest alpha b.alpha Alpha 1.0.0
-manifest beta b.beta Beta 1.0.0
-manifest gamma b.gamma Gamma 1.0.0
+# Keep each manifest well below its supported size limit while making their
+# combined catalog metadata larger than Linux's per-argument limit. Catalog
+# assembly must read arrays from files instead of passing them through argv.
+printf -v LARGE_DESCRIPTION '%*s' 45000 ''
+LARGE_DESCRIPTION=${LARGE_DESCRIPTION// /x}
+manifest alpha b.alpha Alpha 1.0.0 "$LARGE_DESCRIPTION"
+manifest beta b.beta Beta 1.0.0 "$LARGE_DESCRIPTION"
+manifest gamma b.gamma Gamma 1.0.0 "$LARGE_DESCRIPTION"
 ALPHA_REV=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 BETA_REV=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 GAMMA_REV=cccccccccccccccccccccccccccccccccccccccc
@@ -279,6 +284,9 @@ assert_jq "$CATALOG" '.schemaVersion == 1 and (.active.entries|length) == 4
   and all(.active.entries[]; has("images")|not)
   and ([.active.entries[].sourceUrl]|unique|length) == 4' \
   'single catalog file merges local and compatible marketplace URLs'
+(( $(jq -c '.active.entries' "$CATALOG" | wc -c) > 131072 )) \
+  || fail 'large-catalog fixture did not exceed the Linux per-argument limit'
+pass 'large catalog assembly is independent of process argument limits'
 assert_eq 1 "$(grep -Fc 'alpha/HEAD/manifest.json' "$MOCK_LOG")" \
   'local URL wins over the normalized marketplace duplicate'
 [[ -z $(grep -E '^clone https://github\.com/' "$MOCK_GIT_LOG" || true) ]] \

@@ -243,6 +243,27 @@ grep -Fq 'if (indexForId(selectedId) !== list.currentIndex)' \
   || fail "list navigation still queues redundant selection resynchronization"
 grep -Fq 'height: root.rowHeight' "$ROOT_DIR/PluginList.qml" \
   || fail "plugin-list rows do not share a fixed height"
+grep -Fq 'id: pluginListScrollNub' "$ROOT_DIR/PluginList.qml" \
+  || fail "plugin list is missing its scroll nub"
+grep -Fq 'QQC.ScrollBar.AlwaysOn : QQC.ScrollBar.AlwaysOff' \
+  "$ROOT_DIR/PluginList.qml" \
+  || fail "plugin-list scroll nub does not track whether content overflows"
+grep -Fq 'anchors.rightMargin: -root.scrollNubRightOffset' \
+  "$ROOT_DIR/PluginList.qml" \
+  || fail "plugin-list scroll nub is not flush with the divider edge"
+grep -Fq 'position: list.visibleArea.yPosition' "$ROOT_DIR/PluginList.qml" \
+  || fail "detached plugin-list scroll nub does not follow list position"
+grep -Fq 'list.contentY = list.originY + nextPosition * list.contentHeight' \
+  "$ROOT_DIR/PluginList.qml" \
+  || fail "dragging the plugin-list scroll nub does not move the list"
+grep -Fq 'width: Style.space(10)' "$ROOT_DIR/PluginList.qml" \
+  || fail "plugin-list scroll nub is too narrow"
+grep -Fq 'minimumSize: Math.min(1, Style.space(72)' "$ROOT_DIR/PluginList.qml" \
+  || fail "plugin-list scroll nub can shrink below its usable minimum"
+grep -Fq 'radius: 0' "$ROOT_DIR/PluginList.qml" \
+  || fail "plugin-list scroll nub is not rectangular"
+grep -Fq 'scrollNubRightOffset: Style.space(13)' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront does not align the plugin-list nub with its divider"
 grep -Fq 'maximumLineCount: 2' "$ROOT_DIR/PluginList.qml" \
   || fail "plugin-list descriptions are not limited to two lines"
 grep -Fq 'id: installedIndicator' "$ROOT_DIR/PluginList.qml" \
@@ -316,8 +337,10 @@ grep -Fq '? Accessible.Link : Accessible.StaticText' \
   || fail "plugin source link is not exposed accessibly"
 grep -Fq 'cursorShape: Qt.PointingHandCursor' "$ROOT_DIR/PluginDetails.qml" \
   || fail "plugin source link does not expose a pointing cursor"
-grep -Fq 'OkomartModel.updateDetailText(plugin)' "$ROOT_DIR/PluginDetails.qml" \
-  || fail "detail update status does not use the tested formatter"
+if grep -Fq 'OkomartModel.updateDetailText(plugin)' "$ROOT_DIR/PluginDetails.qml" \
+    || grep -Fq 'plugin.validationError' "$ROOT_DIR/PluginDetails.qml"; then
+  fail "plugin details still show status messages below metadata"
+fi
 if grep -Eqi 'badge|detailBadges' "$ROOT_DIR/PluginDetails.qml" \
     || grep -Fq 'statusText' "$ROOT_DIR/PluginList.qml" \
     || grep -Fq 'return "New"' "$ROOT_DIR/PluginList.qml" \
@@ -715,6 +738,28 @@ grep -Fq 'cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor' \
   || fail "ready storefront sign has no pointer cursor"
 grep -Fq 'running: root.pendingReady' "$ROOT_DIR/Okomart.qml" \
   || fail "storefront sign glow does not follow ready pending state"
+grep -Fq 'import QtQuick.Effects' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront sign glow does not import the glyph effect"
+grep -Fq 'id: signGlow' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront sign is missing its glyph glow"
+grep -Fq 'source: signText' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront sign glow is not shaped by the lettering"
+grep -Fq 'colorizationColor: Color.accent' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront sign glow does not use the accent color"
+grep -Fq 'blurEnabled: true' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront sign lettering does not emit a blurred glow"
+if sed -n '/id: signGlow/,/^        }/p' "$ROOT_DIR/Okomart.qml" \
+    | grep -Eq '(border\.|radius:)'; then
+  fail "storefront sign glow is still a rectangular border"
+fi
+grep -Fq 'id: signFlickerTimer' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront sign glow has no occasional flicker timer"
+grep -Fq '7000 + Math.floor(Math.random() * 9000)' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront sign flicker is not sparse and irregular"
+grep -Fq 'id: signFlickerAnimation' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront sign glow has no neon flicker sequence"
+[[ $(grep -Fc 'property: "glowFlicker"' "$ROOT_DIR/Okomart.qml") -ge 4 ]] \
+  || fail "storefront sign glow does not sputter through a multi-step flicker"
 if sed -n '/function applyCatalogActivation(raw, generation)/,/^  }/p' \
     "$ROOT_DIR/Okomart.qml" | grep -Eq '(query|installedOnly|selectedId)[[:space:]]*='; then
   fail "catalog activation resets storefront query, filter, or selection state"

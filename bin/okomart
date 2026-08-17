@@ -878,10 +878,11 @@ stage_refresh_worker() {
     ids[$id]=1
     revision="$(jq -c '.revision' "$record")"
     head_timestamp="$(jq -c '.headTimestamp' "$record")"
-    jq -cn --argjson metadata "$metadata" --arg sourceUrl "$url" \
+    jq -c --arg sourceUrl "$url" \
       --argjson revision "$revision" --argjson headTimestamp "$head_timestamp" \
-      '$metadata + {sourceUrl:$sourceUrl,revision:$revision,
-        updatedAt:null,_headTimestamp:$headTimestamp}' >>"$raw_entries"
+      '. + {sourceUrl:$sourceUrl,revision:$revision,
+        updatedAt:null,_headTimestamp:$headTimestamp}' \
+      <<<"$metadata" >>"$raw_entries"
   done
 
   if (( request_failures == ${#REGISTRY_URLS[@]} )); then
@@ -933,25 +934,41 @@ stage_refresh_worker() {
       <<<"$entry" >>"$staged_entries"
   done <"$raw_entries"
 
-  local canonical generation entries_json errors_json sources_json fallbacks_json
+  local canonical generation entries_file errors_file sources_file fallbacks_file
   canonical="$(jq -s -S -c 'sort_by(.sourceUrl) | map(del(.updatedAt,.revision))' "$staged_entries")"
   generation="$(printf '%s' "$canonical" | sha256sum | awk '{print $1}')"
-  entries_json="$(jq -s 'sort_by(-(.updatedAt // 0), (.name | ascii_downcase), .id)' "$staged_entries")"
-  errors_json="$(jq -s '.' "$errors")"
-  sources_json="$(jq -s 'map(.sourceUrl)' "$timestamp_sources")"
-  fallbacks_json="$(jq -s '.' "$fallbacks")"
+  entries_file="$work/entries.json"
+  errors_file="$work/catalog-errors.json"
+  sources_file="$work/timestamp-sources.json"
+  fallbacks_file="$work/timestamp-fallbacks.json"
+  if ! jq -s 'sort_by(-(.updatedAt // 0), (.name | ascii_downcase), .id)' \
+      "$staged_entries" >"$entries_file" \
+    || ! jq -s '.' "$errors" >"$errors_file" \
+    || ! jq -s 'map(.sourceUrl)' "$timestamp_sources" >"$sources_file" \
+    || ! jq -s '.' "$fallbacks" >"$fallbacks_file"; then
+    rm -rf --one-file-system -- "$work"
+    refresh_failure "Could not assemble the catalog candidate; the active catalog was preserved."
+    return 1
+  fi
 
   local next cold=false preserve_pending=false
   if [[ -z $active_generation ]]; then
     cold=true
     next="$(jq -cn --arg generation "$generation" --arg checkedAt "$checked_at" \
-      --argjson entries "$entries_json" --argjson errors "$errors_json" \
-      --argjson sources "$sources_json" --argjson fallbacks "$fallbacks_json" '
+      --slurpfile entries "$entries_file" --slurpfile errors "$errors_file" \
+      --slurpfile sources "$sources_file" --slurpfile fallbacks "$fallbacks_file" '
+      ($entries[0] // []) as $catalogEntries
+      | ($errors[0] // []) as $catalogErrors
+      | ($sources[0] // []) as $timestampSources
+      | ($fallbacks[0] // []) as $timestampFallbacks
+      |
       {schemaVersion:1,
-        active:{generation:$generation,entries:$entries,errors:$errors,checkedAt:$checkedAt},
-        pending:{generation:$generation,ready:($sources|length == 0),entries:$entries,
-          errors:$errors,checkedAt:$checkedAt,timestampSources:$sources,
-          timestampFallbacks:$fallbacks,enrichmentOnly:true}}
+        active:{generation:$generation,entries:$catalogEntries,
+          errors:$catalogErrors,checkedAt:$checkedAt},
+        pending:{generation:$generation,ready:($timestampSources|length == 0),
+          entries:$catalogEntries,errors:$catalogErrors,checkedAt:$checkedAt,
+          timestampSources:$timestampSources,
+          timestampFallbacks:$timestampFallbacks,enrichmentOnly:true}}
     ')"
   elif [[ $generation == "$active_generation" ]]; then
     if jq -e --arg generation "$generation" '
@@ -961,21 +978,35 @@ stage_refresh_worker() {
     ' <<<"$current" >/dev/null; then
       preserve_pending=true
     fi
-    next="$(jq -c --arg checkedAt "$checked_at" --argjson errors "$errors_json" \
+    next="$(jq -c --arg checkedAt "$checked_at" --slurpfile errors "$errors_file" \
       --argjson preserve "$preserve_pending" '
-      .active.checkedAt=$checkedAt | .active.errors=$errors
+      .active.checkedAt=$checkedAt | .active.errors=($errors[0] // [])
       | if $preserve then . else .pending=null end
     ' <<<"$current")"
   else
     next="$(jq -c --arg generation "$generation" --arg checkedAt "$checked_at" \
-      --argjson entries "$entries_json" --argjson errors "$errors_json" \
-      --argjson sources "$sources_json" --argjson fallbacks "$fallbacks_json" '
-      .pending={generation:$generation,ready:($sources|length == 0),entries:$entries,
-        errors:$errors,checkedAt:$checkedAt,timestampSources:$sources,
-        timestampFallbacks:$fallbacks,enrichmentOnly:false}
+      --slurpfile entries "$entries_file" --slurpfile errors "$errors_file" \
+      --slurpfile sources "$sources_file" --slurpfile fallbacks "$fallbacks_file" '
+      ($entries[0] // []) as $catalogEntries
+      | ($errors[0] // []) as $catalogErrors
+      | ($sources[0] // []) as $timestampSources
+      | ($fallbacks[0] // []) as $timestampFallbacks
+      | .pending={generation:$generation,
+          ready:($timestampSources|length == 0),entries:$catalogEntries,
+          errors:$catalogErrors,checkedAt:$checkedAt,
+          timestampSources:$timestampSources,
+          timestampFallbacks:$timestampFallbacks,enrichmentOnly:false}
     ' <<<"$current")"
   fi
-  if ! write_catalog "$next"; then
+  if [[ -z $next ]] || ! jq -e '
+      type == "object" and .schemaVersion == 1
+      and (.active | type == "object") and (.active.entries | type == "array")
+      and (.active.errors | type == "array")
+      and (.pending == null or ((.pending | type == "object")
+        and (.pending.entries | type == "array")
+        and (.pending.errors | type == "array")
+        and (.pending.ready | type == "boolean")))
+    ' <<<"$next" >/dev/null 2>&1 || ! write_catalog "$next"; then
     rm -rf --one-file-system -- "$work"
     refresh_failure "Could not atomically stage the catalog generation."
     return 1
@@ -1083,42 +1114,66 @@ enrich_command() {
       jq -c '{sourceUrl,error,phase:"timestamp"}' "$result" 2>/dev/null >>"$errors" || true
     fi
   done
-  local entries_json enrichment_errors next current
-  entries_json="$(jq -cn --slurpfile entries <(jq -c '.entries[]' <<<"$pending") \
-    --slurpfile updates "$updates" '
+  local entries_file enrichment_errors_file error_count next current
+  entries_file="$work/enriched-entries.json"
+  enrichment_errors_file="$work/enrichment-errors.json"
+  if ! jq -cn --slurpfile entries <(jq -c '.entries[]' <<<"$pending") \
+      --slurpfile updates "$updates" '
       $entries | map(. as $entry
         | ([$updates[] | select(.sourceUrl == $entry.sourceUrl)][0] // null) as $update
         | if $update == null then . else
             .updatedAt=$update.updatedAt | .revision=$update.revision
           end)
       | sort_by(-(.updatedAt // 0), (.name | ascii_downcase), .id)
-    ')"
-  enrichment_errors="$(jq -s '.' "$errors")"
-  rm -rf --one-file-system -- "$work"
+    ' >"$entries_file" \
+    || ! jq -s '.' "$errors" >"$enrichment_errors_file"; then
+    rm -rf --one-file-system -- "$work"
+    json_error "Could not assemble timestamp enrichment"
+    return 1
+  fi
+  error_count="$(jq 'length' "$enrichment_errors_file")"
 
-  if [[ -L $CATALOG_LOCK || -d $CATALOG_LOCK ]]; then return 1; fi
-  exec 8>>"$CATALOG_LOCK" || return 1
-  flock 8 || return 1
+  if [[ -L $CATALOG_LOCK || -d $CATALOG_LOCK ]]; then
+    rm -rf --one-file-system -- "$work"
+    return 1
+  fi
+  exec 8>>"$CATALOG_LOCK" || {
+    rm -rf --one-file-system -- "$work"
+    return 1
+  }
+  flock 8 || {
+    rm -rf --one-file-system -- "$work"
+    return 1
+  }
   current="$(read_catalog)"
   if ! jq -e --arg generation "$generation" '
       .pending != null and .pending.generation == $generation and .pending.ready == false
     ' <<<"$current" >/dev/null; then
+    rm -rf --one-file-system -- "$work"
     jq -cn --arg generation "$generation" '{ok:false,stale:true,generation:$generation}'
     return 1
   fi
-  next="$(jq -c --arg generation "$generation" --argjson entries "$entries_json" \
-    --argjson enrichmentErrors "$enrichment_errors" '
-      .pending.entries=$entries
-      | .pending.errors += $enrichmentErrors
+  next="$(jq -c --arg generation "$generation" \
+    --slurpfile entries "$entries_file" \
+    --slurpfile enrichmentErrors "$enrichment_errors_file" '
+      .pending.entries=($entries[0] // [])
+      | .pending.errors += ($enrichmentErrors[0] // [])
       | .pending.ready=true
       | .pending.enrichedAt=(now | todateiso8601)
       | del(.pending.timestampSources,.pending.timestampFallbacks)
     ' <<<"$current")"
-  write_catalog "$next" || {
+  if [[ -z $next ]] || ! jq -e '
+      .schemaVersion == 1 and (.active.entries | type == "array")
+      and (.pending | type == "object") and .pending.ready == true
+      and (.pending.entries | type == "array")
+      and (.pending.errors | type == "array")
+    ' <<<"$next" >/dev/null 2>&1 || ! write_catalog "$next"; then
+    rm -rf --one-file-system -- "$work"
     json_error "Could not atomically store timestamp enrichment"
     return 1
-  }
-  jq -cn --arg generation "$generation" --argjson errorCount "$(jq 'length' <<<"$enrichment_errors")" \
+  fi
+  rm -rf --one-file-system -- "$work"
+  jq -cn --arg generation "$generation" --argjson errorCount "$error_count" \
     '{ok:true,stale:false,generation:$generation,ready:true,enrichmentErrorCount:$errorCount}'
 }
 
@@ -1575,20 +1630,19 @@ build_installed_index() {
       update="$(installed_local_json "$dir" "$manifest_valid" "$installed_version")"
     fi
 
-    jq -cn \
-      --argjson metadata "$metadata" \
+    jq -c \
       --argjson update "$update" \
       --arg installedVersion "$installed_version" \
       --arg installedPath "$(realpath -m -- "$dir")" \
       --arg validationError "$validation_error" \
       --argjson updatedAt "$updated_at" \
-      '$metadata + $update + {
+      '. + $update + {
         installed:true,
         installedVersion:$installedVersion,
         installedPath:$installedPath,
         updatedAt:$updatedAt,
         validationError:$validationError
-      }' >>"$lines"
+      }' <<<"$metadata" >>"$lines"
   done
   shopt -u nullglob
 
