@@ -22,8 +22,21 @@ FocusScope {
   property color accent: Color.accent
 
   signal imageActivated(int index)
+  signal imageFailed(int index)
 
   readonly property int imageCount: Array.isArray(images) ? images.length : 0
+  readonly property int loadCenterIndex: pendingIndex >= 0 ? pendingIndex : currentIndex
+  readonly property var loadedIndices: {
+    if (imageCount < 1) return []
+    var center = ((loadCenterIndex % imageCount) + imageCount) % imageCount
+    if (imageCount === 1) return [center]
+    if (imageCount === 2) return [center, (center + 1) % imageCount]
+    return [
+      (center - 1 + imageCount) % imageCount,
+      center,
+      (center + 1) % imageCount
+    ]
+  }
   readonly property real imageHeight: imageHeightOverride >= 0
     ? imageHeightOverride : Math.max(Style.space(230), width * 0.56)
   readonly property real paginationHeight: imageCount > 1 ? Style.space(20) : 0
@@ -40,18 +53,24 @@ FocusScope {
       pendingIndex = -1
       return
     }
-    var targetImage = imageRepeater.itemAt(targetIndex)
+    pendingIndex = targetIndex
+    var targetImage = imageForIndex(targetIndex)
     if (!targetImage || targetImage.status !== Image.Ready) {
-      pendingIndex = targetIndex
       return
     }
-    pendingIndex = -1
     transitionTo(targetIndex)
+  }
+
+  function imageForIndex(index) {
+    for (var slot = 0; slot < imageRepeater.count; slot++) {
+      var candidate = imageRepeater.itemAt(slot)
+      if (candidate && candidate.imageIndex === index) return candidate
+    }
+    return null
   }
 
   function imageBecameReady(index) {
     if (pendingIndex !== index) return
-    pendingIndex = -1
     transitionTo(index)
   }
 
@@ -60,6 +79,7 @@ FocusScope {
 
     if (index === displayedIndex) {
       currentIndex = index
+      pendingIndex = -1
       incomingIndex = -1
       maskReady = false
       revealProgress = 1
@@ -70,16 +90,17 @@ FocusScope {
     revealProgress = 0
     incomingIndex = index
     currentIndex = index
+    pendingIndex = -1
     maybeStartReveal()
   }
 
   function maybeStartReveal() {
     if (incomingIndex < 0 || revealProgress !== 0 || maskReady) return
-    var incomingImage = imageRepeater.itemAt(incomingIndex)
+    var incomingImage = imageForIndex(incomingIndex)
     if (!incomingImage || incomingImage.status !== Image.Ready) return
     Qt.callLater(function() {
       if (root.incomingIndex < 0 || root.revealProgress !== 0 || root.maskReady) return
-      var readyImage = imageRepeater.itemAt(root.incomingIndex)
+      var readyImage = root.imageForIndex(root.incomingIndex)
       if (!readyImage || readyImage.status !== Image.Ready) return
       root.maskReady = true
       revealAnimation.restart()
@@ -110,7 +131,9 @@ FocusScope {
 
   function versionedSource(path) {
     if (!path) return ""
-    var base = Util.fileUrl(path)
+    var value = String(path)
+    var base = value.indexOf("https://") === 0 || value.indexOf("http://") === 0
+      ? value : Util.fileUrl(value)
     return revision ? base + "?revision=" + encodeURIComponent(revision) : base
   }
 
@@ -163,24 +186,25 @@ FocusScope {
 
     Repeater {
       id: imageRepeater
-      model: root.imageCount
+      model: root.loadedIndices
 
       delegate: Image {
-        required property int index
+        required property var modelData
+        readonly property int imageIndex: Number(modelData)
         anchors.fill: parent
-        visible: index === root.displayedIndex
-          || (index === root.incomingIndex
+        visible: imageIndex === root.displayedIndex
+          || (imageIndex === root.incomingIndex
             && status === Image.Ready
             && (root.revealProgress >= 1 || root.maskReady))
-        z: index === root.incomingIndex ? 1 : 0
-        source: root.versionedSource(String(root.images[index] || ""))
+        z: imageIndex === root.incomingIndex ? 1 : 0
+        source: root.versionedSource(String(root.images[imageIndex] || ""))
         fillMode: Image.PreserveAspectFit
         asynchronous: true
-        cache: true
+        cache: false
         smooth: true
         sourceSize.width: Math.max(1, Math.round(width * Screen.devicePixelRatio))
         sourceSize.height: Math.max(1, Math.round(height * Screen.devicePixelRatio))
-        layer.enabled: index === root.incomingIndex && root.revealProgress < 1
+        layer.enabled: imageIndex === root.incomingIndex && root.revealProgress < 1
         layer.smooth: true
         layer.effect: MultiEffect {
           maskEnabled: true
@@ -188,9 +212,13 @@ FocusScope {
           maskThresholdMin: 0.5
           maskSpreadAtMin: 0.02
         }
-        onStatusChanged: if (status === Image.Ready) {
-          root.imageBecameReady(index)
-          root.maybeStartReveal()
+        onStatusChanged: {
+          if (status === Image.Ready) {
+            root.imageBecameReady(imageIndex)
+            root.maybeStartReveal()
+          } else if (status === Image.Error) {
+            root.imageFailed(imageIndex)
+          }
         }
       }
     }

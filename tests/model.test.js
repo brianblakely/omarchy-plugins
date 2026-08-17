@@ -93,14 +93,14 @@ test("exposes only browser-safe runtime source URLs", () => {
 test("confirms updates only from a fresh successful snapshot", () => {
   const current = {
     ok: true,
-    cached: false,
+    remoteChecked: true,
     stale: false,
     snapshotId: "snapshot-1",
     plugins: []
   }
 
   assert.equal(snapshotConfirmsUpdates(current, 0), true)
-  assert.equal(snapshotConfirmsUpdates({ ...current, cached: true }, 0), false)
+  assert.equal(snapshotConfirmsUpdates({ ...current, remoteChecked: false }, 0), false)
   assert.equal(snapshotConfirmsUpdates({ ...current, stale: true }, 0), false)
   assert.equal(snapshotConfirmsUpdates({ ...current, ok: false }, 0), false)
   assert.equal(snapshotConfirmsUpdates(current, 1), false)
@@ -284,6 +284,7 @@ test("maps backend update states used by plugin details", () => {
   assert.equal(updateState(plugin({ updateState: "ahead" })), "ahead")
   assert.equal(updateState(plugin({ updateState: "no-origin" })), "missing-origin")
   assert.equal(updateState(plugin({ updateState: "fetch-failed" })), "offline")
+  assert.equal(updateState(plugin({ updateState: "unchecked" })), "checking")
   assert.equal(updateState(plugin({ updateState: "non-git" })), "unknown")
 })
 
@@ -294,6 +295,7 @@ test("shows only actionable runtime update details", () => {
     ["ahead", "Installed checkout is ahead of its remote"],
     ["no-origin", "Update unavailable: Git checkout has no origin"],
     ["fetch-failed", "Update status unavailable"],
+    ["unchecked", "Checking remote update status…"],
     ["non-git", "Local plugin; no Git update source"],
     ["development-link", "Development link; updates are managed externally"],
     ["invalid", "Update unavailable: installed manifest is invalid"]

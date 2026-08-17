@@ -47,6 +47,7 @@ When editing this project:
 | [Bar Widgets And Settings](docs/bar-widgets-and-settings.md) | `barWidget` metadata, settings schema, inline settings, QML reads/writes, CLI setting commands, and categories. |
 | [Keybindings](docs/keybindings.md) | User-owned Hyprland bindings, Omarchy shell IPC, and when to use Quickshell `GlobalShortcut`. |
 | [Publishing And Validation](docs/publishing-and-validation.md) | Standalone plugin repositories, install/update commands, refs, versioning, security notes, README install sections, validation, and release checklist. |
+| [Catalog Runtime](docs/catalog-runtime.md) | Okomart's active/pending cache, direct manifest refresh, timestamp enrichment, promotion, and lazy screenshot lifecycle. |
 
 ## Fast Path
 

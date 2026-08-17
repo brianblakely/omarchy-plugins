@@ -8,7 +8,8 @@ FocusScope {
   id: root
 
   property var plugin: null
-  property string catalogRevision: ""
+  property var screenshotImages: []
+  property string screenshotRevision: ""
   property bool narrowLayout: false
   property bool actionsEnabled: true
   property bool actionFocusPending: false
@@ -23,10 +24,11 @@ FocusScope {
   signal pluginListRequested()
   signal searchRequested()
   signal screenshotRequested(int index)
+  signal screenshotFailed(int index)
 
   readonly property bool hasPlugin: plugin !== null && plugin !== undefined
   readonly property bool installed: hasPlugin && plugin.installed === true
-  readonly property var screenshots: hasPlugin && Array.isArray(plugin.images) ? plugin.images : []
+  readonly property var screenshots: Array.isArray(screenshotImages) ? screenshotImages : []
   readonly property string normalizedUpdateState:
     hasPlugin ? OkomartModel.updateState(plugin) : ""
   readonly property string removalBlockReason:
@@ -492,14 +494,11 @@ FocusScope {
           id: screenshotsView
           width: parent.width
           images: root.screenshots
-          // Registry entries can advance independently of the catalog
-          // repository, so bust the image cache with the plugin commit.
-          revision: root.hasPlugin
-            ? String(root.plugin.catalogCommit || root.catalogRevision)
-            : root.catalogRevision
+          revision: root.screenshotRevision
           foreground: root.foreground
           accent: root.accent
           onImageActivated: function(index) { root.screenshotRequested(index) }
+          onImageFailed: function(index) { root.screenshotFailed(index) }
           onActiveFocusChanged: if (activeFocus) Qt.callLater(function() {
             root.ensureVisible(screenshotsView)
           })

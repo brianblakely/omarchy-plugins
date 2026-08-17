@@ -54,7 +54,22 @@ FocusScope {
   }
 
   function openOriginal() {
-    if (currentPath !== "") Qt.openUrlExternally(Util.fileUrl(currentPath))
+    if (currentPath === "") return
+    var target = currentPath.indexOf("https://") === 0
+      || currentPath.indexOf("http://") === 0
+      ? currentPath : Util.fileUrl(currentPath)
+    Qt.openUrlExternally(target)
+  }
+
+  function omitFailedImage(index) {
+    if (index < 0 || index >= images.length) return
+    var remaining = images.slice()
+    remaining.splice(index, 1)
+    if (remaining.length < 1) {
+      closeLightbox()
+      return
+    }
+    images = remaining
   }
 
   function focusTargets() {
@@ -188,6 +203,7 @@ FocusScope {
       imageInteractive: false
       imageNavigationInteractive: true
       imageHeightOverride: Math.max(1, height - paginationGap - paginationHeight)
+      onImageFailed: function(index) { root.omitFailedImage(index) }
     }
   }
 

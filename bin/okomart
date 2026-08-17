@@ -13,8 +13,17 @@ export LC_ALL=C
 
 OKOMART_ID="b.okomart"
 OFFICIAL_CATALOG_URL="https://github.com/brianblakely/omarchy-plugins.git"
-MARKETPLACE_REGISTRY_URL="https://raw.githubusercontent.com/HANCORE-linux/omarchy-plugin-marketplace/refs/heads/main/registry.json"
+MARKETPLACE_REGISTRY_URL="${OKOMART_MARKETPLACE_REGISTRY_URL:-https://raw.githubusercontent.com/HANCORE-linux/omarchy-plugin-marketplace/refs/heads/main/registry.json}"
 MARKETPLACE_REGISTRY_MAXIMUM_BYTES=$((1024 * 1024))
+MANIFEST_MAXIMUM_BYTES=$((512 * 1024))
+SCREENSHOT_MAXIMUM_BYTES=$((32 * 1024 * 1024))
+GITHUB_MANIFEST_WORKERS=16
+GENERIC_MANIFEST_WORKERS=2
+GITHUB_TIMESTAMP_WORKERS=8
+REFRESH_DEADLINE_SECONDS="${OKOMART_REFRESH_DEADLINE_SECONDS:-90}"
+[[ $REFRESH_DEADLINE_SECONDS =~ ^[1-9][0-9]*$ ]] || REFRESH_DEADLINE_SECONDS=90
+GITHUB_RAW_BASE="${OKOMART_GITHUB_RAW_BASE:-https://raw.githubusercontent.com}"
+GITHUB_API_BASE="${OKOMART_GITHUB_API_BASE:-https://api.github.com}"
 SCRIPT_PATH="$(realpath -m -- "${BASH_SOURCE[0]}")"
 
 json_error() {
@@ -48,15 +57,23 @@ init_paths() {
   CACHE_ROOT="$(realpath -m -- "$cache_base/okomart")"
   STATE_ROOT="$(realpath -m -- "$state_base/okomart")"
   PLUGINS_DIR="$(realpath -m -- "$home/.config/omarchy/plugins")"
-  CATALOG_DIR="$CACHE_ROOT/catalog"
-  REGISTRY_MIRROR="$CACHE_ROOT/registry.git"
-  REPOSITORY_CACHE="$CACHE_ROOT/repositories"
+  CATALOG_FILE="$CACHE_ROOT/catalog.json"
+  LEGACY_CATALOG_DIR="$CACHE_ROOT/catalog"
+  LEGACY_REGISTRY_MIRROR="$CACHE_ROOT/registry.git"
+  LEGACY_REPOSITORY_CACHE="$CACHE_ROOT/repositories"
   CATALOG_LOCK="$CACHE_ROOT/catalog.lock"
-  CATALOG_STATE="$STATE_ROOT/catalog.json"
-  SNAPSHOT_STATE="$STATE_ROOT/snapshot.json"
+  LEGACY_CATALOG_STATE="$STATE_ROOT/catalog.json"
+  LEGACY_SNAPSHOT_STATE="$STATE_ROOT/snapshot.json"
   ACTION_STATE="$STATE_ROOT/action.json"
   ACTION_LOCK="$STATE_ROOT/action.lock"
   ACTION_LOG="$STATE_ROOT/action.log"
+  local runtime_base
+  if [[ -n ${XDG_RUNTIME_DIR:-} ]]; then
+    runtime_base="$(realpath -m -- "$XDG_RUNTIME_DIR")"
+  else
+    runtime_base="$CACHE_ROOT/runtime"
+  fi
+  MEDIA_ROOT="$(realpath -m -- "$runtime_base/okomart")"
 
   [[ $CACHE_ROOT == /* && $CACHE_ROOT != "/" &&
     $(basename -- "$CACHE_ROOT") == "okomart" ]] || {
@@ -65,6 +82,11 @@ init_paths() {
   }
   [[ $STATE_ROOT == /* && $STATE_ROOT != "/" ]] || {
     json_error "refusing unsafe state path"
+    exit 1
+  }
+  [[ $MEDIA_ROOT == /* && $MEDIA_ROOT != "/" &&
+    $(basename -- "$MEDIA_ROOT") == okomart ]] || {
+    json_error "refusing unsafe Okomart runtime path"
     exit 1
   }
   if ! mkdir -p -- "$CACHE_ROOT" "$STATE_ROOT"; then
@@ -90,52 +112,56 @@ atomic_write() {
   fi
 }
 
-safe_remove_cache_stage() {
-  local target="$1"
+safe_remove_legacy_path() {
+  local target="$1" expected_parent="$2" expected_name="$3"
   local normalized
-  normalized="$(realpath -m -- "$target")"
-  case "$normalized" in
-  "$CACHE_ROOT"/.catalog.tmp.* | "$CACHE_ROOT"/.catalog.previous.* | \
-    "$CACHE_ROOT"/.mirror.tmp.* | "$CACHE_ROOT"/.mirror.previous.*)
-    rm -rf -- "$normalized"
-    ;;
-  *) return 1 ;;
-  esac
-}
-
-publish_catalog_stage() {
-  local stage="$1"
-  local normalized backup
-  normalized="$(realpath -m -- "$stage")"
-  [[ $stage == "$normalized" && -d $stage && ! -L $stage ]] || return 1
-  case "$stage" in
-  "$CACHE_ROOT"/.catalog.tmp.*) ;;
-  *) return 1 ;;
-  esac
-
-  if [[ ! -e $CATALOG_DIR ]]; then
-    mv -T -- "$stage" "$CATALOG_DIR"
-    return
-  fi
-  [[ -d $CATALOG_DIR && ! -L $CATALOG_DIR ]] || return 1
-
-  backup="$CACHE_ROOT/.catalog.previous.$$.$RANDOM"
-  [[ ! -e $backup && ! -L $backup ]] || return 1
-  if ! mv -T -- "$CATALOG_DIR" "$backup"; then
+  normalized="$(realpath -ms -- "$target")"
+  [[ $(dirname -- "$normalized") == "$expected_parent" &&
+    $(basename -- "$normalized") == "$expected_name" ]] || return 1
+  if [[ -L $target || -f $target ]]; then
+    rm -f -- "$target"
+  elif [[ -d $target ]]; then
+    rm -rf --one-file-system -- "$target"
+  elif [[ -e $target ]]; then
     return 1
   fi
-  if mv -T -- "$stage" "$CATALOG_DIR"; then
-    # The new checkout is already published. Cleanup is best effort so a
-    # cleanup failure can never make callers fall back to JSON for the old
-    # checkout while the new one is live.
-    safe_remove_cache_stage "$backup" >/dev/null 2>&1 || true
-    return 0
-  fi
+}
 
-  # Both paths live below CACHE_ROOT, so this same-filesystem rename restores
-  # the exact prior checkout if publishing the fully prepared stage fails.
-  mv -T -- "$backup" "$CATALOG_DIR" >/dev/null 2>&1 || true
-  return 1
+cleanup_legacy_catalog_data() {
+  safe_remove_legacy_path "$LEGACY_CATALOG_DIR" "$CACHE_ROOT" catalog || return 1
+  safe_remove_legacy_path "$LEGACY_REGISTRY_MIRROR" "$CACHE_ROOT" registry.git || return 1
+  safe_remove_legacy_path "$LEGACY_REPOSITORY_CACHE" "$CACHE_ROOT" repositories || return 1
+  safe_remove_legacy_path "$LEGACY_CATALOG_STATE" "$STATE_ROOT" catalog.json || return 1
+  safe_remove_legacy_path "$LEGACY_SNAPSHOT_STATE" "$STATE_ROOT" snapshot.json || return 1
+}
+
+catalog_default() {
+  jq -cn '{schemaVersion:1,active:null,pending:null}'
+}
+
+read_catalog() {
+  if [[ -f $CATALOG_FILE && ! -L $CATALOG_FILE ]] && jq -e '
+      type == "object" and .schemaVersion == 1
+      and (.active == null or (
+        (.active.generation | type == "string" and length > 0)
+        and (.active.entries | type == "array")
+        and (.active.errors | type == "array")
+      ))
+      and (.pending == null or (
+        (.pending.generation | type == "string" and length > 0)
+        and (.pending.ready | type == "boolean")
+        and (.pending.entries | type == "array")
+        and (.pending.errors | type == "array")
+      ))
+    ' "$CATALOG_FILE" >/dev/null 2>&1; then
+    cat -- "$CATALOG_FILE"
+  else
+    catalog_default
+  fi
+}
+
+write_catalog() {
+  atomic_write "$CATALOG_FILE" "$1"
 }
 
 valid_worker_snapshot_path() {
@@ -165,6 +191,48 @@ version_is_higher() {
   if printf '%s\n%s\n' "$available" "$installed" | sort -V -C; then
     return 1
   fi
+}
+
+# SemVer 2.0 precedence for catalog timestamp selection. Invalid versions are
+# deliberately incomparable: they remain valid display metadata, but cannot
+# advance a previously selected manifest timestamp.
+semver_is_higher() {
+  local available="${1:-}" previous="${2:-}"
+  jq -en --arg a "$available" --arg b "$previous" '
+    def parsed:
+      capture("^(?<major>0|[1-9][0-9]*)\\.(?<minor>0|[1-9][0-9]*)\\.(?<patch>0|[1-9][0-9]*)(?:-(?<pre>(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$")
+      | .core = [.major, .minor, .patch]
+      | .parts = (if .pre == null then null else (.pre | split(".")) end);
+    def numcmp($x; $y):
+      (($x | sub("^0+"; "")) // "0") as $nx
+      | (($y | sub("^0+"; "")) // "0") as $ny
+      | if ($nx|length) != ($ny|length) then
+          if ($nx|length) > ($ny|length) then 1 else -1 end
+        elif $nx == $ny then 0 elif $nx > $ny then 1 else -1 end;
+    def idcmp($x; $y):
+      ($x | test("^[0-9]+$")) as $xn | ($y | test("^[0-9]+$")) as $yn
+      | if $xn and $yn then numcmp($x; $y)
+        elif $xn then -1 elif $yn then 1
+        elif $x == $y then 0 elif $x > $y then 1 else -1 end;
+    def precmp($x; $y; $i):
+      if $i >= ($x|length) and $i >= ($y|length) then 0
+      elif $i >= ($x|length) then -1
+      elif $i >= ($y|length) then 1
+      else idcmp($x[$i]; $y[$i]) as $c
+        | if $c == 0 then precmp($x; $y; $i + 1) else $c end
+      end;
+    try ($a | parsed) catch null as $pa
+    | try ($b | parsed) catch null as $pb
+    | if $pa == null or $pb == null then false
+      else ([range(0;3) | numcmp($pa.core[.]; $pb.core[.])]
+        | map(select(. != 0)) | .[0] // 0) as $core
+      | if $core != 0 then $core > 0
+        elif $pa.parts == null and $pb.parts == null then false
+        elif $pa.parts == null then true
+        elif $pb.parts == null then false
+        else precmp($pa.parts; $pb.parts; 0) > 0 end
+      end
+  ' >/dev/null
 }
 
 prepare_window_command() {
@@ -381,114 +449,35 @@ canonical_marketplace_repository_url() {
   printf '%s\n' "$url"
 }
 
-MIRROR_COMMIT=""
-fetch_mirror_head() {
-  local target="$1"
-  local url="$2"
-  local stage backup prefix remote_head cached_head="" cached_origin=""
-  MIRROR_COMMIT=""
-
-  if [[ -L $target || ( -e $target && ! -d $target ) ]]; then
-    return 1
-  fi
-  if [[ -e $target ]]; then
-    [[ $(git -C "$target" config --bool core.bare 2>/dev/null) == true ]] ||
-      return 1
-  fi
-
-  remote_head="$(
-    git_with_timeout ls-remote --exit-code -- "$url" HEAD 2>/dev/null |
-      awk 'NR == 1 { print $1 }'
-  )"
-  [[ $remote_head =~ ^[0-9a-f]{40,64}$ ]] || return 1
-
-  if [[ -e $target ]]; then
-    cached_head="$(
-      git -C "$target" rev-parse refs/heads/okomart-cache 2>/dev/null || true
-    )"
-    cached_origin="$(
-      git -C "$target" config --get remote.origin.url 2>/dev/null || true
-    )"
-    if [[ $cached_head == "$remote_head" && $cached_origin == "$url" &&
-      $(git -C "$target" rev-parse --is-shallow-repository 2>/dev/null) == true &&
-      $(git -C "$target" rev-list --all --count 2>/dev/null) == 1 ]] &&
-      git -C "$target" cat-file -e "$cached_head^{commit}" >/dev/null 2>&1; then
-      MIRROR_COMMIT="$cached_head"
-      return 0
-    fi
-  fi
-
-  case "$target" in
-  "$REGISTRY_MIRROR") prefix="registry" ;;
-  "$REPOSITORY_CACHE"/*.git) prefix="plugin" ;;
-  *) return 1 ;;
-  esac
-  stage="$CACHE_ROOT/.mirror.tmp.$prefix.$$.$RANDOM.git"
-  safe_remove_cache_stage "$stage" >/dev/null 2>&1 || true
-  if ! git init -q --bare "$stage" >/dev/null 2>&1; then
-    safe_remove_cache_stage "$stage" >/dev/null 2>&1 || true
-    return 1
-  fi
-  git -C "$stage" remote add origin "$url" >/dev/null 2>&1 || {
-    safe_remove_cache_stage "$stage" >/dev/null 2>&1 || true
-    return 1
-  }
-
-  # A fresh depth-one mirror bounds both transfer and retained history to the
-  # one commit whose tree Okomart inspects. Rebuilding in a sibling staging
-  # repository also discards the former shallow commit after a successful
-  # refresh instead of accumulating one commit per catalog poll.
-  if ! git_with_timeout -C "$stage" fetch --quiet --force --depth=1 \
-    --no-tags --no-recurse-submodules \
-    origin '+HEAD:refs/heads/okomart-cache' >/dev/null 2>&1; then
-    safe_remove_cache_stage "$stage" >/dev/null 2>&1 || true
-    return 1
-  fi
-  MIRROR_COMMIT="$(
-    git -C "$stage" rev-parse refs/heads/okomart-cache 2>/dev/null
-  )" || {
-    safe_remove_cache_stage "$stage" >/dev/null 2>&1 || true
-    return 1
-  }
-  if [[ ! $MIRROR_COMMIT =~ ^[0-9a-f]{40,64}$ ]] ||
-    [[ $(git -C "$stage" rev-list --all --count 2>/dev/null) != 1 ]]; then
-    safe_remove_cache_stage "$stage" >/dev/null 2>&1 || true
-    return 1
-  fi
-
-  if [[ ! -e $target ]]; then
-    if ! mv -T -- "$stage" "$target"; then
-      safe_remove_cache_stage "$stage" >/dev/null 2>&1 || true
-      return 1
-    fi
-    return 0
-  fi
-
-  backup="$CACHE_ROOT/.mirror.previous.$$.$RANDOM"
-  [[ ! -e $backup && ! -L $backup ]] || {
-    safe_remove_cache_stage "$stage" >/dev/null 2>&1 || true
-    return 1
-  }
-  if ! mv -T -- "$target" "$backup"; then
-    safe_remove_cache_stage "$stage" >/dev/null 2>&1 || true
-    return 1
-  fi
-  if mv -T -- "$stage" "$target"; then
-    safe_remove_cache_stage "$backup" >/dev/null 2>&1 || true
-    return 0
-  fi
-
-  mv -T -- "$backup" "$target" >/dev/null 2>&1 || true
-  safe_remove_cache_stage "$stage" >/dev/null 2>&1 || true
-  return 1
-}
-
 REGISTRY_URLS=()
 declare -A REGISTRY_URL_IDENTITIES=()
 MARKETPLACE_IMPORTED_URLS=0
 
+github_repository_parts() {
+  local url="${1:-}"
+  shopt -s nocasematch
+  if [[ $url =~ ^https://github\.com/([-A-Za-z0-9._]+)/([-A-Za-z0-9._]+)\.git$ ]]; then
+    printf '%s\n%s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+    shopt -u nocasematch
+    return 0
+  fi
+  shopt -u nocasematch
+  return 1
+}
+
+canonical_registry_url() {
+  local url="$1" parts=()
+  mapfile -t parts < <(github_repository_parts "$url")
+  if (( ${#parts[@]} == 2 )); then
+    printf 'https://github.com/%s/%s.git\n' "${parts[0],,}" "${parts[1],,}"
+  else
+    printf '%s\n' "$url"
+  fi
+}
+
 append_registry_url() {
-  local url="$1"
+  local url
+  url="$(canonical_registry_url "$1")"
   local duplicate_policy="${2:-reject}"
   local identity
   identity="$(registry_url_identity "$url")"
@@ -501,26 +490,12 @@ append_registry_url() {
 }
 
 parse_registry_urls() {
-  local mirror="$1"
-  local commit="$2"
-  local list_file="$3"
+  local list_file="$1"
   REGISTRY_URLS=()
   REGISTRY_URL_IDENTITIES=()
   MARKETPLACE_IMPORTED_URLS=0
 
-  local mode type
-  read -r mode type _ _ < <(git -C "$mirror" ls-tree "$commit" -- plugins.txt)
-  [[ $mode =~ ^100(644|755)$ && $type == blob ]] || return 1
-  if git -C "$mirror" cat-file -e "$commit:.gitmodules" >/dev/null 2>&1 ||
-    git -C "$mirror" ls-tree -r "$commit" |
-      awk '$1 == "160000" { found=1 } END { exit !found }'; then
-    return 1
-  fi
-  [[ -z $(git -C "$mirror" ls-tree "$commit" -- \
-    .okomart-repositories .okomart-index.json) ]] ||
-    return 1
-  git -C "$mirror" show "$commit:plugins.txt" >"$list_file" 2>/dev/null ||
-    return 1
+  [[ -f $list_file && ! -L $list_file ]] || return 1
 
   local line read_status
   while true; do
@@ -607,31 +582,6 @@ parse_marketplace_registry() {
   )
 }
 
-catalog_registry_revision() {
-  local registry_commit="$1"
-  if (( MARKETPLACE_IMPORTED_URLS == 0 )); then
-    printf '%s\n' "$registry_commit"
-    return
-  fi
-  {
-    printf '%s\0' "$registry_commit"
-    printf '%s\0' "${REGISTRY_URLS[@]}"
-  } | sha256sum | awk '{print $1}'
-}
-
-materialize_cached_commit() {
-  local mirror="$1"
-  local commit="$2"
-  local destination="$3"
-  [[ ! -e $destination && ! -L $destination ]] || return 1
-  mkdir -- "$destination" || return 1
-  # Display checkouts need only files. Extracting the selected tree avoids
-  # copying even the shallow repository's Git object database into every
-  # catalog publication.
-  git -C "$mirror" archive --format=tar "$commit" 2>/dev/null |
-    tar -x --no-same-owner --no-same-permissions -C "$destination"
-}
-
 git_commit_timestamp() {
   local repository="$1"
   local commit="$2"
@@ -641,130 +591,6 @@ git_commit_timestamp() {
   )" || return 1
   [[ $timestamp =~ ^[0-9]+$ ]] || return 1
   printf '%s\n' "$timestamp"
-}
-
-REFRESH_PLUGIN_URLS=()
-REFRESH_PLUGIN_COMMITS=()
-REFRESH_PLUGIN_KEYS=()
-refresh_catalog() {
-  local url="$1"
-  local index_output="$2"
-  REFRESH_ERROR=""
-  REFRESH_PLUGIN_URLS=()
-  REFRESH_PLUGIN_COMMITS=()
-  REFRESH_PLUGIN_KEYS=()
-
-  if [[ -L $CATALOG_DIR ]]; then
-    REFRESH_ERROR="The catalog cache path is a symlink."
-    return 1
-  fi
-  if [[ -e $CATALOG_DIR && ! -d $CATALOG_DIR ]]; then
-    REFRESH_ERROR="The catalog cache path is not a directory."
-    return 1
-  fi
-  if [[ -L $REPOSITORY_CACHE ||
-    ( -e $REPOSITORY_CACHE && ! -d $REPOSITORY_CACHE ) ]] ||
-    ! mkdir -p -- "$REPOSITORY_CACHE"; then
-    REFRESH_ERROR="The plugin repository cache path is unsafe."
-    return 1
-  fi
-
-  if ! fetch_mirror_head "$REGISTRY_MIRROR" "$url"; then
-    REFRESH_ERROR="Could not fetch the catalog repository."
-    return 1
-  fi
-  local registry_commit="$MIRROR_COMMIT"
-  local list_file
-  list_file="$(mktemp "$STATE_ROOT/.plugins-list.XXXXXX")" || {
-    REFRESH_ERROR="Could not prepare the plugin registry list."
-    return 1
-  }
-  if ! parse_registry_urls "$REGISTRY_MIRROR" "$registry_commit" "$list_file"; then
-    rm -f -- "$list_file"
-    REFRESH_ERROR="The catalog plugins.txt registry is invalid."
-    return 1
-  fi
-  rm -f -- "$list_file"
-
-  local marketplace_file
-  marketplace_file="$(mktemp "$STATE_ROOT/.marketplace-registry.XXXXXX")" || {
-    REFRESH_ERROR="Could not prepare the HANCORE marketplace registry."
-    return 1
-  }
-  if ! fetch_marketplace_registry "$marketplace_file"; then
-    rm -f -- "$marketplace_file"
-    REFRESH_ERROR="Could not fetch the HANCORE marketplace registry."
-    return 1
-  fi
-  if ! parse_marketplace_registry "$marketplace_file"; then
-    rm -f -- "$marketplace_file"
-    REFRESH_ERROR="The HANCORE marketplace registry is invalid."
-    return 1
-  fi
-  rm -f -- "$marketplace_file"
-
-  local catalog_revision
-  catalog_revision="$(catalog_registry_revision "$registry_commit")"
-  [[ $catalog_revision =~ ^[0-9a-f]{40,64}$ ]] || {
-    REFRESH_ERROR="Could not identify the merged catalog registry."
-    return 1
-  }
-
-  local plugin_url key mirror
-  for plugin_url in "${REGISTRY_URLS[@]}"; do
-    key="$(printf '%s' "$plugin_url" | sha256sum | awk '{print $1}')"
-    mirror="$REPOSITORY_CACHE/$key.git"
-    if ! fetch_mirror_head "$mirror" "$plugin_url"; then
-      REFRESH_ERROR="Could not fetch plugin repository '$plugin_url'."
-      return 1
-    fi
-    REFRESH_PLUGIN_URLS+=("$plugin_url")
-    REFRESH_PLUGIN_COMMITS+=("$MIRROR_COMMIT")
-    REFRESH_PLUGIN_KEYS+=("$key")
-  done
-
-  local stage="$CACHE_ROOT/.catalog.tmp.$$.$RANDOM"
-  safe_remove_cache_stage "$stage" >/dev/null 2>&1 || true
-  if ! materialize_cached_commit "$REGISTRY_MIRROR" "$registry_commit" \
-    "$stage"; then
-    safe_remove_cache_stage "$stage" >/dev/null 2>&1 || true
-    REFRESH_ERROR="Could not prepare the catalog display checkout."
-    return 1
-  fi
-  if ! mkdir -- "$stage/.okomart-repositories"; then
-    safe_remove_cache_stage "$stage" >/dev/null 2>&1 || true
-    REFRESH_ERROR="Could not prepare plugin display checkouts."
-    return 1
-  fi
-
-  local index dir
-  for index in "${!REFRESH_PLUGIN_URLS[@]}"; do
-    key="${REFRESH_PLUGIN_KEYS[$index]}"
-    mirror="$REPOSITORY_CACHE/$key.git"
-    dir="$stage/.okomart-repositories/$key"
-    if ! materialize_cached_commit "$mirror" \
-      "${REFRESH_PLUGIN_COMMITS[$index]}" "$dir"; then
-      safe_remove_cache_stage "$stage" >/dev/null 2>&1 || true
-      REFRESH_ERROR="Could not prepare plugin display checkout."
-      return 1
-    fi
-  done
-
-  if ! build_catalog_index "$stage" "$catalog_revision" "$index_output"; then
-    safe_remove_cache_stage "$stage" >/dev/null 2>&1 || true
-    REFRESH_ERROR="Could not build a valid catalog index."
-    return 1
-  fi
-  if ! cp -- "$index_output" "$stage/.okomart-index.json"; then
-    safe_remove_cache_stage "$stage" >/dev/null 2>&1 || true
-    REFRESH_ERROR="Could not bind the catalog index to its display checkout."
-    return 1
-  fi
-  if ! publish_catalog_stage "$stage"; then
-    safe_remove_cache_stage "$stage" >/dev/null 2>&1 || true
-    REFRESH_ERROR="Could not publish the catalog cache."
-    return 1
-  fi
 }
 
 VALIDATION_ERROR=""
@@ -817,15 +643,31 @@ validate_manifest() {
   return 0
 }
 
-validate_catalog_manifest() {
-  local dir="$1"
-  validate_manifest "$dir" || return 1
+validate_remote_catalog_manifest() {
+  local manifest="$1"
+  VALIDATION_ERROR=""
   if ! jq -e '
-      (.name | type == "string" and test("\\S"))
+      type == "object"
+      and .schemaVersion == 1
+      and (.id | type == "string"
+        and test("^[A-Za-z0-9][A-Za-z0-9._-]*$")
+        and (contains("..") | not)
+        and (startswith("omarchy.") | not))
+      and (.name | type == "string" and test("\\S"))
+      and (.version | type == "string" and length > 0)
       and (.author | type == "string" and test("\\S"))
       and (.description | type == "string" and test("\\S"))
-    ' "$dir/manifest.json" >/dev/null 2>&1; then
-    VALIDATION_ERROR="Catalog manifests require nonblank name, author, and description"
+      and (.kinds | type == "array" and length > 0
+        and all(.[]; type == "string"
+          and IN("bar-widget", "panel", "overlay", "menu", "service", "bar")))
+      and (.entryPoints | type == "object")
+      and all(.entryPoints[];
+        type == "string" and length > 0
+        and (startswith("/") | not)
+        and (contains("\\n") | not)
+        and (contains("..") | not))
+    ' "$manifest" >/dev/null 2>&1; then
+    VALIDATION_ERROR="Invalid or unsupported catalog manifest.json"
     return 1
   fi
 }
@@ -833,31 +675,534 @@ validate_catalog_manifest() {
 manifest_metadata() {
   local manifest="$1"
   jq -c '{
+    schemaVersion: 1,
     id: (.id | tostring),
     name: (.name | tostring),
     description: ((.description // "") | tostring),
     author: ((.author // "") | tostring),
-    version: (.version | tostring)
+    version: (.version | tostring),
+    license: (if .license == null then null else (.license | tostring) end),
+    kinds: .kinds,
+    entryPoints: .entryPoints
   }' "$manifest"
 }
 
-images_json() {
-  local plugin_dir="$1"
-  local public_dir="${2:-$plugin_dir}"
-  local -a image_records=()
-  local -a images=()
-  local -a public_images=()
-  local screenshot_dir record image relative_image
+fetch_github_manifest_record() {
+  local index="$1" url="$2" work="$3" parts=()
+  local body="$work/manifest-$index.json"
+  mapfile -t parts < <(github_repository_parts "$url")
+  if (( ${#parts[@]} != 2 )); then
+    jq -cn --arg sourceUrl "$url" --arg error "Invalid GitHub repository URL" \
+      '{ok:false,sourceUrl:$sourceUrl,error:$error}' >"$work/result-$index.json"
+    return
+  fi
+  local raw="$GITHUB_RAW_BASE/${parts[0]}/${parts[1]}/HEAD/manifest.json"
+  if curl --fail --silent --show-error --location \
+      --proto '=https' --proto-redir '=https' \
+      --connect-timeout 8 --max-time 20 --max-filesize "$MANIFEST_MAXIMUM_BYTES" \
+      --user-agent 'Okomart manifest fetcher' --output "$body" "$raw" \
+      >/dev/null 2>&1 && [[ -f $body && ! -L $body ]] &&
+      (( $(stat -c %s -- "$body" 2>/dev/null) <= MANIFEST_MAXIMUM_BYTES )); then
+    jq -cn --arg sourceUrl "$url" --arg manifestPath "$body" \
+      '{ok:true,sourceUrl:$sourceUrl,manifestPath:$manifestPath,revision:null,headTimestamp:null}' \
+      >"$work/result-$index.json"
+  else
+    rm -f -- "$body"
+    jq -cn --arg sourceUrl "$url" --arg error "Could not fetch manifest.json" \
+      '{ok:false,sourceUrl:$sourceUrl,error:$error}' >"$work/result-$index.json"
+  fi
+}
 
-  mapfile -d '' -t image_records < <(
+fetch_generic_manifest_record() {
+  local index="$1" url="$2" work="$3"
+  local temp="$work/generic-$index"
+  local repo="$temp/repository" body="$work/manifest-$index.json"
+  mkdir -m 700 -- "$temp" || return
+  if timeout --signal=TERM --kill-after=2s 30s git clone --quiet --depth 1 \
+      --filter=blob:none --no-checkout --no-tags --no-recurse-submodules \
+      -- "$url" "$repo" >/dev/null 2>&1 &&
+      [[ $(git -C "$repo" ls-tree HEAD -- manifest.json 2>/dev/null | awk 'NR==1 {print $1}') =~ ^100(644|755)$ ]] &&
+      timeout --signal=TERM --kill-after=2s 20s \
+        git -C "$repo" show HEAD:manifest.json >"$body" 2>/dev/null; then
+    local revision timestamp
+    revision="$(git -C "$repo" rev-parse HEAD 2>/dev/null || true)"
+    timestamp="$(git_commit_timestamp "$repo" "$revision" 2>/dev/null || true)"
+    if [[ $revision =~ ^[0-9a-f]{40,64}$ && $timestamp =~ ^[0-9]+$ &&
+      -f $body && ! -L $body ]] &&
+      (( $(stat -c %s -- "$body" 2>/dev/null) <= MANIFEST_MAXIMUM_BYTES )); then
+      jq -cn --arg sourceUrl "$url" --arg manifestPath "$body" \
+        --arg revision "$revision" --argjson headTimestamp "$timestamp" \
+        '{ok:true,sourceUrl:$sourceUrl,manifestPath:$manifestPath,
+          revision:$revision,headTimestamp:$headTimestamp}' \
+        >"$work/result-$index.json"
+      rm -rf --one-file-system -- "$temp"
+      return
+    fi
+  fi
+  rm -rf --one-file-system -- "$temp"
+  rm -f -- "$body"
+  jq -cn --arg sourceUrl "$url" --arg error "Could not read manifest.json from the temporary repository" \
+    '{ok:false,sourceUrl:$sourceUrl,error:$error}' >"$work/result-$index.json"
+}
+
+run_manifest_pool() {
+  local kind="$1" tasks="$2" work="$3" limit="$4"
+  local index url pid
+  local -a pids=()
+  while IFS=$'\t' read -r index url; do
+    [[ -n $index && -n $url ]] || continue
+    if [[ $kind == github ]]; then
+      fetch_github_manifest_record "$index" "$url" "$work" &
+    else
+      fetch_generic_manifest_record "$index" "$url" "$work" &
+    fi
+    pids+=("$!")
+    if (( ${#pids[@]} >= limit )); then
+      wait "${pids[0]}" || true
+      pids=("${pids[@]:1}")
+    fi
+  done <"$tasks"
+  for pid in "${pids[@]}"; do wait "$pid" || true; done
+}
+
+refresh_failure() {
+  jq -cn --arg error "$1" '{ok:false,staged:false,error:$error}'
+}
+
+stage_refresh_worker() {
+  local source_arg="${1:-}" source_dir
+  source_dir="$(realpath -m -- "$source_arg")"
+  [[ -d $source_dir && -f $source_dir/plugins.txt ]] || {
+    refresh_failure "Okomart's local plugins.txt registry is unavailable."
+    return 1
+  }
+  if [[ -L $CATALOG_LOCK || -d $CATALOG_LOCK ]]; then
+    refresh_failure "The Okomart catalog lock path is unsafe."
+    return 1
+  fi
+  exec 8>>"$CATALOG_LOCK" || {
+    refresh_failure "Could not open the Okomart catalog lock."
+    return 1
+  }
+  if ! flock -n 8; then
+    jq -cn '{ok:true,staged:false,busy:true}'
+    return
+  fi
+  cleanup_legacy_catalog_data || {
+    refresh_failure "Could not safely remove legacy Okomart catalog data."
+    return 1
+  }
+
+  local work marketplace_file
+  work="$(mktemp -d "$CACHE_ROOT/.refresh.XXXXXX")" || {
+    refresh_failure "Could not prepare catalog refresh working files."
+    return 1
+  }
+  chmod 700 "$work"
+  trap 'if [[ -n ${work:-} && -d $work ]]; then rm -rf --one-file-system -- "$work"; fi; exit 143' TERM INT HUP
+  marketplace_file="$work/marketplace.json"
+
+  if ! parse_registry_urls "$source_dir/plugins.txt"; then
+    rm -rf --one-file-system -- "$work"
+    refresh_failure "The local plugins.txt registry is invalid."
+    return 1
+  fi
+  if ! fetch_marketplace_registry "$marketplace_file"; then
+    rm -rf --one-file-system -- "$work"
+    refresh_failure "Could not fetch the HANCORE marketplace registry."
+    return 1
+  fi
+  if ! parse_marketplace_registry "$marketplace_file"; then
+    rm -rf --one-file-system -- "$work"
+    refresh_failure "The HANCORE marketplace registry is invalid."
+    return 1
+  fi
+  (( ${#REGISTRY_URLS[@]} > 0 )) || {
+    rm -rf --one-file-system -- "$work"
+    refresh_failure "The merged plugin registry is empty."
+    return 1
+  }
+
+  local github_tasks="$work/github.tasks" generic_tasks="$work/generic.tasks"
+  : >"$github_tasks"; : >"$generic_tasks"
+  local index url
+  for index in "${!REGISTRY_URLS[@]}"; do
+    url="${REGISTRY_URLS[$index]}"
+    if github_repository_parts "$url" >/dev/null; then
+      printf '%s\t%s\n' "$index" "$url" >>"$github_tasks"
+    else
+      printf '%s\t%s\n' "$index" "$url" >>"$generic_tasks"
+    fi
+  done
+  run_manifest_pool github "$github_tasks" "$work" "$GITHUB_MANIFEST_WORKERS" &
+  local github_pool=$!
+  run_manifest_pool generic "$generic_tasks" "$work" "$GENERIC_MANIFEST_WORKERS" &
+  local generic_pool=$!
+  wait "$github_pool" || true
+  wait "$generic_pool" || true
+
+  local raw_entries="$work/raw-entries.jsonl" errors="$work/errors.jsonl"
+  : >"$raw_entries"; : >"$errors"
+  local request_failures=0 successful_requests=0 record manifest metadata id
+  local revision head_timestamp
+  declare -A ids=()
+  for index in "${!REGISTRY_URLS[@]}"; do
+    url="${REGISTRY_URLS[$index]}"
+    record="$work/result-$index.json"
+    if [[ ! -f $record ]] || ! jq -e '.ok == true' "$record" >/dev/null 2>&1; then
+      request_failures=$((request_failures + 1))
+      jq -cn --arg sourceUrl "$url" \
+        --arg error "$(jq -r '.error // "Manifest request failed"' "$record" 2>/dev/null || printf 'Manifest request failed')" \
+        '{sourceUrl:$sourceUrl,error:$error,phase:"manifest"}' >>"$errors"
+      continue
+    fi
+    successful_requests=$((successful_requests + 1))
+    manifest="$(jq -r '.manifestPath' "$record")"
+    if ! validate_remote_catalog_manifest "$manifest"; then
+      jq -cn --arg sourceUrl "$url" --arg error "$VALIDATION_ERROR" \
+        '{sourceUrl:$sourceUrl,error:$error,phase:"validation"}' >>"$errors"
+      continue
+    fi
+    metadata="$(manifest_metadata "$manifest")" || continue
+    id="$(jq -r '.id' <<<"$metadata")"
+    if [[ $id == "$OKOMART_ID" ]]; then
+      jq -cn --arg sourceUrl "$url" --arg error "Catalog entries cannot reuse Okomart's plugin id" \
+        '{sourceUrl:$sourceUrl,error:$error,phase:"validation"}' >>"$errors"
+      continue
+    fi
+    if [[ -n ${ids[$id]+x} ]]; then
+      jq -cn --arg sourceUrl "$url" --arg error "Duplicate plugin id '$id'" \
+        '{sourceUrl:$sourceUrl,error:$error,phase:"validation"}' >>"$errors"
+      continue
+    fi
+    ids[$id]=1
+    revision="$(jq -c '.revision' "$record")"
+    head_timestamp="$(jq -c '.headTimestamp' "$record")"
+    jq -cn --argjson metadata "$metadata" --arg sourceUrl "$url" \
+      --argjson revision "$revision" --argjson headTimestamp "$head_timestamp" \
+      '$metadata + {sourceUrl:$sourceUrl,revision:$revision,
+        updatedAt:null,_headTimestamp:$headTimestamp}' >>"$raw_entries"
+  done
+
+  if (( request_failures == ${#REGISTRY_URLS[@]} )); then
+    rm -rf --one-file-system -- "$work"
+    refresh_failure "Every plugin manifest request failed; the active catalog was preserved."
+    return 1
+  fi
+
+  local current active_generation checked_at staged_entries timestamp_sources fallbacks
+  current="$(read_catalog)"
+  active_generation="$(jq -r '.active.generation // ""' <<<"$current")"
+  checked_at="$(utc_now)"
+  staged_entries="$work/staged-entries.jsonl"
+  timestamp_sources="$work/timestamp-sources.jsonl"
+  fallbacks="$work/fallbacks.jsonl"
+  : >"$staged_entries"; : >"$timestamp_sources"; : >"$fallbacks"
+  local entry old new_version old_version need_timestamp old_updated old_revision
+  local fetched_revision fetched_timestamp
+  while IFS= read -r entry; do
+    [[ -n $entry ]] || continue
+    url="$(jq -r '.sourceUrl' <<<"$entry")"
+    id="$(jq -r '.id' <<<"$entry")"
+    old="$(jq -c --arg url "$url" --arg id "$id" '
+      [.active.entries[]? | select(.sourceUrl == $url and .id == $id)][0] // null
+    ' <<<"$current")"
+    new_version="$(jq -r '.version' <<<"$entry")"
+    old_version="$(jq -r 'if . == null then "" else .version end' <<<"$old")"
+    need_timestamp=false
+    if [[ $old == null ]] || semver_is_higher "$new_version" "$old_version"; then
+      need_timestamp=true
+    fi
+    old_updated="$(jq -c 'if . == null then null else (.updatedAt // null) end' <<<"$old")"
+    old_revision="$(jq -c 'if . == null then null else (.revision // null) end' <<<"$old")"
+    fetched_revision="$(jq -c '.revision // null' <<<"$entry")"
+    fetched_timestamp="$(jq -c '._headTimestamp // null' <<<"$entry")"
+    if [[ $need_timestamp == true ]]; then
+      jq -cn --arg sourceUrl "$url" '{sourceUrl:$sourceUrl}' >>"$timestamp_sources"
+      if [[ $fetched_timestamp != null && $fetched_revision != null ]]; then
+        jq -cn --arg sourceUrl "$url" --argjson updatedAt "$fetched_timestamp" \
+          --argjson revision "$fetched_revision" \
+          '{sourceUrl:$sourceUrl,updatedAt:$updatedAt,revision:$revision}' >>"$fallbacks"
+      fi
+      if [[ $old == null && $fetched_revision != null ]]; then
+        old_revision="$fetched_revision"
+      fi
+    fi
+    jq -c --argjson updatedAt "$old_updated" --argjson revision "$old_revision" \
+      'del(._headTimestamp) | .updatedAt=$updatedAt | .revision=$revision' \
+      <<<"$entry" >>"$staged_entries"
+  done <"$raw_entries"
+
+  local canonical generation entries_json errors_json sources_json fallbacks_json
+  canonical="$(jq -s -S -c 'sort_by(.sourceUrl) | map(del(.updatedAt,.revision))' "$staged_entries")"
+  generation="$(printf '%s' "$canonical" | sha256sum | awk '{print $1}')"
+  entries_json="$(jq -s 'sort_by(-(.updatedAt // 0), (.name | ascii_downcase), .id)' "$staged_entries")"
+  errors_json="$(jq -s '.' "$errors")"
+  sources_json="$(jq -s 'map(.sourceUrl)' "$timestamp_sources")"
+  fallbacks_json="$(jq -s '.' "$fallbacks")"
+
+  local next cold=false preserve_pending=false
+  if [[ -z $active_generation ]]; then
+    cold=true
+    next="$(jq -cn --arg generation "$generation" --arg checkedAt "$checked_at" \
+      --argjson entries "$entries_json" --argjson errors "$errors_json" \
+      --argjson sources "$sources_json" --argjson fallbacks "$fallbacks_json" '
+      {schemaVersion:1,
+        active:{generation:$generation,entries:$entries,errors:$errors,checkedAt:$checkedAt},
+        pending:{generation:$generation,ready:($sources|length == 0),entries:$entries,
+          errors:$errors,checkedAt:$checkedAt,timestampSources:$sources,
+          timestampFallbacks:$fallbacks,enrichmentOnly:true}}
+    ')"
+  elif [[ $generation == "$active_generation" ]]; then
+    if jq -e --arg generation "$generation" '
+      .pending != null and .pending.generation == $generation
+      and .pending.enrichmentOnly == true
+      and (.pending.entries != .active.entries)
+    ' <<<"$current" >/dev/null; then
+      preserve_pending=true
+    fi
+    next="$(jq -c --arg checkedAt "$checked_at" --argjson errors "$errors_json" \
+      --argjson preserve "$preserve_pending" '
+      .active.checkedAt=$checkedAt | .active.errors=$errors
+      | if $preserve then . else .pending=null end
+    ' <<<"$current")"
+  else
+    next="$(jq -c --arg generation "$generation" --arg checkedAt "$checked_at" \
+      --argjson entries "$entries_json" --argjson errors "$errors_json" \
+      --argjson sources "$sources_json" --argjson fallbacks "$fallbacks_json" '
+      .pending={generation:$generation,ready:($sources|length == 0),entries:$entries,
+        errors:$errors,checkedAt:$checkedAt,timestampSources:$sources,
+        timestampFallbacks:$fallbacks,enrichmentOnly:false}
+    ' <<<"$current")"
+  fi
+  if ! write_catalog "$next"; then
+    rm -rf --one-file-system -- "$work"
+    refresh_failure "Could not atomically stage the catalog generation."
+    return 1
+  fi
+  rm -rf --one-file-system -- "$work"
+  jq -cn --arg generation "$generation" --arg activeGeneration "$(jq -r '.active.generation // ""' <<<"$next")" \
+    --argjson cold "$cold" --argjson changed "$([[ $cold == true || $generation != "$active_generation" ]] && printf true || printf false)" \
+    --argjson pending "$(jq -c '.pending | if . == null then null else {generation,ready} end' <<<"$next")" \
+    '{ok:true,staged:true,coldPublished:$cold,changed:$changed,
+      generation:$generation,activeGeneration:$activeGeneration,pending:$pending}'
+}
+
+refresh_command() {
+  local output rc=0
+  output="$(timeout --signal=TERM --kill-after=3s "${REFRESH_DEADLINE_SECONDS}s" \
+    bash "$SCRIPT_PATH" _refresh-worker "$@")" || rc=$?
+  if (( rc == 124 || rc == 137 )); then
+    refresh_failure "Catalog refresh exceeded its overall time limit; the active catalog was preserved."
+    return 1
+  fi
+  [[ -n $output ]] && printf '%s\n' "$output" || refresh_failure "Catalog refresh failed before producing a result."
+  return $rc
+}
+
+fetch_github_timestamp_record() {
+  local index="$1" url="$2" work="$3" parts=()
+  local body="$work/timestamp-$index.json"
+  mapfile -t parts < <(github_repository_parts "$url")
+  (( ${#parts[@]} == 2 )) || return 1
+  local endpoint="$GITHUB_API_BASE/repos/${parts[0]}/${parts[1]}/commits?path=manifest.json&per_page=1"
+  if curl --fail --silent --show-error --location \
+      --proto '=https' --proto-redir '=https' --connect-timeout 8 --max-time 20 \
+      --max-filesize "$MANIFEST_MAXIMUM_BYTES" --user-agent 'Okomart timestamp enricher' \
+      --header 'Accept: application/vnd.github+json' --output "$body" "$endpoint" \
+      >/dev/null 2>&1 && jq -e 'type == "array" and length > 0' "$body" >/dev/null 2>&1; then
+    if jq -c --arg sourceUrl "$url" '
+      .[0] | (.commit.committer.date // .commit.author.date) as $date
+      | {ok:true,sourceUrl:$sourceUrl,revision:.sha,updatedAt:($date | fromdateiso8601)}
+      | select(.revision | type == "string" and test("^[0-9a-f]{40,64}$"))
+    ' "$body" >"$work/time-result-$index.json" 2>/dev/null; then return; fi
+  fi
+  jq -cn --arg sourceUrl "$url" --arg error "Could not resolve the manifest-changing commit" \
+    '{ok:false,sourceUrl:$sourceUrl,error:$error}' >"$work/time-result-$index.json"
+}
+
+run_timestamp_pool() {
+  local tasks="$1" work="$2" limit="$3" index url pid
+  local -a pids=()
+  while IFS=$'\t' read -r index url; do
+    [[ -n $index && -n $url ]] || continue
+    fetch_github_timestamp_record "$index" "$url" "$work" &
+    pids+=("$!")
+    if (( ${#pids[@]} >= limit )); then
+      wait "${pids[0]}" || true
+      pids=("${pids[@]:1}")
+    fi
+  done <"$tasks"
+  for pid in "${pids[@]}"; do wait "$pid" || true; done
+}
+
+enrich_command() {
+  local generation="${1:-}"
+  [[ $generation =~ ^[0-9a-f]{64}$ ]] || {
+    json_error "Usage: okomart enrich <pending-generation>"
+    return 2
+  }
+  local initial pending
+  initial="$(read_catalog)"
+  pending="$(jq -c --arg generation "$generation" '
+    if .pending != null and .pending.generation == $generation then .pending else null end
+  ' <<<"$initial")"
+  if [[ $pending == null ]]; then
+    jq -cn --arg generation "$generation" '{ok:false,stale:true,generation:$generation}'
+    return 1
+  fi
+  if jq -e '.ready == true' <<<"$pending" >/dev/null; then
+    jq -cn --arg generation "$generation" '{ok:true,stale:false,generation:$generation,ready:true}'
+    return
+  fi
+  local work tasks updates errors index=0 url fallback
+  work="$(mktemp -d "$CACHE_ROOT/.enrich.XXXXXX")" || return 1
+  chmod 700 "$work"
+  tasks="$work/tasks"; updates="$work/updates.jsonl"; errors="$work/errors.jsonl"
+  : >"$tasks"; : >"$updates"; : >"$errors"
+  while IFS= read -r url; do
+    [[ -n $url ]] || continue
+    fallback="$(jq -c --arg url "$url" '[.timestampFallbacks[]? | select(.sourceUrl == $url)][0] // null' <<<"$pending")"
+    if [[ $fallback != null ]]; then
+      printf '%s\n' "$fallback" >>"$updates"
+    elif github_repository_parts "$url" >/dev/null; then
+      printf '%s\t%s\n' "$index" "$url" >>"$tasks"
+      index=$((index + 1))
+    else
+      jq -cn --arg sourceUrl "$url" --arg error "No generic-host HEAD timestamp was available" \
+        '{sourceUrl:$sourceUrl,error:$error,phase:"timestamp"}' >>"$errors"
+    fi
+  done < <(jq -r '.timestampSources[]?' <<<"$pending")
+  run_timestamp_pool "$tasks" "$work" "$GITHUB_TIMESTAMP_WORKERS"
+  local result
+  for (( index = 0; index < $(wc -l <"$tasks"); index++ )); do
+    result="$work/time-result-$index.json"
+    if [[ -f $result ]] && jq -e '.ok == true' "$result" >/dev/null 2>&1; then
+      jq -c 'del(.ok)' "$result" >>"$updates"
+    else
+      jq -c '{sourceUrl,error,phase:"timestamp"}' "$result" 2>/dev/null >>"$errors" || true
+    fi
+  done
+  local entries_json enrichment_errors next current
+  entries_json="$(jq -cn --slurpfile entries <(jq -c '.entries[]' <<<"$pending") \
+    --slurpfile updates "$updates" '
+      $entries | map(. as $entry
+        | ([$updates[] | select(.sourceUrl == $entry.sourceUrl)][0] // null) as $update
+        | if $update == null then . else
+            .updatedAt=$update.updatedAt | .revision=$update.revision
+          end)
+      | sort_by(-(.updatedAt // 0), (.name | ascii_downcase), .id)
+    ')"
+  enrichment_errors="$(jq -s '.' "$errors")"
+  rm -rf --one-file-system -- "$work"
+
+  if [[ -L $CATALOG_LOCK || -d $CATALOG_LOCK ]]; then return 1; fi
+  exec 8>>"$CATALOG_LOCK" || return 1
+  flock 8 || return 1
+  current="$(read_catalog)"
+  if ! jq -e --arg generation "$generation" '
+      .pending != null and .pending.generation == $generation and .pending.ready == false
+    ' <<<"$current" >/dev/null; then
+    jq -cn --arg generation "$generation" '{ok:false,stale:true,generation:$generation}'
+    return 1
+  fi
+  next="$(jq -c --arg generation "$generation" --argjson entries "$entries_json" \
+    --argjson enrichmentErrors "$enrichment_errors" '
+      .pending.entries=$entries
+      | .pending.errors += $enrichmentErrors
+      | .pending.ready=true
+      | .pending.enrichedAt=(now | todateiso8601)
+      | del(.pending.timestampSources,.pending.timestampFallbacks)
+    ' <<<"$current")"
+  write_catalog "$next" || {
+    json_error "Could not atomically store timestamp enrichment"
+    return 1
+  }
+  jq -cn --arg generation "$generation" --argjson errorCount "$(jq 'length' <<<"$enrichment_errors")" \
+    '{ok:true,stale:false,generation:$generation,ready:true,enrichmentErrorCount:$errorCount}'
+}
+
+promote_command() {
+  local generation="${1:-}"
+  [[ $generation =~ ^[0-9a-f]{64}$ && $# == 1 ]] || {
+    json_error "Usage: okomart promote <pending-generation>"
+    return 2
+  }
+  [[ ! -L $CATALOG_LOCK && ! -d $CATALOG_LOCK ]] || return 1
+  exec 8>>"$CATALOG_LOCK" || return 1
+  flock 8 || return 1
+  local current next
+  current="$(read_catalog)"
+  if ! jq -e --arg generation "$generation" '
+      .pending != null and .pending.ready == true and .pending.generation == $generation
+    ' <<<"$current" >/dev/null; then
+    jq -cn --arg generation "$generation" \
+      '{ok:false,promoted:false,stale:true,generation:$generation,
+        error:"The pending catalog generation is no longer ready."}'
+    return 1
+  fi
+  next="$(jq -c '
+    .active=(.pending | del(.ready,.timestampSources,.timestampFallbacks,.enrichmentOnly))
+    | .pending=null
+  ' <<<"$current")"
+  write_catalog "$next" || {
+    json_error "Could not atomically promote the pending catalog generation"
+    return 1
+  }
+  jq -cn --arg generation "$generation" '{ok:true,promoted:true,generation:$generation}'
+}
+
+valid_media_session_id() {
+  [[ ${1:-} =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$ && $1 != *..* ]]
+}
+
+ensure_media_root() {
+  [[ ! -L $MEDIA_ROOT && ( ! -e $MEDIA_ROOT || -d $MEDIA_ROOT ) ]] || return 1
+  mkdir -p -m 700 -- "$MEDIA_ROOT" && chmod 700 -- "$MEDIA_ROOT"
+}
+
+safe_remove_media_session() {
+  local session="$1" target normalized
+  valid_media_session_id "$session" || return 1
+  target="$MEDIA_ROOT/session-$session"
+  normalized="$(realpath -ms -- "$target")"
+  [[ $(dirname -- "$normalized") == "$MEDIA_ROOT" &&
+    $(basename -- "$normalized") == "session-$session" ]] || return 1
+  if [[ -L $target || -f $target ]]; then rm -f -- "$target"
+  elif [[ -d $target ]]; then rm -rf --one-file-system -- "$target"
+  elif [[ -e $target ]]; then return 1
+  fi
+}
+
+cleanup_media_command() {
+  local session="${1:-}"
+  if [[ $session == --all && $# == 1 ]]; then
+    if [[ -L $MEDIA_ROOT ]]; then rm -f -- "$MEDIA_ROOT"
+    elif [[ -d $MEDIA_ROOT ]]; then rm -rf --one-file-system -- "$MEDIA_ROOT"
+    elif [[ -e $MEDIA_ROOT ]]; then return 1
+    fi
+    jq -cn '{ok:true,cleaned:true,all:true}'
+    return
+  fi
+  [[ $# == 1 ]] && safe_remove_media_session "$session" || {
+    json_error "Usage: okomart cleanup-media <session-id|--all>"
+    return 2
+  }
+  jq -cn --arg session "$session" '{ok:true,cleaned:true,session:$session}'
+}
+
+local_screenshot_paths() {
+  local plugin_dir="$1" record path
+  local -a records=() paths=()
+  mapfile -d '' -t records < <(
     {
       find -H "$plugin_dir" -mindepth 1 -maxdepth 1 -type f \
         \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \
         -o -iname '*.gif' -o -iname '*.bmp' -o -iname '*.webp' \) \
         -printf '%f/%p\0' 2>/dev/null
-      for screenshot_dir in "$plugin_dir/images" "$plugin_dir/screenshots"; do
-        if [[ -d $screenshot_dir && ! -L $screenshot_dir ]]; then
-          find "$screenshot_dir" -mindepth 1 -maxdepth 1 -type f \
+      for path in "$plugin_dir/images" "$plugin_dir/screenshots"; do
+        if [[ -d $path && ! -L $path ]]; then
+          find "$path" -mindepth 1 -maxdepth 1 -type f \
             \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \
             -o -iname '*.gif' -o -iname '*.bmp' -o -iname '*.webp' \) \
             -printf '%f/%p\0' 2>/dev/null
@@ -865,96 +1210,142 @@ images_json() {
       done
     } | sort -z -fV
   )
-
-  for record in "${image_records[@]}"; do
-    images+=("${record#*/}")
-  done
-
-  if (( ${#images[@]} == 0 )); then
-    printf '[]\n'
-  else
-    for image in "${images[@]}"; do
-      relative_image="${image#"$plugin_dir"/}"
-      public_images+=("$public_dir/$relative_image")
-    done
-    printf '%s\0' "${public_images[@]}" | jq -Rs 'split("\u0000")[:-1]'
+  for record in "${records[@]}"; do paths+=("${record#*/}"); done
+  if (( ${#paths[@]} == 0 )); then printf '[]\n'
+  else printf '%s\0' "${paths[@]}" | jq -Rs 'split("\u0000")[:-1]'
   fi
 }
 
-build_catalog_index() {
-  local stage="$1"
-  local commit="$2"
-  local output="$3"
-
-  local entries_file errors_file
-  entries_file="$(mktemp "$STATE_ROOT/.catalog-entries.XXXXXX")" || return 1
-  errors_file="$(mktemp "$STATE_ROOT/.catalog-errors.XXXXXX")" || {
-    rm -f -- "$entries_file"
+github_screenshots_json() {
+  local url="$1" revision="$2" parts=() body
+  [[ $revision =~ ^[0-9a-f]{40,64}$ ]] || return 1
+  mapfile -t parts < <(github_repository_parts "$url")
+  (( ${#parts[@]} == 2 )) || return 1
+  body="$(mktemp "$CACHE_ROOT/.github-tree.XXXXXX")" || return 1
+  local endpoint="$GITHUB_API_BASE/repos/${parts[0]}/${parts[1]}/git/trees/$revision?recursive=1"
+  if ! curl --fail --silent --show-error --location \
+      --proto '=https' --proto-redir '=https' --connect-timeout 8 --max-time 25 \
+      --max-filesize $((4 * 1024 * 1024)) --user-agent 'Okomart screenshot discovery' \
+      --header 'Accept: application/vnd.github+json' --output "$body" "$endpoint" \
+      >/dev/null 2>&1 || ! jq -e '.tree | type == "array"' "$body" >/dev/null 2>&1; then
+    rm -f -- "$body"
     return 1
-  }
-  : >"$entries_file"
-  : >"$errors_file"
-
-  local -A ids=()
-  local index key path url ref dir public_dir metadata images id
-  local mirror updated_at
-  for index in "${!REFRESH_PLUGIN_URLS[@]}"; do
-    key="${REFRESH_PLUGIN_KEYS[$index]}"
-    path=".okomart-repositories/$key"
-    url="${REFRESH_PLUGIN_URLS[$index]}"
-    ref="${REFRESH_PLUGIN_COMMITS[$index]}"
-    mirror="$REPOSITORY_CACHE/$key.git"
-    dir="$stage/$path"
-    public_dir="$CATALOG_DIR/$path"
-
-    if ! validate_catalog_manifest "$dir"; then
-      jq -cn --arg sourceUrl "$url" --arg error "$VALIDATION_ERROR" \
-        '{sourceUrl:$sourceUrl,error:$error}' >>"$errors_file"
-      continue
-    fi
-
-    metadata="$(manifest_metadata "$dir/manifest.json")" || continue
-    id="$(jq -r '.id' <<<"$metadata")"
-    if [[ $id == "$OKOMART_ID" ]]; then
-      jq -cn --arg sourceUrl "$url" \
-        --arg error "Catalog entries cannot reuse Okomart's plugin id" \
-        '{sourceUrl:$sourceUrl,error:$error}' >>"$errors_file"
-      continue
-    fi
-    if [[ -n ${ids[$id]+x} ]]; then
-      jq -cn --arg sourceUrl "$url" --arg error "Duplicate plugin id '$id'" \
-        '{sourceUrl:$sourceUrl,error:$error}' >>"$errors_file"
-      continue
-    fi
-    ids[$id]=1
-    images="$(images_json "$dir" "$public_dir")"
-    updated_at="$(git_commit_timestamp "$mirror" "$ref")" || return 1
-    jq -cn \
-      --argjson metadata "$metadata" \
-      --arg sourceUrl "$url" \
-      --arg catalogCommit "$ref" \
-      --argjson updatedAt "$updated_at" \
-      --argjson images "$images" \
-      '$metadata + {
-        sourceUrl:$sourceUrl,
-        images:$images,
-        catalogCommit:$catalogCommit,
-        updatedAt:$updatedAt
-      }' >>"$entries_file"
-  done
-
-  jq -cn \
-    --arg catalogCommit "$commit" \
-    --slurpfile entries "$entries_file" \
-    --slurpfile errors "$errors_file" \
-    '{
-      catalogCommit:$catalogCommit,
-      entries:$entries,
-      errors:$errors
-    }' >"$output"
+  fi
+  jq -c --arg base "$GITHUB_RAW_BASE/${parts[0]}/${parts[1]}/$revision/" '
+    def image: test("\\.(?:jpe?g|png|gif|bmp|webp)$"; "i");
+    def location:
+      (split("/") | length) as $parts
+      | ($parts == 1 or ($parts == 2 and (startswith("images/") or startswith("screenshots/"))));
+    def encoded: split("/") | map(@uri) | join("/");
+    [.tree[] | select(.type == "blob" and (.mode == "100644" or .mode == "100755"))
+      | .path | select(image and location)]
+    | sort_by(ascii_downcase)
+    | map($base + encoded)
+  ' "$body"
   local rc=$?
-  rm -f -- "$entries_file" "$errors_file"
+  rm -f -- "$body"
   return $rc
+}
+
+generic_screenshots_json() {
+  local url="$1" revision="$2" session="$3"
+  ensure_media_root || return 1
+  local existing existing_session
+  shopt -s nullglob
+  for existing in "$MEDIA_ROOT"/session-*; do
+    existing_session="${existing##*/session-}"
+    [[ $existing_session == "$session" ]] || safe_remove_media_session "$existing_session" || true
+  done
+  shopt -u nullglob
+  safe_remove_media_session "$session" || return 1
+  local session_dir="$MEDIA_ROOT/session-$session" repo media commit
+  repo="$session_dir/repository"; media="$session_dir/media"
+  mkdir -m 700 -- "$session_dir" "$media" || return 1
+  if ! timeout --signal=TERM --kill-after=2s 35s git clone --quiet --depth 1 \
+      --filter=blob:none --no-checkout --no-tags --no-recurse-submodules \
+      -- "$url" "$repo" >/dev/null 2>&1; then
+    safe_remove_media_session "$session" || true
+    return 1
+  fi
+  commit="$(git -C "$repo" rev-parse HEAD 2>/dev/null || true)"
+  if [[ -n $revision && $commit != "$revision" ]]; then
+    if ! timeout --signal=TERM --kill-after=2s 25s git -C "$repo" fetch --quiet \
+        --depth 1 --no-tags origin "$revision" >/dev/null 2>&1; then
+      safe_remove_media_session "$session" || true
+      return 1
+    fi
+    commit="$(git -C "$repo" rev-parse FETCH_HEAD 2>/dev/null || true)"
+  fi
+  [[ $commit =~ ^[0-9a-f]{40,64}$ ]] || { safe_remove_media_session "$session" || true; return 1; }
+  local path lower mode output extension count=0
+  local -a tree_paths=() images=()
+  mapfile -d '' -t tree_paths < <(git -C "$repo" ls-tree -rz --name-only "$commit" 2>/dev/null)
+  for path in "${tree_paths[@]}"; do
+    lower="${path,,}"
+    [[ $lower =~ \.(jpg|jpeg|png|gif|bmp|webp)$ ]] || continue
+    [[ $path != */* || $path =~ ^(images|screenshots)/[^/]+$ ]] || continue
+    mode="$(git -C "$repo" ls-tree "$commit" -- "$path" 2>/dev/null | awk 'NR==1 {print $1}')"
+    [[ $mode =~ ^100(644|755)$ ]] || continue
+    extension="${lower##*.}"
+    output="$media/image-$count.$extension"
+    if timeout --signal=TERM --kill-after=2s 20s \
+        git -C "$repo" show "$commit:$path" >"$output" 2>/dev/null &&
+      (( $(stat -c %s -- "$output" 2>/dev/null) <= SCREENSHOT_MAXIMUM_BYTES )); then
+      chmod 600 -- "$output"
+      images+=("$output")
+      count=$((count + 1))
+    else
+      rm -f -- "$output"
+    fi
+  done
+  local images_json='[]'
+  if (( ${#images[@]} > 0 )); then
+    images_json="$(printf '%s\0' "${images[@]}" | jq -Rs 'split("\u0000")[:-1]')"
+  fi
+  jq -cn --arg revision "$commit" --argjson images "$images_json" \
+    '{ok:true,images:$images,revision:$revision}'
+}
+
+screenshots_command() {
+  local descriptor="${1:-}" session="${2:-}"
+  [[ $# == 2 ]] && valid_media_session_id "$session" && jq -e '
+      type == "object" and (.id | type == "string")
+      and ((.sourceUrl // "") | type == "string")
+      and ((.revision // "") | type == "string")
+      and ((.installedPath // "") | type == "string")
+    ' <<<"$descriptor" >/dev/null 2>&1 || {
+    json_error "Usage: okomart screenshots <plugin-descriptor-json> <session-id>"
+    return 2
+  }
+  local id installed_path source_url revision expected images
+  id="$(jq -r '.id' <<<"$descriptor")"
+  installed_path="$(jq -r '.installedPath // ""' <<<"$descriptor")"
+  source_url="$(jq -r '.sourceUrl // ""' <<<"$descriptor")"
+  revision="$(jq -r '.revision // ""' <<<"$descriptor")"
+  if [[ -n $installed_path ]]; then
+    valid_plugin_id "$id" || return 1
+    expected="$PLUGINS_DIR/$id"
+    [[ ( -d $expected || -L $expected ) &&
+      $(realpath -m -- "$expected") == "$installed_path" ]] || return 1
+    images="$(local_screenshot_paths "$installed_path")" || images='[]'
+    jq -cn --argjson images "$images" '{ok:true,images:$images,revision:""}'
+    return
+  fi
+  valid_registry_url "$source_url" || {
+    jq -cn '{ok:false,images:[],error:"The screenshot source URL is invalid."}'
+    return
+  }
+  if github_repository_parts "$source_url" >/dev/null; then
+    if images="$(github_screenshots_json "$source_url" "$revision")"; then
+      jq -cn --argjson images "$images" --arg revision "$revision" \
+        '{ok:true,images:$images,revision:$revision}'
+    else
+      jq -cn '{ok:false,images:[],error:"Screenshot discovery is unavailable."}'
+    fi
+  else
+    generic_screenshots_json "$source_url" "$revision" "$session" ||
+      jq -cn '{ok:false,images:[],error:"Screenshot discovery is unavailable."}'
+  fi
 }
 
 status_text_for() {
@@ -969,8 +1360,41 @@ status_text_for() {
   development-link) printf 'Development link; update manually' ;;
   non-git) printf 'Local folder; update manually' ;;
   invalid) printf 'Installed manifest is invalid' ;;
+  unchecked) printf 'Remote update status has not been checked' ;;
   *) printf '%s' "$1" ;;
   esac
+}
+
+installed_local_json() {
+  local dir="$1" manifest_valid="$2" installed_version="$3"
+  local install_type state origin="" current="" dirty=false
+  if [[ -L $dir ]]; then
+    install_type="development-link"
+    state="development-link"
+  elif ! plugin_owned_git_worktree "$dir"; then
+    install_type="local"
+    state="non-git"
+  else
+    install_type="git"
+    current="$(git -C "$dir" rev-parse HEAD 2>/dev/null || true)"
+    origin="$(git -C "$dir" remote get-url origin 2>/dev/null || true)"
+    [[ -z $(git -C "$dir" status --porcelain 2>/dev/null) ]] || dirty=true
+    if [[ $manifest_valid != true ]]; then state="invalid"
+    elif [[ $dirty == true ]]; then state="dirty"
+    elif [[ -z $origin ]]; then state="no-origin"
+    else state="unchecked"
+    fi
+  fi
+  [[ $manifest_valid == true ]] || state="invalid"
+  jq -cn --arg installType "$install_type" --arg updateState "$state" \
+    --arg statusText "$(status_text_for "$state")" --arg sourceUrl "$origin" \
+    --arg currentCommit "$current" --arg availableCommit "$current" \
+    --arg availableVersion "$installed_version" --argjson dirty "$dirty" '
+    {installType:$installType,updateState:$updateState,statusText:$statusText,
+      sourceUrl:$sourceUrl,currentCommit:$currentCommit,
+      availableCommit:$availableCommit,availableVersion:$availableVersion,
+      versionUpdateAvailable:false,dirty:$dirty,safeUpdate:false}
+  '
 }
 
 plugin_owned_git_worktree() {
@@ -1105,6 +1529,7 @@ installed_update_json() {
 
 build_installed_index() {
   local output="$1"
+  local remote_checks="${2:-false}"
   local lines
   lines="$(mktemp "$STATE_ROOT/.installed.XXXXXX")" || return 1
   : >"$lines"
@@ -1115,7 +1540,7 @@ build_installed_index() {
     return 0
   fi
 
-  local dir folder manifest_valid metadata id update installed_version images
+  local dir folder manifest_valid metadata id update installed_version
   local validation_error updated_at
   shopt -s nullglob
   for dir in "$PLUGINS_DIR"/*; do
@@ -1129,13 +1554,12 @@ build_installed_index() {
       manifest_valid=true
       metadata="$(manifest_metadata "$dir/manifest.json")"
       id="$(jq -r '.id' <<<"$metadata")"
-      images="$(images_json "$dir")"
     else
       validation_error="$VALIDATION_ERROR"
       id="$folder"
-      images='[]'
       metadata="$(jq -cn --arg id "$id" --arg name "$folder" '{
-        id:$id,name:$name,description:"",author:"",version:""
+        schemaVersion:1,id:$id,name:$name,description:"",author:"",version:"",
+        license:null,kinds:[],entryPoints:{}
       }')"
     fi
 
@@ -1145,7 +1569,11 @@ build_installed_index() {
 
     installed_version="$(jq -r '.version' <<<"$metadata")"
     updated_at="$(installed_plugin_timestamp "$dir")"
-    update="$(installed_update_json "$dir" "$manifest_valid" "$installed_version")"
+    if [[ $remote_checks == true ]]; then
+      update="$(installed_update_json "$dir" "$manifest_valid" "$installed_version")"
+    else
+      update="$(installed_local_json "$dir" "$manifest_valid" "$installed_version")"
+    fi
 
     jq -cn \
       --argjson metadata "$metadata" \
@@ -1154,14 +1582,12 @@ build_installed_index() {
       --arg installedPath "$(realpath -m -- "$dir")" \
       --arg validationError "$validation_error" \
       --argjson updatedAt "$updated_at" \
-      --argjson images "$images" \
       '$metadata + $update + {
         installed:true,
         installedVersion:$installedVersion,
         installedPath:$installedPath,
         updatedAt:$updatedAt,
-        validationError:$validationError,
-        images:$images
+        validationError:$validationError
       }' >>"$lines"
   done
   shopt -u nullglob
@@ -1174,15 +1600,12 @@ build_installed_index() {
 
 merge_plugins_json() {
   local catalog="$1"
-  local previous="$2"
-  local installed="$3"
-  local output="$4"
+  local installed="$2"
+  local output="$3"
   jq -n \
     --slurpfile catalog "$catalog" \
-    --slurpfile previous "$previous" \
     --slurpfile installed "$installed" '
     ($catalog[0].entries // []) as $c |
-    ($previous[0].historyEntries // $previous[0].entries // []) as $p |
     ($installed[0] // []) as $i |
     (
       [
@@ -1191,6 +1614,7 @@ merge_plugins_json() {
         if $local == null then
           $available + {
             catalog:true,installed:false,
+            catalogCommit:($available.revision // ""),
             versionUpdateAvailable:false,
             safeUpdate:false
           }
@@ -1201,8 +1625,7 @@ merge_plugins_json() {
             author:$available.author,
             version:$available.version,
             sourceUrl:$available.sourceUrl,
-            images:$available.images,
-            catalogCommit:$available.catalogCommit,
+            catalogCommit:($available.revision // ""),
             updatedAt:([
               ($available.updatedAt // 0),
               ($local.updatedAt // 0)
@@ -1221,36 +1644,14 @@ merge_plugins_json() {
       [
         $i[] as $local |
         select(([$c[].id] | index($local.id)) == null) |
-        ([$p[] | select(.id == $local.id)][0] // null) as $old |
-        if $old == null then
-          $local + {
-            catalog:false,installed:true,
-            availableVersion:(
-              if ($local.availableVersion // "") != ""
-              then $local.availableVersion else $local.installedVersion end
-            )
-          }
-        else
-          ($old + $local) + {
-            name:$old.name,
-            description:$old.description,
-            author:$old.author,
-            version:$old.version,
-            sourceUrl:$old.sourceUrl,
-            images:($local.images // []),
-            updatedAt:([
-              ($old.updatedAt // 0),
-              ($local.updatedAt // 0)
-            ] | max),
-            catalog:false,installed:true,
-            installedVersion:$local.installedVersion,
-            installedSourceUrl:$local.sourceUrl,
-            availableVersion:(
-              if ($local.availableVersion // "") != ""
-              then $local.availableVersion else $old.version end
-            )
-          }
-        end
+        $local + {
+          catalog:false,installed:true,
+          installedSourceUrl:$local.sourceUrl,
+          availableVersion:(
+            if ($local.availableVersion // "") != ""
+            then $local.availableVersion else $local.installedVersion end
+          )
+        }
       ]
     )
     | sort_by(-(.updatedAt // 0), (.name | ascii_downcase), .id)
@@ -1360,29 +1761,34 @@ self_update_json() {
     }'
 }
 
-snapshot_command() {
-  local source_arg="${1:-}"
-  [[ -n $source_arg ]] || {
-    json_error "Usage: okomart snapshot <source-dir>"
-    return 2
-  }
-  if [[ -L $CATALOG_LOCK || -d $CATALOG_LOCK ]]; then
-    json_error "The Okomart catalog lock path is unsafe"
-    return 1
+self_local_json() {
+  local source_dir="$1" development_link="${2:-false}"
+  local installed_version="" current="" state="non-git" dirty=false
+  if [[ -f $source_dir/manifest.json ]]; then
+    installed_version="$(jq -r 'if .version == null then "" else (.version|tostring) end' \
+      "$source_dir/manifest.json" 2>/dev/null || true)"
   fi
-  exec 8>>"$CATALOG_LOCK" || {
-    json_error "Could not open the Okomart catalog lock"
-    return 1
-  }
-  if ! flock 8; then
-    json_error "Could not lock the Okomart catalog cache"
-    exec 8>&-
-    return 1
+  if [[ $development_link == true ]]; then state="development-link"
+  elif plugin_owned_git_worktree "$source_dir"; then
+    current="$(git -C "$source_dir" rev-parse HEAD 2>/dev/null || true)"
+    [[ -z $(git -C "$source_dir" status --porcelain -- manifest.json '*.qml' '*.js' bin assets 2>/dev/null) ]] || dirty=true
+    if [[ $dirty == true ]]; then state="dirty"
+    elif ! git -C "$source_dir" remote get-url origin >/dev/null 2>&1; then state="no-origin"
+    else state="unchecked"
+    fi
   fi
-  local source_dir source_is_development_link=false source_link_candidate
-  # Normalize redundant separators and dot components without dereferencing
-  # the final symlink. Canonicalization below intentionally resolves it only
-  # after its development-link install type has been captured.
+  jq -cn --arg installedVersion "$installed_version" --arg currentCommit "$current" \
+    --arg updateState "$state" --arg statusText "$(status_text_for "$state")" '
+    {installedVersion:$installedVersion,availableVersion:$installedVersion,
+      currentCommit:$currentCommit,availableCommit:$currentCommit,
+      updateState:$updateState,statusText:$statusText,
+      versionUpdateAvailable:false,safeUpdate:false}
+  '
+}
+
+snapshot_payload() {
+  local source_arg="$1" remote_checks="${2:-false}"
+  local source_dir source_link_candidate source_is_development_link=false
   source_link_candidate="$(realpath -ms -- "$source_arg")"
   [[ -L $source_link_candidate ]] && source_is_development_link=true
   source_dir="$(realpath -m -- "$source_arg")"
@@ -1391,151 +1797,70 @@ snapshot_command() {
     return 2
   }
 
-  local url=""
-  url="$(source_origin "$source_dir" || true)"
-  local previous current installed plugins self stale=false ok=true error=""
-  previous="$(mktemp "$STATE_ROOT/.previous.XXXXXX")" || return 1
-  current="$(mktemp "$STATE_ROOT/.current.XXXXXX")" || return 1
-  installed="$(mktemp "$STATE_ROOT/.installed-index.XXXXXX")" || return 1
-  plugins="$(mktemp "$STATE_ROOT/.plugins.XXXXXX")" || return 1
-
-  local live_catalog_commit="" state_catalog_commit=""
-  if [[ -d $CATALOG_DIR && ! -L $CATALOG_DIR &&
-    -f $CATALOG_DIR/.okomart-index.json ]] &&
-    jq -e '(.entries | type == "array")
-      and (.catalogCommit | type == "string"
-        and test("^[0-9a-f]{40,64}$"))' \
-      "$CATALOG_DIR/.okomart-index.json" >/dev/null 2>&1; then
-    live_catalog_commit="$(
-      jq -r '.catalogCommit' "$CATALOG_DIR/.okomart-index.json"
-    )"
-  fi
-  if [[ -f $CATALOG_STATE ]] &&
-    jq -e '.entries | type == "array"' "$CATALOG_STATE" >/dev/null 2>&1; then
-    state_catalog_commit="$(jq -r '.catalogCommit // ""' "$CATALOG_STATE")"
-  fi
-  if [[ -n $live_catalog_commit &&
-    $state_catalog_commit == "$live_catalog_commit" ]]; then
-    cp -- "$CATALOG_STATE" "$previous"
-  elif [[ -n $live_catalog_commit ]] &&
-    jq -e --arg commit "$live_catalog_commit" '
-      (.entries | type == "array")
-      and .catalogCommit == $commit
-    ' "$CATALOG_DIR/.okomart-index.json" >/dev/null 2>&1; then
-    cp -- "$CATALOG_DIR/.okomart-index.json" "$previous"
+  local catalog active generation pending catalog_file installed plugins self
+  catalog="$(read_catalog)"
+  active="$(jq -c '.active // {generation:"",entries:[],errors:[],checkedAt:""}' <<<"$catalog")"
+  generation="$(jq -r '.generation // ""' <<<"$active")"
+  pending="$(jq -c '.pending | if . == null then null else {generation,ready} end' <<<"$catalog")"
+  catalog_file="$(mktemp "$STATE_ROOT/.active-catalog.XXXXXX")" || return 1
+  installed="$(mktemp "$STATE_ROOT/.installed-index.XXXXXX")" || { rm -f -- "$catalog_file"; return 1; }
+  plugins="$(mktemp "$STATE_ROOT/.plugins.XXXXXX")" || { rm -f -- "$catalog_file" "$installed"; return 1; }
+  printf '%s\n' "$active" >"$catalog_file"
+  build_installed_index "$installed" "$remote_checks" || printf '[]\n' >"$installed"
+  merge_plugins_json "$catalog_file" "$installed" "$plugins" || printf '[]\n' >"$plugins"
+  if [[ $remote_checks == true ]]; then
+    self="$(self_update_json "$source_dir" "$source_is_development_link")"
   else
-    printf '{}\n' >"$previous"
+    self="$(self_local_json "$source_dir" "$source_is_development_link")"
   fi
+  jq -cn --argjson ok "$([[ -n $generation ]] && printf true || printf false)" \
+    --arg generation "$generation" --argjson pending "$pending" --argjson self "$self" \
+    --slurpfile active "$catalog_file" --slurpfile plugins "$plugins" \
+    --argjson remoteChecked "$remote_checks" '
+    {ok:$ok,localOnly:($remoteChecked|not),remoteChecked:$remoteChecked,
+      error:(if $ok then "" else "No active Okomart catalog is cached yet." end),
+      snapshotId:$generation,activeGeneration:$generation,
+      catalogCommit:$generation,pending:$pending,
+      checkedAt:($active[0].checkedAt // ""),catalogErrors:($active[0].errors // []),
+      self:$self,plugins:($plugins[0] // [])}
+  '
+  local rc=$?
+  rm -f -- "$catalog_file" "$installed" "$plugins"
+  return $rc
+}
 
-  local refreshed=false
-  if [[ -z $url ]]; then
-    error="The Okomart source checkout has no catalog origin."
-  elif refresh_catalog "$url" "$current"; then
-    refreshed=true
-  else
-    error="$REFRESH_ERROR"
+snapshot_command() {
+  local source_arg="${1:-}"
+  [[ -n $source_arg && $# == 1 ]] || {
+    json_error "Usage: okomart snapshot <source-dir>"
+    return 2
+  }
+  cleanup_legacy_catalog_data || {
+    json_error "Could not safely remove legacy Okomart catalog data"
+    return 1
+  }
+  snapshot_payload "$source_arg" false
+}
+
+check_updates_command() {
+  local source_arg="${1:-}"
+  [[ -n $source_arg && $# == 1 ]] || {
+    json_error "Usage: okomart check-updates <source-dir>"
+    return 2
+  }
+  local before after output
+  before="$(jq -r '.active.generation // ""' <<<"$(read_catalog)")"
+  output="$(snapshot_payload "$source_arg" true)" || return
+  after="$(jq -r '.active.generation // ""' <<<"$(read_catalog)")"
+  if [[ -z $before || $before != "$after" ]]; then
+    jq -c '.ok=false | .stale=true | .error="The active catalog changed during the update check."' <<<"$output"
+    return 1
   fi
-
-  if [[ $refreshed == true ]]; then
-    local history_index
-    history_index="$(mktemp "$STATE_ROOT/.catalog-history.XXXXXX")" || {
-      error="Could not preserve catalog removal history."
-      ok=false
-    }
-    if [[ -n ${history_index:-} ]] &&
-      jq --slurpfile old "$previous" '
-        (.entries | map(.id)) as $currentIds
-        | .historyEntries = (
-            .entries
-            + [
-                ($old[0].historyEntries // $old[0].entries // [])[]
-                | .id as $id
-                | select(($currentIds | index($id)) == null)
-              ]
-          )
-      ' "$current" >"$history_index" &&
-      mv -fT -- "$history_index" "$current"; then
-      :
-    else
-      [[ -z ${history_index:-} ]] || rm -f -- "$history_index"
-      error="Could not preserve catalog removal history."
-      ok=false
-    fi
-    atomic_write "$CATALOG_DIR/.okomart-index.json" "$(jq -c '.' "$current")" ||
-      true
-    atomic_write "$CATALOG_STATE" "$(jq -c '.' "$current")" || {
-      error="Could not persist the catalog index."
-      ok=false
-    }
-  elif [[ -s $previous ]] && jq -e '.entries | type == "array"' "$previous" \
-    >/dev/null 2>&1; then
-    cp -- "$previous" "$current"
-    stale=true
-  else
-    jq -cn '{catalogCommit:"",entries:[],errors:[]}' >"$current"
-    stale=true
-    ok=false
-  fi
-
-  build_installed_index "$installed" || printf '[]\n' >"$installed"
-  merge_plugins_json "$current" "$previous" "$installed" "$plugins" ||
-    printf '[]\n' >"$plugins"
-  self="$(self_update_json "$source_dir" "$source_is_development_link")"
-
-  local generated snapshot_id output
-  generated="$(utc_now)"
-  snapshot_id="${generated}-$$-$RANDOM"
-  output="$(jq -cn \
-    --argjson ok "$ok" \
-    --argjson stale "$stale" \
-    --arg error "$error" \
-    --arg snapshotId "$snapshot_id" \
-    --argjson self "$self" \
-    --slurpfile catalog "$current" \
-    --slurpfile plugins "$plugins" \
-    '{
-      ok:$ok,
-      stale:$stale,
-      error:$error,
-      snapshotId:$snapshotId,
-      catalogCommit:($catalog[0].catalogCommit // ""),
-      catalogErrors:($catalog[0].errors // []),
-      self:$self,
-      plugins:($plugins[0] // [])
-    }')"
-  if ! atomic_write "$SNAPSHOT_STATE" "$output"; then
-    ok=false
-    output="$(jq -c \
-      '.ok=false | .error="Could not persist the actionable catalog snapshot."' \
-      <<<"$output")"
-  fi
-  rm -f -- "$previous" "$current" "$installed" "$plugins"
   printf '%s\n' "$output"
-  [[ $ok == true ]]
 }
 
 cached_command() {
-  (( $# == 0 )) || {
-    json_error "cached does not take arguments"
-    return 2
-  }
-
-  if [[ -f $SNAPSHOT_STATE && ! -L $SNAPSHOT_STATE ]] &&
-    jq -e '
-      type == "object"
-      and (.ok == true)
-      and (.plugins | type == "array")
-      and (.snapshotId | type == "string" and length > 0)
-    ' "$SNAPSHOT_STATE" >/dev/null 2>&1; then
-    jq -c '. + {cached:true}' "$SNAPSHOT_STATE"
-    return
-  fi
-
-  jq -cn '{
-    ok:false,
-    cached:false,
-    error:"No valid cached Okomart snapshot is available."
-  }'
+  snapshot_command "$@"
 }
 
 default_action_status() {
@@ -1741,7 +2066,7 @@ PREFLIGHT_URL=""
 preflight_install() {
   local id="$1"
   local snapshot_file="$2"
-  local url expected remote_head
+  local url expected remote_head expected_metadata live_metadata temp_record temp_dir
   local -a fields=()
   PREFLIGHT_ERROR=""
   PREFLIGHT_URL=""
@@ -1758,8 +2083,48 @@ preflight_install() {
   )
   url="${fields[0]:-}"
   expected="${fields[1]:-}"
-  if [[ -z $url || ! $expected =~ ^[0-9a-f]{40,64}$ ]]; then
+  if [[ -z $url ]]; then
     PREFLIGHT_ERROR="Plugin is not an installable entry in the confirmed snapshot."
+    return 1
+  fi
+
+  if github_repository_parts "$url" >/dev/null; then
+    expected_metadata="$(jq -c --arg id "$id" '
+      [.plugins[] | select(.id == $id and .catalog == true)][0]
+      | {schemaVersion,id,name,description,author,version,license,kinds,entryPoints}
+    ' "$snapshot_file" 2>/dev/null)"
+    temp_dir="$(mktemp -d "$STATE_ROOT/.install-preflight.XXXXXX")" || {
+      PREFLIGHT_ERROR="Could not prepare the install preflight."
+      return 1
+    }
+    fetch_github_manifest_record 0 "$url" "$temp_dir"
+    temp_record="$temp_dir/result-0.json"
+    if [[ ! -f $temp_record ]] || ! jq -e '.ok == true' "$temp_record" >/dev/null 2>&1 ||
+      ! validate_remote_catalog_manifest "$temp_dir/manifest-0.json"; then
+      rm -rf --one-file-system -- "$temp_dir"
+      PREFLIGHT_ERROR="Could not re-check the plugin manifest before installation."
+      return 1
+    fi
+    live_metadata="$(manifest_metadata "$temp_dir/manifest-0.json")"
+    rm -rf --one-file-system -- "$temp_dir"
+    if [[ $live_metadata != "$expected_metadata" ]]; then
+      PREFLIGHT_ERROR="The plugin manifest changed after confirmation. Refresh and review it again."
+      return 1
+    fi
+    remote_head="$(
+      git_with_timeout ls-remote --exit-code -- "$url" HEAD 2>/dev/null |
+        awk 'NR == 1 { print $1 }'
+    )"
+    if [[ ! $remote_head =~ ^[0-9a-f]{40,64}$ ]]; then
+      PREFLIGHT_ERROR="Could not verify the plugin repository HEAD before installation."
+      return 1
+    fi
+    PREFLIGHT_URL="$url"
+    return
+  fi
+
+  if [[ ! $expected =~ ^[0-9a-f]{40,64}$ ]]; then
+    PREFLIGHT_ERROR="The generic-host catalog revision is unavailable."
     return 1
   fi
 
@@ -2142,6 +2507,12 @@ normalize_update_selection() {
   printf '%s\n' "$normalized"
 }
 
+active_generation_matches() {
+  local expected="$1"
+  [[ -n $expected &&
+    $(jq -r '.active.generation // ""' <<<"$(read_catalog)") == "$expected" ]]
+}
+
 worker_command() {
   local source_dir="$1"
   local action_id="$2"
@@ -2185,7 +2556,8 @@ worker_command() {
   )"
   if [[ -z $confirmed_snapshot_id
       || $snapshot_path_valid != true
-      || $current_snapshot_id != "$confirmed_snapshot_id" ]]; then
+      || $current_snapshot_id != "$confirmed_snapshot_id" ]] ||
+    ! active_generation_matches "$confirmed_snapshot_id"; then
     status="$(append_action_message "$status" "${id:-catalog}" "$operation" false \
       "The catalog changed after confirmation. Reopen the action and review it again.")"
     overall=false
@@ -2200,6 +2572,10 @@ worker_command() {
   install)
     if ! preflight_install "$id" "$confirmed_snapshot_file"; then
       status="$(append_action_message "$status" "$id" install false "$PREFLIGHT_ERROR")"
+      overall=false
+    elif ! active_generation_matches "$confirmed_snapshot_id"; then
+      status="$(append_action_message "$status" "$id" install false \
+        "The active catalog changed during preflight. Reopen the action and review it again.")"
       overall=false
     else
       local next_status rc=0
@@ -2217,6 +2593,10 @@ worker_command() {
     if ! preflight_remove "$id" "$confirmed_snapshot_file"; then
       status="$(append_action_message "$status" "$id" remove false "$PREFLIGHT_ERROR")"
       overall=false
+    elif ! active_generation_matches "$confirmed_snapshot_id"; then
+      status="$(append_action_message "$status" "$id" remove false \
+        "The active catalog changed during preflight. Reopen the action and review it again.")"
+      overall=false
     else
       local next_status rc=0
       next_status="$(run_plugin_action "$status" remove "$id" \
@@ -2232,6 +2612,10 @@ worker_command() {
   update)
     if ! preflight_update "$id" "$confirmed_snapshot_file" "$source_dir"; then
       status="$(append_action_message "$status" "$id" update false "$PREFLIGHT_ERROR")"
+      overall=false
+    elif ! active_generation_matches "$confirmed_snapshot_id"; then
+      status="$(append_action_message "$status" "$id" update false \
+        "The active catalog changed during preflight. Reopen the action and review it again.")"
       overall=false
     else
       local next_status rc=0
@@ -2269,6 +2653,11 @@ worker_command() {
         status="$(append_action_message "$status" "$target" update false \
           "$PREFLIGHT_ERROR")"
         overall=false
+      elif ! active_generation_matches "$confirmed_snapshot_id"; then
+        status="$(append_action_message "$status" "$target" update false \
+          "The active catalog changed during preflight. Remaining updates were stopped.")"
+        overall=false
+        action_timed_out=true
       else
         rc=0
         next_status="$(run_plugin_action "$status" update "$target" \
@@ -2295,6 +2684,10 @@ worker_command() {
       if ! preflight_update "$OKOMART_ID" "$confirmed_snapshot_file" "$source_dir"; then
         status="$(append_action_message "$status" "$OKOMART_ID" update false \
           "$PREFLIGHT_ERROR")"
+        overall=false
+      elif ! active_generation_matches "$confirmed_snapshot_id"; then
+        status="$(append_action_message "$status" "$OKOMART_ID" update false \
+          "The active catalog changed during preflight. Reopen the action and review it again.")"
         overall=false
       else
         rc=0
@@ -2443,27 +2836,17 @@ action_command() {
     return 2
     ;;
   esac
-  [[ -f $SNAPSHOT_STATE ]] || {
-    json_error "Run snapshot before starting an action"
-    return 2
-  }
   [[ -n $confirmed_snapshot_id ]] || {
-    json_error "A confirmed snapshot id is required"
+    json_error "A confirmed active catalog generation is required"
     return 2
   }
-  if ! jq -e --arg snapshotId "$confirmed_snapshot_id" \
-    '.snapshotId == $snapshotId' "$SNAPSHOT_STATE" >/dev/null 2>&1; then
+  if ! jq -e --arg generation "$confirmed_snapshot_id" \
+    '.active != null and .active.generation == $generation' \
+    <<<"$(read_catalog)" >/dev/null 2>&1; then
     jq -cn --arg snapshotId "$confirmed_snapshot_id" \
       '{ok:false,started:false,staleConfirmation:true,snapshotId:$snapshotId,
         error:"The catalog changed after confirmation. Review the action again."}'
     return 1
-  fi
-  if [[ $operation == update-all ]]; then
-    if ! selected_updates_json="$(normalize_update_selection \
-      "$selected_updates_json" "$SNAPSHOT_STATE")"; then
-      json_error "Select one or more updates from the confirmed list"
-      return 2
-    fi
   fi
 
   if [[ -L $ACTION_LOCK || -d $ACTION_LOCK ]]; then
@@ -2512,14 +2895,30 @@ action_command() {
     exec 9>&-
     return 1
   }
-  if ! cp -- "$SNAPSHOT_STATE" "$confirmed_snapshot_tmp" ||
+  if ! snapshot_payload "$source_dir" true >"$confirmed_snapshot_tmp" ||
     ! jq -e --arg snapshotId "$confirmed_snapshot_id" \
       '.snapshotId == $snapshotId' "$confirmed_snapshot_tmp" >/dev/null 2>&1 ||
-    ! mv -fT -- "$confirmed_snapshot_tmp" "$confirmed_snapshot"; then
+    ! jq -e --arg generation "$confirmed_snapshot_id" \
+      '.active != null and .active.generation == $generation' \
+      <<<"$(read_catalog)" >/dev/null 2>&1; then
     rm -f -- "$confirmed_snapshot_tmp"
     jq -cn --arg snapshotId "$confirmed_snapshot_id" \
       '{ok:false,started:false,staleConfirmation:true,snapshotId:$snapshotId,
-        error:"The catalog changed after confirmation. Review the action again."}'
+        error:"The active catalog changed while the action was prepared. Review it again."}'
+    exec 9>&-
+    return 1
+  fi
+  if [[ $operation == update-all ]] &&
+    ! selected_updates_json="$(normalize_update_selection \
+      "$selected_updates_json" "$confirmed_snapshot_tmp")"; then
+    rm -f -- "$confirmed_snapshot_tmp"
+    json_error "Select one or more updates from the confirmed list"
+    exec 9>&-
+    return 2
+  fi
+  if ! mv -fT -- "$confirmed_snapshot_tmp" "$confirmed_snapshot"; then
+    rm -f -- "$confirmed_snapshot_tmp"
+    json_error "Could not preserve the confirmed catalog generation"
     exec 9>&-
     return 1
   fi
@@ -2563,7 +2962,7 @@ action_command() {
 usage_json() {
   jq -cn '{
     ok:false,
-    error:"Usage: okomart snapshot <source-dir> | cached | prepare-window <bar-position> <bar-size> | action <source-dir> <install|remove|update|update-all> <id-or-empty> <snapshot-id> <selected-update-ids-json-for-update-all> | status | ack <action-id>"
+    error:"Usage: okomart snapshot <source-dir> | refresh <source-dir> [--force] | enrich <generation> | promote <generation> | check-updates <source-dir> | screenshots <descriptor-json> <session-id> | cleanup-media <session-id|--all> | action <source-dir> <install|remove|update|update-all> <id-or-empty> <generation> <selected-update-ids-json-for-update-all> | status | ack <action-id>"
   }'
 }
 
@@ -2581,7 +2980,6 @@ main() {
   require_tool realpath
   require_tool flock
   require_tool sha256sum
-  require_tool tar
   require_tool timeout
   require_tool sort
   require_tool curl
@@ -2596,6 +2994,53 @@ main() {
   cached)
     shift
     cached_command "$@"
+    ;;
+  refresh)
+    shift
+    if (( $# == 2 )) && [[ ${2:-} == --force ]]; then
+      refresh_command "$1"
+    elif (( $# == 1 )); then
+      refresh_command "$1"
+    else
+      json_error "Usage: okomart refresh <source-dir> [--force]"
+      return 2
+    fi
+    ;;
+  _refresh-worker)
+    shift
+    (( $# == 1 )) || { refresh_failure "Invalid internal refresh request."; return 2; }
+    stage_refresh_worker "$1"
+    ;;
+  enrich)
+    shift
+    enrich_command "$@"
+    ;;
+  promote)
+    shift
+    promote_command "$@"
+    ;;
+  check-updates)
+    shift
+    check_updates_command "$@"
+    ;;
+  screenshots)
+    shift
+    screenshots_command "$@"
+    ;;
+  cleanup-media)
+    shift
+    cleanup_media_command "$@"
+    ;;
+  _semver-higher)
+    shift
+    (( $# == 2 )) || { json_error "_semver-higher requires two versions"; return 2; }
+    if semver_is_higher "$1" "$2"; then
+      jq -cn --arg available "$1" --arg previous "$2" \
+        '{ok:true,higher:true,available:$available,previous:$previous}'
+    else
+      jq -cn --arg available "$1" --arg previous "$2" \
+        '{ok:true,higher:false,available:$available,previous:$previous}'
+    fi
     ;;
   action)
     shift

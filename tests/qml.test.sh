@@ -394,27 +394,33 @@ fi
 if grep -Fq 'focusable: true' "$ROOT_DIR/ScreenshotCarousel.qml"; then
   fail "screenshot dots expose an unexpected active focus treatment"
 fi
-grep -Fq 'visible: index === root.displayedIndex' "$ROOT_DIR/ScreenshotCarousel.qml" \
+grep -Fq 'visible: imageIndex === root.displayedIndex' "$ROOT_DIR/ScreenshotCarousel.qml" \
   || fail "screenshot carousel does not retain its outgoing preloaded image"
-grep -Fq 'index === root.incomingIndex' "$ROOT_DIR/ScreenshotCarousel.qml" \
+grep -Fq 'imageIndex === root.incomingIndex' "$ROOT_DIR/ScreenshotCarousel.qml" \
   || fail "screenshot carousel does not expose its incoming preloaded image"
 grep -Fq 'asynchronous: true' "$ROOT_DIR/ScreenshotCarousel.qml" \
   || fail "screenshot decoding still blocks plugin-list navigation"
-grep -Fq 'cache: true' "$ROOT_DIR/ScreenshotCarousel.qml" \
-  || fail "screenshot carousel does not retain decoded images"
+grep -Fq 'cache: false' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot carousel still writes decoded screenshots to the QML cache"
 if grep -Fq 'asynchronous: false' "$ROOT_DIR/ScreenshotCarousel.qml" \
-    || grep -Fq 'cache: false' "$ROOT_DIR/ScreenshotCarousel.qml"; then
-  fail "screenshot carousel uses blocking or uncached image loading"
+    || grep -Fq 'cache: true' "$ROOT_DIR/ScreenshotCarousel.qml"; then
+  fail "screenshot carousel uses blocking or cached image loading"
 fi
 grep -Fq 'id: imageRepeater' "$ROOT_DIR/ScreenshotCarousel.qml" \
   || fail "screenshot carousel cannot inspect its preloaded images"
-grep -Fq 'imageRepeater.itemAt(targetIndex)' "$ROOT_DIR/ScreenshotCarousel.qml" \
+grep -Fq 'model: root.loadedIndices' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot carousel instantiates more than the current neighbor window"
+grep -Fq 'function imageForIndex(index)' "$ROOT_DIR/ScreenshotCarousel.qml" \
   || fail "screenshot selection does not wait for its decoded image"
 grep -Fq '!targetImage || targetImage.status !== Image.Ready' \
   "$ROOT_DIR/ScreenshotCarousel.qml" \
   || fail "screenshot carousel exposes an image before it is ready"
-grep -Fq 'root.imageBecameReady(index)' "$ROOT_DIR/ScreenshotCarousel.qml" \
+grep -Fq 'root.imageBecameReady(imageIndex)' "$ROOT_DIR/ScreenshotCarousel.qml" \
   || fail "pending screenshot selection is not completed after decoding"
+grep -Fq 'status === Image.Error' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "failed remote screenshots are not detected"
+grep -Fq 'root.imageFailed(imageIndex)' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "failed remote screenshots are not omitted"
 grep -Fq 'import QtQuick.Effects' "$ROOT_DIR/ScreenshotCarousel.qml" \
   || fail "screenshot carousel cannot apply Omarchy's wallpaper reveal mask"
 grep -Fq 'import QtQuick.Shapes' "$ROOT_DIR/ScreenshotCarousel.qml" \
@@ -471,9 +477,9 @@ grep -Fq 'function showInstant(index)' "$ROOT_DIR/ScreenshotCarousel.qml" \
   || fail "thumbnail and lightbox carousels cannot synchronize selection"
 grep -Fq 'visible: root.screenshots.length > 0' "$ROOT_DIR/PluginDetails.qml" \
   || fail "zero-image omission is missing"
-grep -Fq 'String(root.plugin.catalogCommit || root.catalogRevision)' \
+grep -Fq 'revision: root.screenshotRevision' \
   "$ROOT_DIR/PluginDetails.qml" \
-  || fail "screenshot cache is not keyed by the plugin repository commit"
+  || fail "lazy screenshot revision is not passed into the carousel"
 grep -Fq 'signal screenshotRequested(int index)' "$ROOT_DIR/PluginDetails.qml" \
   || fail "plugin details do not forward screenshot expansion requests"
 grep -Fq 'onImageActivated: function(index) { root.screenshotRequested(index) }' \
@@ -526,9 +532,9 @@ if [[ $(grep -Fc \
 fi
 grep -Fq 'text: "Open Original"' "$ROOT_DIR/ScreenshotLightbox.qml" \
   || fail "screenshot lightbox is missing its Open Original action"
-grep -Fq 'Qt.openUrlExternally(Util.fileUrl(currentPath))' \
+grep -Fq 'Qt.openUrlExternally(target)' \
   "$ROOT_DIR/ScreenshotLightbox.qml" \
-  || fail "Open Original does not use the default native image viewer"
+  || fail "Open Original does not handle both remote and local screenshots"
 grep -Fq 'event.key === Qt.Key_Escape' "$ROOT_DIR/ScreenshotLightbox.qml" \
   || fail "screenshot lightbox cannot be dismissed with Escape"
 grep -Fq 'event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab' \
@@ -540,6 +546,26 @@ grep -Fq 'onScreenshotRequested: function(index) { root.openScreenshotLightbox(i
 grep -Fq 'onDismissed: function(index) { pluginDetails.restoreScreenshot(index) }' \
   "$ROOT_DIR/Okomart.qml" \
   || fail "closing the lightbox does not restore screenshot focus"
+grep -Fq 'interval: 350' "$ROOT_DIR/Okomart.qml" \
+  || fail "plugin screenshot discovery is not debounced for 350 ms"
+grep -Fq 'onSelectedIdChanged:' "$ROOT_DIR/Okomart.qml" \
+  || fail "selection changes do not cancel lazy screenshot discovery"
+grep -Fq 'onNarrowShowingDetailsChanged:' "$ROOT_DIR/Okomart.qml" \
+  || fail "narrow details lifecycle does not control screenshot discovery"
+grep -Fq 'if (mediaProcess.running) mediaProcess.running = false' \
+  "$ROOT_DIR/Okomart.qml" \
+  || fail "selection changes do not cancel an in-flight screenshot request"
+grep -Fq 'requestKey !== mediaRequestKey' "$ROOT_DIR/Okomart.qml" \
+  || fail "late screenshot responses are not discarded"
+grep -Fq '[helperPath, "cleanup-media", mediaSessionId]' "$ROOT_DIR/Okomart.qml" \
+  || fail "generic screenshot sessions are not cleaned on selection changes"
+grep -Fq '[helperPath, "cleanup-media", "--all"]' "$ROOT_DIR/Okomart.qml" \
+  || fail "abandoned screenshot sessions are not cleaned on launch"
+grep -Fq 'mediaProcess.command = [helperPath, "screenshots"' "$ROOT_DIR/Okomart.qml" \
+  || fail "details do not request screenshots lazily from the backend"
+grep -Fq 'onScreenshotFailed: function(index) { root.omitFailedScreenshot(index) }' \
+  "$ROOT_DIR/Okomart.qml" \
+  || fail "failed lazy screenshots remain in plugin details"
 grep -Fq 'mode === "updates"' "$ROOT_DIR/ActionDialog.qml" \
   || fail "update confirmation mode is missing"
 grep -Fq 'mode === "update"' "$ROOT_DIR/ActionDialog.qml" \
@@ -613,14 +639,14 @@ grep -Fq 'dialogContent.reviewHeightBudget' \
   "$ROOT_DIR/ActionDialog.qml" \
   || fail "review pane does not yield space to action errors"
 grep -Fq 'String(snapshot.snapshotId)' "$ROOT_DIR/Okomart.qml" \
-  || fail "actions are not bound to the confirmed snapshot"
-grep -Fq 'parsed.ok === false || exitCode !== 0' "$ROOT_DIR/Okomart.qml" \
-  || fail "snapshot persistence failures are not surfaced as refresh errors"
+  || fail "actions are not bound to the confirmed active generation"
+grep -Fq 'exitCode !== 0 || !parsed || parsed.ok !== true' "$ROOT_DIR/Okomart.qml" \
+  || fail "background catalog refresh failures are not surfaced"
 grep -Fq 'readonly property bool snapshotActionable' "$ROOT_DIR/Okomart.qml" \
-  || fail "unpersisted snapshots are not blocked from plugin actions"
+  || fail "missing active generations are not blocked from plugin actions"
 grep -Fq 'OkomartModel.snapshotConfirmsUpdates(parsed, exitCode)' \
   "$ROOT_DIR/Okomart.qml" \
-  || fail "update visibility does not require a tested fresh snapshot"
+  || fail "update visibility does not require an independent remote check"
 grep -Fq 'visible: root.hasConfirmedUpdates' "$ROOT_DIR/Okomart.qml" \
   || fail "updates button is visible before update availability is confirmed"
 if grep -Fq 'visible: root.hasDetectedUpdates' "$ROOT_DIR/Okomart.qml"; then
@@ -630,9 +656,9 @@ if ! sed -n '/function open(payloadJson)/,/^  }/p' "$ROOT_DIR/Okomart.qml" \
     | grep -Fq 'updatesConfirmed = false'; then
   fail "reopening Okomart retains stale update confirmation"
 fi
-if ! sed -n '/function refresh()/,/^  }/p' "$ROOT_DIR/Okomart.qml" \
+if sed -n '/function refresh(force)/,/^  }/p' "$ROOT_DIR/Okomart.qml" \
     | grep -Fq 'updatesConfirmed = false'; then
-  fail "refreshing Okomart leaves update availability confirmed"
+  fail "manifest refresh incorrectly invalidates session update checks for the active generation"
 fi
 grep -Fq 'p.versionUpdateAvailable === true' "$ROOT_DIR/Okomart.qml" \
   || fail "global updates are not gated by manifest version"
@@ -655,15 +681,47 @@ if ! sed -n '/function actionStarted(raw, exitCode)/,/^  }/p' \
     | grep -Fq 'requestClose()'; then
   fail "a queued self-update leaves the old Okomart panel loaded"
 fi
-grep -Fq '[helperPath, "cached"]' "$ROOT_DIR/Okomart.qml" \
-  || fail "storefront does not load its persisted snapshot first"
-grep -Fq 'parsed && parsed.ok === true && Array.isArray(parsed.plugins)' \
+grep -Fq 'cacheProcess.command = [helperPath, "snapshot", sourceDir]' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront does not read the local active catalog first"
+grep -Fq 'parsed && Array.isArray(parsed.plugins)' \
   "$ROOT_DIR/Okomart.qml" \
-  || fail "storefront does not require a successful cached snapshot"
+  || fail "cold local snapshots cannot display installed plugins while refresh runs"
 grep -Fq 'statusChecking = true' "$ROOT_DIR/Okomart.qml" \
-  || fail "cached actions are enabled before action status is reconciled"
-grep -Fq 'if (catalogLoaded) loadActionStatus()' "$ROOT_DIR/Okomart.qml" \
-  || fail "reopening the storefront does not preserve loaded catalog data"
+  || fail "local actions are enabled before action status is reconciled"
+if ! sed -n '/function open(payloadJson)/,/^  }/p' "$ROOT_DIR/Okomart.qml" \
+    | grep -Fq 'loadCachedSnapshot(true)'; then
+  fail "every storefront open does not reload local catalog state"
+fi
+grep -Fq '[helperPath, "refresh", sourceDir]' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront opening does not stage a background manifest refresh"
+grep -Fq '[helperPath, "check-updates", sourceDir]' "$ROOT_DIR/Okomart.qml" \
+  || fail "installed and self update checks are not independent"
+grep -Fq '[helperPath, "enrich", pendingGeneration]' "$ROOT_DIR/Okomart.qml" \
+  || fail "pending generations are not enriched separately"
+grep -Fq '[helperPath, "promote", pendingGeneration]' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront sign cannot promote the exact pending generation"
+if sed -n '/function openActionDialog(mode, plugin, updates)/,/^  }/p' \
+    "$ROOT_DIR/Okomart.qml" | grep -Fq 'if (refreshing)'; then
+  fail "background refresh blocks actions against the active generation"
+fi
+grep -Fq 'enabled: root.pendingReady && !root.activatingCatalog' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront sign is interactive without a ready pending generation"
+grep -Fq 'Accessible.role: Accessible.Button' "$ROOT_DIR/Okomart.qml" \
+  || fail "pending storefront sign has no button role"
+grep -Fq 'Qt.Key_Return || event.key === Qt.Key_Enter' "$ROOT_DIR/Okomart.qml" \
+  || fail "pending storefront sign cannot be activated from the keyboard"
+grep -Fq 'cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor' \
+  "$ROOT_DIR/Okomart.qml" \
+  || fail "ready storefront sign has no pointer cursor"
+grep -Fq 'running: root.pendingReady' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront sign glow does not follow ready pending state"
+if sed -n '/function applyCatalogActivation(raw, generation)/,/^  }/p' \
+    "$ROOT_DIR/Okomart.qml" | grep -Eq '(query|installedOnly|selectedId)[[:space:]]*='; then
+  fail "catalog activation resets storefront query, filter, or selection state"
+fi
+grep -Fq 'selectedId = OkomartModel.resolveSelection(next, selectedId)' \
+  "$ROOT_DIR/Okomart.qml" \
+  || fail "catalog activation cannot preserve the selected plugin when it remains visible"
 grep -Fq 'onDetailsRequested: function(plugin)' "$ROOT_DIR/Okomart.qml" \
   || fail "plugin-list directional focus is not connected"
 grep -Fq 'Qt.callLater(pluginDetails.focusFirstAction)' "$ROOT_DIR/Okomart.qml" \

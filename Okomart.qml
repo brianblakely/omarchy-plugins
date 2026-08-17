@@ -23,6 +23,11 @@ Item {
   property bool catalogLoaded: false
   property bool refreshing: false
   property bool refreshQueued: false
+  property bool refreshQueuedForced: false
+  property bool enriching: false
+  property bool activatingCatalog: false
+  property bool updateChecking: false
+  property bool updateCheckQueued: false
   property bool statusChecking: false
   property bool updatesConfirmed: false
   property bool installedOnly: false
@@ -39,6 +44,10 @@ Item {
   property string inactiveBorderOutput: ""
   property string refreshOutput: ""
   property string refreshError: ""
+  property string enrichmentOutput: ""
+  property string activationOutput: ""
+  property string updateCheckOutput: ""
+  property string mediaOutput: ""
   property string windowRuleOutput: ""
   property string actionOutput: ""
   property string actionError: ""
@@ -48,6 +57,13 @@ Item {
   property var allPlugins: []
   property var visiblePlugins: []
   property var updateRows: []
+  property string pendingGeneration: ""
+  property bool pendingReady: false
+  property var lazyScreenshots: []
+  property string lazyScreenshotRevision: ""
+  property string mediaSessionId: ""
+  property string mediaRequestKey: ""
+  property int mediaRequestSerial: 0
   property color inactiveBorderColor: Qt.rgba(
     0x59 / 255, 0x59 / 255, 0x59 / 255, 0xaa / 255)
 
@@ -98,7 +114,19 @@ Item {
   readonly property bool snapshotActionable: !!(snapshot
     && snapshot.snapshotId && snapshot.ok === true)
 
-  onWideLayoutChanged: if (wideLayout) narrowShowingDetails = false
+  onWideLayoutChanged: {
+    if (wideLayout) narrowShowingDetails = false
+    resetLazyScreenshots()
+    scheduleLazyScreenshots()
+  }
+  onNarrowShowingDetailsChanged: {
+    resetLazyScreenshots()
+    scheduleLazyScreenshots()
+  }
+  onSelectedIdChanged: {
+    resetLazyScreenshots()
+    scheduleLazyScreenshots()
+  }
   onWindowSideChanged: Qt.callLater(applyCurrentWindowSize)
   onQueryChanged: rebuildView()
   onInstalledOnlyChanged: rebuildView()
@@ -144,7 +172,12 @@ Item {
   function open(payloadJson) {
     closingFromHost = false
     screenshotLightbox.clear()
+    resetLazyScreenshots()
+    if (helperPath) Quickshell.execDetached([helperPath, "cleanup-media", "--all"])
     updatesConfirmed = false
+    statusChecking = true
+    pendingReady = false
+    pendingGeneration = ""
     refreshInactiveBorderColor()
     initialListFocusPending = true
     initialListFocusAttempts = 0
@@ -156,8 +189,7 @@ Item {
     window.width = windowSide
     window.height = windowSide
     narrowShowingDetails = false
-    if (catalogLoaded) loadActionStatus()
-    else loadCachedSnapshot()
+    loadCachedSnapshot(true)
     windowOpenPending = true
     prepareFloatingWindow()
   }
@@ -167,6 +199,7 @@ Item {
     initialListFocusPending = false
     initialFocusTimer.stop()
     screenshotLightbox.clear()
+    resetLazyScreenshots()
     closingFromHost = true
     window.visible = false
     closingFromHost = false
@@ -221,6 +254,7 @@ Item {
     if (!windowOpenPending) return
     windowOpenPending = false
     window.visible = true
+    scheduleLazyScreenshots()
     Qt.callLater(focusInitialPluginList)
   }
 
@@ -262,12 +296,79 @@ Item {
 
   function openScreenshotLightbox(index) {
     if (dialog.opened || !selectedPlugin) return
-    var images = Array.isArray(selectedPlugin.images) ? selectedPlugin.images : []
+    var images = Array.isArray(lazyScreenshots) ? lazyScreenshots : []
     if (images.length < 1) return
-    var revision = String(selectedPlugin.catalogCommit
-      || snapshot.catalogCommit || "")
+    var revision = String(lazyScreenshotRevision || "")
     var name = String(selectedPlugin.name || selectedPlugin.id || "Plugin")
     screenshotLightbox.openFor(images, revision, index, name)
+  }
+
+  function detailsAreOpen() {
+    return window.visible && !!selectedPlugin
+      && (wideLayout || narrowShowingDetails)
+  }
+
+  function nextMediaSessionId() {
+    return Date.now().toString(36) + "-" + mediaRequestSerial.toString(36)
+  }
+
+  function resetLazyScreenshots() {
+    mediaDebounce.stop()
+    mediaRequestSerial++
+    mediaRequestKey = ""
+    lazyScreenshots = []
+    lazyScreenshotRevision = ""
+    if (mediaProcess.running) mediaProcess.running = false
+    if (helperPath && mediaSessionId)
+      Quickshell.execDetached([helperPath, "cleanup-media", mediaSessionId])
+    mediaSessionId = ""
+  }
+
+  function scheduleLazyScreenshots() {
+    if (!helperPath || !detailsAreOpen()) return
+    mediaSessionId = nextMediaSessionId()
+    mediaDebounce.restart()
+  }
+
+  function requestLazyScreenshots() {
+    if (!detailsAreOpen() || !selectedPlugin || mediaProcess.running) return
+    var id = String(selectedPlugin.id || "")
+    var installedPath = selectedPlugin.installed === true
+      ? String(selectedPlugin.installedPath || "") : ""
+    var sourceUrl = String(selectedPlugin.sourceUrl || "")
+    var revision = String(selectedPlugin.revision
+      || selectedPlugin.catalogCommit || "")
+    var key = id + "|" + installedPath + "|" + sourceUrl + "|" + revision
+      + "|" + mediaSessionId
+    mediaRequestKey = key
+    mediaOutput = ""
+    mediaProcess.requestKey = key
+    mediaProcess.requestPluginId = id
+    mediaProcess.command = [helperPath, "screenshots", JSON.stringify({
+      id: id,
+      installedPath: installedPath,
+      sourceUrl: sourceUrl,
+      revision: revision
+    }), mediaSessionId]
+    mediaProcess.running = true
+  }
+
+  function applyLazyScreenshots(raw, requestKey, requestPluginId) {
+    if (requestKey !== mediaRequestKey || !detailsAreOpen()
+        || !selectedPlugin || String(selectedPlugin.id || "") !== requestPluginId)
+      return
+    var parsed = null
+    try { parsed = JSON.parse(String(raw || "")) } catch (e) {}
+    if (!parsed || parsed.ok !== true || !Array.isArray(parsed.images)) return
+    lazyScreenshots = parsed.images
+    lazyScreenshotRevision = String(parsed.revision || "")
+  }
+
+  function omitFailedScreenshot(index) {
+    if (index < 0 || index >= lazyScreenshots.length) return
+    var remaining = lazyScreenshots.slice()
+    remaining.splice(index, 1)
+    lazyScreenshots = remaining
   }
 
   function requestClose() {
@@ -306,12 +407,12 @@ Item {
 
   function buildUpdates(data) {
     var rows = []
-    var plugins = data.plugins
+    var plugins = data && Array.isArray(data.plugins) ? data.plugins : []
     for (var i = 0; i < plugins.length; i++) {
       var p = plugins[i]
       if (p.installed && p.versionUpdateAvailable === true) rows.push(p)
     }
-    if (data.self.versionUpdateAvailable === true) {
+    if (data && data.self && data.self.versionUpdateAvailable === true) {
       var selfRow = {}
       for (var key in data.self) selfRow[key] = data.self[key]
       selfRow.id = pluginId
@@ -322,96 +423,193 @@ Item {
   }
 
   function setSnapshotData(parsed) {
+    var previousGeneration = String(snapshot.activeGeneration || snapshot.snapshotId || "")
+    var nextGeneration = String(parsed.activeGeneration || parsed.snapshotId || "")
     snapshot = parsed
-    allPlugins = parsed.plugins
+    allPlugins = Array.isArray(parsed.plugins) ? parsed.plugins : []
     updateRows = buildUpdates(parsed)
+    pendingGeneration = parsed.pending && parsed.pending.generation
+      ? String(parsed.pending.generation) : ""
+    pendingReady = !!(parsed.pending && parsed.pending.ready === true
+      && pendingGeneration)
     catalogLoaded = true
     rebuildView()
+    if (previousGeneration !== nextGeneration) {
+      resetLazyScreenshots()
+      Qt.callLater(scheduleLazyScreenshots)
+    }
   }
 
-  function loadCachedSnapshot() {
+  function loadCachedSnapshot(startBackground, checkAfterLoad, rediscoverScreenshots) {
     if (!helperPath) {
       bannerText = "Okomart could not determine its source directory."
       bannerUrgent = true
       return
     }
-    if (cacheProcess.running) return
+    if (cacheProcess.running) {
+      cacheProcess.startBackground = cacheProcess.startBackground || startBackground === true
+      cacheProcess.checkAfterLoad = cacheProcess.checkAfterLoad || checkAfterLoad === true
+      cacheProcess.rediscoverScreenshots = cacheProcess.rediscoverScreenshots
+        || rediscoverScreenshots === true
+      return
+    }
     cacheLoading = true
     cachedOutput = ""
-    cacheProcess.command = [helperPath, "cached"]
+    cacheProcess.startBackground = startBackground === true
+    cacheProcess.checkAfterLoad = checkAfterLoad === true
+    cacheProcess.rediscoverScreenshots = rediscoverScreenshots === true
+    cacheProcess.command = [helperPath, "snapshot", sourceDir]
     cacheProcess.running = true
   }
 
-  function applyCachedSnapshot(raw) {
+  function applyCachedSnapshot(raw, startBackground, checkAfterLoad, rediscoverScreenshots) {
     cacheLoading = false
     var parsed = null
     try { parsed = JSON.parse(String(raw || "")) } catch (e) {}
-    if (parsed && parsed.ok === true && Array.isArray(parsed.plugins))
+    if (parsed && Array.isArray(parsed.plugins)) {
       setSnapshotData(parsed)
-    loadActionStatus()
+      var catalogErrors = Array.isArray(parsed.catalogErrors) ? parsed.catalogErrors : []
+      if (catalogErrors.length > 0 && bannerText === "") {
+        bannerText = catalogErrors.length + " catalog refresh "
+          + (catalogErrors.length === 1 ? "issue was" : "issues were")
+          + " recorded."
+        bannerUrgent = true
+      }
+    }
+    if (startBackground) {
+      loadActionStatus()
+      refresh(false)
+      checkUpdates()
+    } else {
+      maybeStartEnrichment()
+      if (checkAfterLoad) checkUpdates()
+    }
+    if (rediscoverScreenshots) {
+      resetLazyScreenshots()
+      Qt.callLater(scheduleLazyScreenshots)
+    }
   }
 
   function applySnapshot(raw, exitCode) {
     refreshing = false
     var parsed = null
     try { parsed = JSON.parse(String(raw || "")) } catch (e) {}
-    var confirmsUpdates = OkomartModel.snapshotConfirmsUpdates(parsed, exitCode)
-
-    if (!parsed || !Array.isArray(parsed.plugins)) {
+    if (exitCode !== 0 || !parsed || parsed.ok !== true) {
       bannerText = refreshError.trim() || "Catalog refresh failed."
+      if (parsed && parsed.error) bannerText = String(parsed.error)
       bannerUrgent = true
-    } else {
-      setSnapshotData(parsed)
-      var catalogErrors = Array.isArray(parsed.catalogErrors) ? parsed.catalogErrors : []
-      if (parsed.stale) {
-        bannerText = parsed.error
-          ? "Showing the last catalog snapshot: " + parsed.error
-          : "Showing the last catalog snapshot."
-        bannerUrgent = true
-      } else if (parsed.ok === false || exitCode !== 0) {
-        bannerText = String(parsed.error || refreshError.trim()
-          || "Catalog refresh failed.")
-        bannerUrgent = true
-      } else if (catalogErrors.length > 0) {
-        bannerText = catalogErrors.length + " invalid catalog "
-          + (catalogErrors.length === 1 ? "entry was" : "entries were")
-          + " hidden."
-        bannerUrgent = true
-      } else {
-        bannerText = ""
-        bannerUrgent = false
-      }
+    } else if (!parsed.changed && !parsed.pending) {
+      bannerText = ""
+      bannerUrgent = false
     }
+    loadCachedSnapshot(false, !!(parsed && parsed.coldPublished === true))
 
     if (refreshQueued) {
+      var forceQueued = refreshQueuedForced
       refreshQueued = false
-      updatesConfirmed = false
-      Qt.callLater(refresh)
-    } else {
-      updatesConfirmed = confirmsUpdates
+      refreshQueuedForced = false
+      Qt.callLater(function() { root.refresh(forceQueued) })
     }
   }
 
-  function refresh() {
+  function refresh(force) {
     if (!sourceDir || !helperPath) {
       bannerText = "Okomart could not determine its source directory."
       bannerUrgent = true
       return
     }
     if (refreshing) {
-      refreshQueued = true
+      if (force === true) {
+        refreshQueued = true
+        refreshQueuedForced = true
+      }
       return
     }
-    if (actionStarting || actionInProgress) return
-    if (dialog.opened && dialog.mode !== "results") return
-    updatesConfirmed = false
     refreshing = true
     refreshOutput = ""
     refreshError = ""
     bannerText = ""
     bannerUrgent = false
-    refreshProcess.command = [helperPath, "snapshot", sourceDir]
+    refreshProcess.command = force === true
+      ? [helperPath, "refresh", sourceDir, "--force"]
+      : [helperPath, "refresh", sourceDir]
     refreshProcess.running = true
+  }
+
+  function maybeStartEnrichment() {
+    if (refreshing || enriching || !pendingGeneration || pendingReady
+        || !helperPath) return
+    enriching = true
+    enrichmentOutput = ""
+    enrichmentProcess.generation = pendingGeneration
+    enrichmentProcess.command = [helperPath, "enrich", pendingGeneration]
+    enrichmentProcess.running = true
+  }
+
+  function applyEnrichment(raw, generation) {
+    enriching = false
+    var parsed = null
+    try { parsed = JSON.parse(String(raw || "")) } catch (e) {}
+    if (!parsed || parsed.stale === true || String(parsed.generation || "") !== generation
+        || generation !== pendingGeneration) {
+      Qt.callLater(maybeStartEnrichment)
+      return
+    }
+    loadCachedSnapshot(false)
+  }
+
+  function activatePendingCatalog() {
+    if (!pendingReady || !pendingGeneration || activatingCatalog || !helperPath) return
+    activatingCatalog = true
+    activationOutput = ""
+    activationProcess.generation = pendingGeneration
+    activationProcess.command = [helperPath, "promote", pendingGeneration]
+    activationProcess.running = true
+  }
+
+  function applyCatalogActivation(raw, generation) {
+    activatingCatalog = false
+    var parsed = null
+    try { parsed = JSON.parse(String(raw || "")) } catch (e) {}
+    if (!parsed || parsed.stale === true || parsed.promoted !== true
+        || String(parsed.generation || "") !== generation
+        || generation !== pendingGeneration) return
+    pendingReady = false
+    loadCachedSnapshot(false, true, true)
+  }
+
+  function checkUpdates() {
+    if (!helperPath || !snapshotActionable) return
+    if (updateCheckProcess.running) {
+      updateCheckQueued = true
+      return
+    }
+    updateCheckQueued = false
+    updateChecking = true
+    updateCheckOutput = ""
+    updateCheckProcess.generation = String(snapshot.activeGeneration || snapshot.snapshotId || "")
+    updateCheckProcess.command = [helperPath, "check-updates", sourceDir]
+    updateCheckProcess.running = true
+  }
+
+  function applyUpdateCheck(raw, exitCode, generation) {
+    updateChecking = false
+    var parsed = null
+    try { parsed = JSON.parse(String(raw || "")) } catch (e) {}
+    var currentGeneration = String(snapshot.activeGeneration || snapshot.snapshotId || "")
+    var valid = !(exitCode !== 0 || !parsed || parsed.ok !== true || parsed.stale === true
+        || String(parsed.activeGeneration || parsed.snapshotId || "") !== generation
+        || generation !== currentGeneration)
+    if (valid) {
+      parsed.pending = snapshot.pending || null
+      parsed.catalogErrors = snapshot.catalogErrors || []
+      setSnapshotData(parsed)
+      updatesConfirmed = OkomartModel.snapshotConfirmsUpdates(parsed, exitCode)
+    }
+    if (updateCheckQueued) {
+      updateCheckQueued = false
+      Qt.callLater(checkUpdates)
+    }
   }
 
   function loadActionStatus() {
@@ -427,7 +625,7 @@ Item {
     var parsed = null
     try { parsed = JSON.parse(String(raw || "")) } catch (e) {}
     if (!parsed) {
-      refresh()
+      loadCachedSnapshot(false)
       return
     }
     if (parsed.running === true) {
@@ -439,7 +637,6 @@ Item {
     }
     if (!parsed.action || parsed.acknowledged === true) {
       actionInProgress = false
-      refresh()
       return
     }
 
@@ -458,7 +655,7 @@ Item {
         + (failedResults.length === 1 ? "." : "s.")
       : String(parsed.message || "Plugin operation completed.")
     bannerUrgent = failedResults.length > 0 || parsed.ok === false
-    refresh()
+    loadCachedSnapshot(false, true, true)
     if (failedResults.length > 0)
       dialog.openFor("results", null, failedResults)
   }
@@ -479,11 +676,6 @@ Item {
       bannerUrgent = false
       return
     }
-    if (refreshing) {
-      bannerText = "Wait for the catalog refresh to finish before changing plugins."
-      bannerUrgent = true
-      return
-    }
     if (!snapshotActionable) {
       bannerText = snapshot && snapshot.error
         ? String(snapshot.error)
@@ -500,7 +692,7 @@ Item {
   }
 
   function beginAction(kind, plugin, selectedUpdateIds) {
-    if (actionStarting || actionInProgress || statusChecking || refreshing || !helperPath
+    if (actionStarting || actionInProgress || statusChecking || !helperPath
         || !snapshotActionable) return
     actionStarting = true
     actionReplacesOkomart = actionIncludesSelf(kind, selectedUpdateIds)
@@ -573,11 +765,15 @@ Item {
 
   Process {
     id: cacheProcess
+    property bool startBackground: false
+    property bool checkAfterLoad: false
+    property bool rediscoverScreenshots: false
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: root.cachedOutput = text
     }
-    onExited: root.applyCachedSnapshot(root.cachedOutput)
+    onExited: root.applyCachedSnapshot(
+      root.cachedOutput, startBackground, checkAfterLoad, rediscoverScreenshots)
   }
 
   Process {
@@ -591,6 +787,50 @@ Item {
       onStreamFinished: root.refreshError = text
     }
     onExited: function(exitCode) { root.applySnapshot(root.refreshOutput, exitCode) }
+  }
+
+  Process {
+    id: enrichmentProcess
+    property string generation: ""
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.enrichmentOutput = text
+    }
+    onExited: root.applyEnrichment(root.enrichmentOutput, generation)
+  }
+
+  Process {
+    id: activationProcess
+    property string generation: ""
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.activationOutput = text
+    }
+    onExited: root.applyCatalogActivation(root.activationOutput, generation)
+  }
+
+  Process {
+    id: updateCheckProcess
+    property string generation: ""
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.updateCheckOutput = text
+    }
+    onExited: function(exitCode) {
+      root.applyUpdateCheck(root.updateCheckOutput, exitCode, generation)
+    }
+  }
+
+  Process {
+    id: mediaProcess
+    property string requestKey: ""
+    property string requestPluginId: ""
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.mediaOutput = text
+    }
+    onExited: root.applyLazyScreenshots(
+      root.mediaOutput, requestKey, requestPluginId)
   }
 
   Process {
@@ -630,6 +870,13 @@ Item {
     onTriggered: root.focusInitialPluginList()
   }
 
+  Timer {
+    id: mediaDebounce
+    interval: 350
+    repeat: false
+    onTriggered: root.requestLazyScreenshots()
+  }
+
   FloatingWindow {
     id: window
     title: "Okomart"
@@ -643,8 +890,10 @@ Item {
     onVisibleChanged: {
       if (visible) {
         if (root.initialListFocusPending) initialFocusTimer.restart()
+        root.scheduleLazyScreenshots()
       } else {
         root.windowOpenPending = false
+        root.resetLazyScreenshots()
         if (!root.closingFromHost && root.shell && typeof root.shell.hide === "function")
           root.shell.hide(root.pluginId)
       }
@@ -672,7 +921,7 @@ Item {
           event.accepted = true
         } else if (!dialog.opened && !screenshotLightbox.opened
             && (event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_R) {
-          root.refresh()
+          root.refresh(true)
           event.accepted = true
         } else if (!dialog.opened && !screenshotLightbox.opened
             && event.key === Qt.Key_Slash && !searchField.activeFocus) {
@@ -694,7 +943,8 @@ Item {
         strokeColor: root.storefrontColor
       }
 
-      Text {
+      FocusScope {
+        id: catalogSign
         x: storefront.frameLeft + root.headerEdgeInset
         y: root.wideLayout
           ? root.bodyTop - Style.space(50)
@@ -702,12 +952,82 @@ Item {
         width: root.wideLayout
           ? Math.max(Style.space(180), root.splitX - x - Style.space(28))
           : storefront.frameRight - x - root.headerEdgeInset
-        text: "オコマート"
-        color: root.storefrontColor
-        font.family: Style.font.family
-        font.pixelSize: root.wideLayout ? Style.font.displayLarge : Style.font.display
-        horizontalAlignment: root.wideLayout ? Text.AlignLeft : Text.AlignHCenter
-        elide: Text.ElideRight
+        height: signText.implicitHeight + Style.space(10)
+        enabled: root.pendingReady && !root.activatingCatalog
+        activeFocusOnTab: enabled
+
+        Rectangle {
+          id: signGlow
+          anchors.fill: signText
+          anchors.margins: -Style.space(6)
+          radius: Style.cornerRadius
+          color: "transparent"
+          border.width: Math.max(1, Style.normalBorderWidth)
+          border.color: Color.accent
+          opacity: 0
+        }
+
+        SequentialAnimation {
+          running: root.pendingReady
+          loops: Animation.Infinite
+          NumberAnimation {
+            target: signGlow
+            property: "opacity"
+            from: 0.08
+            to: 0.72
+            duration: 1700
+            easing.type: Easing.InOutSine
+          }
+          NumberAnimation {
+            target: signGlow
+            property: "opacity"
+            from: 0.72
+            to: 0.08
+            duration: 1700
+            easing.type: Easing.InOutSine
+          }
+        }
+
+        Text {
+          id: signText
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          text: "オコマート"
+          color: root.storefrontColor
+          font.family: Style.font.family
+          font.pixelSize: root.wideLayout ? Style.font.displayLarge : Style.font.display
+          horizontalAlignment: root.wideLayout ? Text.AlignLeft : Text.AlignHCenter
+          elide: Text.ElideRight
+        }
+
+        HoverHandler {
+          enabled: catalogSign.enabled
+          cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+        }
+
+        TapHandler {
+          enabled: catalogSign.enabled
+          onTapped: root.activatePendingCatalog()
+        }
+
+        Keys.onPressed: function(event) {
+          if (enabled && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter
+              || event.key === Qt.Key_Space)) {
+            root.activatePendingCatalog()
+            event.accepted = true
+          }
+        }
+
+        Accessible.role: Accessible.Button
+        Accessible.name: root.pendingReady
+          ? "Activate the ready Okomart catalog update"
+          : "Okomart storefront sign"
+        Accessible.description: root.pendingReady
+          ? "Promotes the staged plugin catalog without changing the current search or selection"
+          : "No catalog update is ready"
+        Accessible.ignored: !root.pendingReady
+        Accessible.onPressAction: root.activatePendingCatalog()
       }
 
       GridLayout {
@@ -797,7 +1117,7 @@ Item {
           bordered: true
           selected: true
           enabled: root.snapshotActionable
-            && !root.statusChecking && !root.refreshing && !root.actionInProgress
+            && !root.statusChecking && !root.actionInProgress
           iconText: "\uf021"
           tooltipText: root.safeUpdateCount > 0
             ? "Review " + root.safeUpdateCount + " plugin "
@@ -864,9 +1184,10 @@ Item {
         width: storefront.frameRight - x - Style.space(18)
         height: storefront.frameBottom - y - Style.space(12)
         plugin: root.selectedPlugin
-        catalogRevision: String(root.snapshot.catalogCommit || "")
+        screenshotImages: root.lazyScreenshots
+        screenshotRevision: root.lazyScreenshotRevision
         narrowLayout: !root.wideLayout
-        actionsEnabled: root.snapshotActionable && !root.statusChecking && !root.refreshing
+        actionsEnabled: root.snapshotActionable && !root.statusChecking
           && !root.actionStarting && !root.actionInProgress
         onBackRequested: {
           root.narrowShowingDetails = false
@@ -878,6 +1199,7 @@ Item {
         onPluginListRequested: root.focusPluginListFromSearch()
         onSearchRequested: searchField.forceActiveFocus()
         onScreenshotRequested: function(index) { root.openScreenshotLightbox(index) }
+        onScreenshotFailed: function(index) { root.omitFailedScreenshot(index) }
       }
 
       BorderSurface {

@@ -151,6 +151,13 @@ nonblank `name`, `author`, and `description` strings, but that metadata check is
 not a substitute for `omarchy plugin validate .`. External entries are not
 included in the README table.
 
+Okomart's remote refresh validates only metadata and safe manifest declarations
+because it intentionally avoids full repository trees. Entry-point existence,
+tree symlinks, and the complete repository structure are deferred to the
+authoritative `omarchy plugin add` validation. See
+[Catalog Runtime](catalog-runtime.md) for the direct-fetch and generic-host
+fallback boundaries.
+
 The current validator checks:
 
 - Valid JSON and numeric `schemaVersion: 1`.

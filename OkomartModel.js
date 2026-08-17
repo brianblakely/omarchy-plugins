@@ -122,7 +122,7 @@ function selectableUpdates(updates, selfId) {
 function snapshotConfirmsUpdates(snapshot, exitCode) {
   return isRecord(snapshot)
     && snapshot.ok === true
-    && snapshot.cached !== true
+    && snapshot.remoteChecked === true
     && snapshot.stale !== true
     && Array.isArray(snapshot.plugins)
     && trimmedString(snapshot.snapshotId).length > 0
@@ -248,6 +248,7 @@ function updateState(plugin) {
   if (state === "ahead") return "ahead"
   if (state === "no-origin") return "missing-origin"
   if (state === "fetch-failed") return "offline"
+  if (state === "unchecked") return "checking"
   return "unknown"
 }
 
@@ -279,6 +280,7 @@ function updateDetailText(plugin) {
   if (state === "missing-origin")
     return "Update unavailable: Git checkout has no origin"
   if (state === "offline") return "Update status unavailable"
+  if (state === "checking") return "Checking remote update status…"
 
   var raw = trimmedString(plugin.updateState)
   if (raw === "non-git") return "Local plugin; no Git update source"
