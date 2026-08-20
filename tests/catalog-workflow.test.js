@@ -30,7 +30,8 @@ const expectedUrls = [
   "https://github.com/nightdevil00/bt.codecs.git",
   "https://github.com/yuters/omarchy-flight-radar.git",
   "https://github.com/brianblakely/omarchy-codex-notifications.git",
-  "https://github.com/keithnyc/omanetwatch.git"
+  "https://github.com/keithnyc/omanetwatch.git",
+  "https://github.com/ivankuznetsov/hive-omarchy.git"
 ]
 let passed = 0
 
@@ -40,7 +41,7 @@ function test(name, callback) {
   process.stdout.write(`ok ${passed} - ${name}\n`)
 }
 
-test("plugins.txt contains the fifteen locally curated standalone URLs in deterministic order", () => {
+test("plugins.txt contains the sixteen locally curated standalone URLs in deterministic order", () => {
   assert.equal(registry.endsWith("\n"), true)
   assert.deepEqual(registry.trimEnd().split("\n"), expectedUrls)
 })
