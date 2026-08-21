@@ -77,6 +77,7 @@ against
 | [Bluetooth codec](<https://github.com/nightdevil00/bt.codecs.git>) | mihai | Shift Bluetooth audio fidelity: pick the A2DP codec or headset profile for each connected Bluetooth audio device. |
 | [Codex Notifications](<https://github.com/brianblakely/omarchy-codex-notifications.git>) | Brian Blakely | Clickable lifecycle notifications that return to the originating Codex context. |
 | [Flight Radar](<https://github.com/yuters/omarchy-flight-radar.git>) | yuters | Live aircraft overhead with short-horizon flyby forecasts, an overhead badge, and notifications. Works without an account. |
+| [Keysmith](<https://github.com/Ahmed-Sinkeat/keysmith.git>) | Ahmed-Sinkeat | Add, change, and remove Omarchy shortcuts without editing config files |
 | [Omacal](<https://github.com/brianblakely/omacal.git>) | Brian Blakely | Omarchy-native day/time label with a mini calendar popup |
 | [Omadoro](<https://github.com/brianblakely/omadoro.git>) | Brian Blakely | A Pomodoro timer for the Omarchy bar. |
 | [OmaHUD](<https://github.com/brianblakely/omahud.git>) | Brian Blakely | Flashes a discreet Hyprland workspace indicator when you switch workspaces. It's designed for people who hide their Omarchy bar most of the time, and would like help navigating their workspaces. |
