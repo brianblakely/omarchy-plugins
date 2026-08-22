@@ -50,7 +50,7 @@ FocusScope {
       : ""
   readonly property real mopedWidth: Math.min(
     Style.space(168), Math.max(Style.space(112), width * 0.5))
-  readonly property real mopedHeight: mopedWidth * 130 / 180
+  readonly property real mopedHeight: mopedWidth * 638 / 884
   readonly property real mopedClearance:
     mopedHeight + Style.space(18)
 
