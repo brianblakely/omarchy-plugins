@@ -977,6 +977,8 @@ Item {
       FocusScope {
         id: catalogSign
         property real glowFlicker: 1.0
+        readonly property int firstBlinkGap: 220
+        readonly property int sputterBlinkGap: 44
 
         x: storefront.frameLeft + root.headerEdgeInset
         y: root.wideLayout
@@ -1044,7 +1046,7 @@ Item {
             property: "glowFlicker"
             value: 0.94
           }
-          PauseAnimation { duration: 62 }
+          PauseAnimation { duration: catalogSign.firstBlinkGap }
           PropertyAction {
             target: catalogSign
             property: "glowFlicker"
@@ -1056,7 +1058,7 @@ Item {
             property: "glowFlicker"
             value: 1.0
           }
-          PauseAnimation { duration: 96 }
+          PauseAnimation { duration: catalogSign.sputterBlinkGap }
           PropertyAction {
             target: catalogSign
             property: "glowFlicker"
@@ -1068,7 +1070,7 @@ Item {
             property: "glowFlicker"
             value: 0.82
           }
-          PauseAnimation { duration: 47 }
+          PauseAnimation { duration: catalogSign.sputterBlinkGap }
           PropertyAction {
             target: catalogSign
             property: "glowFlicker"

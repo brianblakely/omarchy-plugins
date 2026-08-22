@@ -933,6 +933,14 @@ grep -Fq 'id: signFlickerAnimation' "$ROOT_DIR/Okomart.qml" \
   || fail "storefront sign glow has no neon flicker sequence"
 [[ $(grep -Fc 'property: "glowFlicker"' "$ROOT_DIR/Okomart.qml") -ge 8 ]] \
   || fail "storefront sign glow does not sputter through a multi-step flicker"
+grep -Fq 'readonly property int firstBlinkGap: 220' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront sign does not pause after its first blink"
+grep -Fq 'readonly property int sputterBlinkGap: 44' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront sign follow-up blinks are not tightly clustered"
+[[ $(grep -Fc 'duration: catalogSign.firstBlinkGap' "$ROOT_DIR/Okomart.qml") -eq 1 ]] \
+  || fail "storefront sign first-blink delay is not isolated"
+[[ $(grep -Fc 'duration: catalogSign.sputterBlinkGap' "$ROOT_DIR/Okomart.qml") -eq 2 ]] \
+  || fail "storefront sign later blinks do not share the shorter delay"
 grep -Fq '0.78 + 0.22 * catalogSign.glowFlicker' "$ROOT_DIR/Okomart.qml" \
   || fail "storefront sign lettering is too transparent during the flicker"
 if sed -n '/function applyCatalogActivation(raw, generation)/,/^  }/p' \
