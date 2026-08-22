@@ -875,8 +875,18 @@ if ! sed -n '/function open(payloadJson)/,/^  }/p' "$ROOT_DIR/Okomart.qml" \
     | grep -Fq 'loadCachedSnapshot(true)'; then
   fail "every storefront open does not reload local catalog state"
 fi
-grep -Fq '[helperPath, "refresh", sourceDir]' "$ROOT_DIR/Okomart.qml" \
-  || fail "storefront opening does not stage a background manifest refresh"
+grep -Fq '[helperPath, "refresh", sourceDir, "--progress"]' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront opening does not request progressive manifest refresh events"
+if ! sed -n '/id: refreshProcess/,/^  }/p' "$ROOT_DIR/Okomart.qml" \
+    | grep -Fq 'stdout: SplitParser {'; then
+  fail "manifest refresh output is still buffered until every request wave finishes"
+fi
+if ! sed -n '/function applyRefreshLine(raw)/,/^  }/p' "$ROOT_DIR/Okomart.qml" \
+    | grep -Fq 'loadCachedSnapshot(false)'; then
+  fail "completed manifest waves do not reload the progressively published catalog"
+fi
+grep -Fq 'property bool reloadQueued: false' "$ROOT_DIR/Okomart.qml" \
+  || fail "overlapping progressive catalog reloads can drop the latest request wave"
 grep -Fq '[helperPath, "check-updates", sourceDir]' "$ROOT_DIR/Okomart.qml" \
   || fail "installed and self update checks are not independent"
 grep -Fq '[helperPath, "enrich", pendingGeneration]' "$ROOT_DIR/Okomart.qml" \
@@ -1026,8 +1036,8 @@ if grep -Fq 'catalogErrors.length' "$ROOT_DIR/Okomart.qml" \
     || grep -Fq '" catalog refresh "' "$ROOT_DIR/Okomart.qml"; then
   fail "per-plugin catalog errors still produce a refresh-issue banner"
 fi
-grep -Fq 'emptyText: root.catalogLoaded' "$ROOT_DIR/Okomart.qml" \
-  || fail "plugin list exposes an empty result before cache loading finishes"
+grep -Fq 'emptyText: root.allPlugins.length === 0' "$ROOT_DIR/Okomart.qml" \
+  || fail "plugin list exposes an empty result while the first request wave is loading"
 grep -Fq 'root.beginAction("update", plugin)' "$ROOT_DIR/Okomart.qml" \
   || fail "single-plugin update does not start a scoped backend action"
 grep -Fq 'import QtQuick.Layouts' "$ROOT_DIR/Okomart.qml" \

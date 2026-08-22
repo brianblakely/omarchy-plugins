@@ -456,9 +456,12 @@ Item {
       return
     }
     if (cacheProcess.running) {
-      cacheProcess.startBackground = cacheProcess.startBackground || startBackground === true
-      cacheProcess.checkAfterLoad = cacheProcess.checkAfterLoad || checkAfterLoad === true
-      cacheProcess.rediscoverScreenshots = cacheProcess.rediscoverScreenshots
+      cacheProcess.reloadQueued = true
+      cacheProcess.queuedStartBackground = cacheProcess.queuedStartBackground
+        || startBackground === true
+      cacheProcess.queuedCheckAfterLoad = cacheProcess.queuedCheckAfterLoad
+        || checkAfterLoad === true
+      cacheProcess.queuedRediscoverScreenshots = cacheProcess.queuedRediscoverScreenshots
         || rediscoverScreenshots === true
       return
     }
@@ -472,6 +475,14 @@ Item {
   }
 
   function applyCachedSnapshot(raw, startBackground, checkAfterLoad, rediscoverScreenshots) {
+    var reloadQueued = cacheProcess.reloadQueued
+    var queuedStartBackground = cacheProcess.queuedStartBackground
+    var queuedCheckAfterLoad = cacheProcess.queuedCheckAfterLoad
+    var queuedRediscoverScreenshots = cacheProcess.queuedRediscoverScreenshots
+    cacheProcess.reloadQueued = false
+    cacheProcess.queuedStartBackground = false
+    cacheProcess.queuedCheckAfterLoad = false
+    cacheProcess.queuedRediscoverScreenshots = false
     cacheLoading = false
     var parsed = null
     try { parsed = JSON.parse(String(raw || "")) } catch (e) {}
@@ -494,6 +505,24 @@ Item {
       resetLazyScreenshots()
       Qt.callLater(scheduleLazyScreenshots)
     }
+    if (reloadQueued) {
+      Qt.callLater(function() {
+        root.loadCachedSnapshot(queuedStartBackground, queuedCheckAfterLoad,
+          queuedRediscoverScreenshots)
+      })
+    }
+  }
+
+  function applyRefreshLine(raw) {
+    var line = String(raw || "").trim()
+    if (!line) return
+    var parsed = null
+    try { parsed = JSON.parse(line) } catch (e) {}
+    if (parsed && parsed.progress === true) {
+      if (parsed.coldPublished === true) loadCachedSnapshot(false)
+      return
+    }
+    refreshOutput = line
   }
 
   function applySnapshot(raw, exitCode) {
@@ -541,8 +570,8 @@ Item {
     bannerText = ""
     bannerUrgent = false
     refreshProcess.command = force === true
-      ? [helperPath, "refresh", sourceDir, "--force"]
-      : [helperPath, "refresh", sourceDir]
+      ? [helperPath, "refresh", sourceDir, "--force", "--progress"]
+      : [helperPath, "refresh", sourceDir, "--progress"]
     refreshProcess.running = true
   }
 
@@ -778,6 +807,10 @@ Item {
     property bool startBackground: false
     property bool checkAfterLoad: false
     property bool rediscoverScreenshots: false
+    property bool reloadQueued: false
+    property bool queuedStartBackground: false
+    property bool queuedCheckAfterLoad: false
+    property bool queuedRediscoverScreenshots: false
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: root.cachedOutput = text
@@ -788,9 +821,8 @@ Item {
 
   Process {
     id: refreshProcess
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.refreshOutput = text
+    stdout: SplitParser {
+      onRead: function(line) { root.applyRefreshLine(line) }
     }
     stderr: StdioCollector {
       waitForEnd: true
@@ -1255,10 +1287,11 @@ Item {
         scrollNubRightOffset: Style.space(13)
         plugins: root.visiblePlugins
         selectedId: root.selectedId
-        emptyText: root.catalogLoaded
-          ? "No plugins match this search."
-          : (root.cacheLoading || root.refreshing
-            ? "Loading plugins…" : "No cached plugins available.")
+        emptyText: root.allPlugins.length === 0
+            && (root.cacheLoading || root.refreshing)
+          ? "Loading plugins…"
+          : (root.catalogLoaded
+            ? "No plugins match this search." : "No cached plugins available.")
         activateOnSingleClick: !root.wideLayout
         onSelected: function(pluginId) {
           if (!root.pluginListResetting) root.selectedId = pluginId

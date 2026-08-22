@@ -258,6 +258,7 @@ printf -v LARGE_DESCRIPTION '%*s' 45000 ''
 LARGE_DESCRIPTION=${LARGE_DESCRIPTION// /x}
 manifest alpha b.alpha Alpha 1.0.0 "$LARGE_DESCRIPTION"
 manifest alpha-fork b.alpha 'Alpha marketplace alias' 9.0.0
+manifest alpha-newer-alias b.alpha 'Newer alpha marketplace alias' 10.0.0
 manifest beta b.beta Beta 1.0.0 "$LARGE_DESCRIPTION"
 manifest gamma b.gamma Gamma 1.0.0 "$LARGE_DESCRIPTION"
 ALPHA_REV=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -277,6 +278,7 @@ jq -n '{sources:[
     listingValidatedCommit:"6666666666666666666666666666666666666666",
     plugins:{"b.beta":{}}},
   {type:"plugin-source",repo:"https://github.com/example/alpha-fork",plugins:{"b.alpha":{}}},
+  {type:"plugin-source",repo:"https://github.com/example/alpha-newer-alias",plugins:{"b.alpha":{}}},
   {type:"plugin-source",repo:"https://github.com/example/gamma",
     listingValidatedAt:"2025-04-01T00:00:00.000Z",
     listingValidatedCommit:"7777777777777777777777777777777777777777",
@@ -316,7 +318,43 @@ printf 'keep\n' >"$TMP/outside-legacy/sentinel"
 ln -s -- "$TMP/outside-legacy" "$XDG_CACHE_HOME/okomart/catalog"
 printf '{}\n' >"$XDG_STATE_HOME/okomart/catalog.json"
 printf '{}\n' >"$XDG_STATE_HOME/okomart/snapshot.json"
-"$OKOMART" refresh "$SOURCE" >"$TMP/refresh-cold.json"
+CATALOG="$XDG_CACHE_HOME/okomart/catalog.json"
+PROGRESS_EVENTS="$TMP/refresh-progress.jsonl"
+: >"$PROGRESS_EVENTS"
+export OKOMART_GITHUB_MANIFEST_WORKERS=2
+export OKOMART_GENERIC_MANIFEST_WORKERS=1
+"$OKOMART" refresh "$SOURCE" --progress |
+  while IFS= read -r event; do
+    printf '%s\n' "$event" >>"$PROGRESS_EVENTS"
+    if jq -e '.progress == true and .coldPublished == true' \
+        <<<"$event" >/dev/null; then
+      progress_wave=$(jq -r '.wave' <<<"$event")
+      cp -- "$CATALOG" "$TMP/cold-wave-$progress_wave.json"
+      if [[ $progress_wave == 1 ]]; then
+        timeout 1s "$OKOMART" snapshot "$SOURCE" \
+          >"$TMP/cold-wave-snapshot.json"
+      fi
+    fi
+  done
+unset OKOMART_GITHUB_MANIFEST_WORKERS OKOMART_GENERIC_MANIFEST_WORKERS
+tail -n 1 "$PROGRESS_EVENTS" >"$TMP/refresh-cold.json"
+jq -s '.' "$PROGRESS_EVENTS" >"$TMP/refresh-progress.json"
+assert_jq "$TMP/refresh-progress.json" 'length == 4
+  and ([.[0:3][].wave] == [1,2,3])
+  and ([.[0:3][].completed] == [3,5,6])
+  and ([.[0:3][].entryCount] == [3,4,4])
+  and (.[3].progress != true)' \
+  'cold refresh emits one render event after every completed request wave'
+assert_jq "$TMP/cold-wave-1.json" '.active.partial == true
+  and .active.completed == 3 and .active.total == 6
+  and ([.active.entries[].id] | index("b.gamma") == null)' \
+  'first request wave atomically publishes its accumulated plugin list'
+assert_jq "$TMP/cold-wave-snapshot.json" '.ok and (.plugins | length) >= 3' \
+  'progressive snapshot reads do not wait for the refresh writer lock'
+assert_jq "$TMP/cold-wave-2.json" '.active.partial == true
+  and .active.completed == 5
+  and ([.active.entries[].id] | index("b.gamma") != null)' \
+  'HANCORE sources are processed newest-first from the reversed registry'
 assert_jq "$TMP/refresh-cold.json" '.ok and .coldPublished and .changed
   and .pending.ready == false' 'cold refresh publishes manifests before enrichment'
 pass 'cold refresh accepts a valid marketplace larger than one megabyte'
@@ -329,7 +367,6 @@ pass 'legacy mirrors, materializations, and duplicate state are removed'
 [[ -f $TMP/outside-legacy/sentinel ]] || fail 'legacy symlink cleanup followed its target'
 pass 'legacy cleanup never follows an out-of-root symlink target'
 
-CATALOG="$XDG_CACHE_HOME/okomart/catalog.json"
 assert_jq "$CATALOG" '
   .schemaVersion == 1 and (.active.entries|length) == 4
   and .pending.ready == false

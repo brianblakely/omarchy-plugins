@@ -17,9 +17,13 @@ MARKETPLACE_REGISTRY_URL="${OKOMART_MARKETPLACE_REGISTRY_URL:-https://raw.github
 MARKETPLACE_REGISTRY_MAXIMUM_BYTES=$((16 * 1024 * 1024))
 MANIFEST_MAXIMUM_BYTES=$((512 * 1024))
 SCREENSHOT_MAXIMUM_BYTES=$((32 * 1024 * 1024))
-GITHUB_MANIFEST_WORKERS=16
-GENERIC_MANIFEST_WORKERS=2
+GITHUB_MANIFEST_WORKERS="${OKOMART_GITHUB_MANIFEST_WORKERS:-16}"
+GENERIC_MANIFEST_WORKERS="${OKOMART_GENERIC_MANIFEST_WORKERS:-2}"
 GITHUB_TIMESTAMP_WORKERS=8
+[[ $GITHUB_MANIFEST_WORKERS =~ ^[1-9][0-9]*$ &&
+  $GITHUB_MANIFEST_WORKERS -le 64 ]] || GITHUB_MANIFEST_WORKERS=16
+[[ $GENERIC_MANIFEST_WORKERS =~ ^[1-9][0-9]*$ &&
+  $GENERIC_MANIFEST_WORKERS -le 8 ]] || GENERIC_MANIFEST_WORKERS=2
 REFRESH_DEADLINE_SECONDS="${OKOMART_REFRESH_DEADLINE_SECONDS:-90}"
 [[ $REFRESH_DEADLINE_SECONDS =~ ^[1-9][0-9]*$ ]] || REFRESH_DEADLINE_SECONDS=90
 GITHUB_RAW_BASE="${OKOMART_GITHUB_RAW_BASE:-https://raw.githubusercontent.com}"
@@ -165,7 +169,7 @@ startup_cache_cleanup() {
   exec 9>>"$CATALOG_LOCK" || return 1
   # A writer can briefly own this lock while atomically replacing catalog.json.
   # Keep startup local and immediate instead of waiting on network-bound work.
-  flock -w 1 9 || return 0
+  flock -n 9 || return 0
   cleanup_cache_extras
 }
 
@@ -639,7 +643,7 @@ parse_marketplace_registry() {
     fi
   done < <(
     jq -r '
-      .sources[]
+      .sources | reverse[]
       | select(.type == "plugin-source")
       | select((.plugins | length) == 1)
       | (.plugins | to_entries[0]) as $plugin
@@ -843,6 +847,110 @@ run_manifest_pool() {
   for pid in "${pids[@]}"; do wait "$pid" || true; done
 }
 
+process_manifest_result() {
+  local index="$1" url="$2" work="$3" local_registry_url_count="$4"
+  local raw_entries="$5" errors="$6" ids_name="$7"
+  local -n seen_ids="$ids_name"
+  local record="$work/result-$index.json" manifest metadata id
+  local revision head_timestamp identity listing_validated_at
+  local listing_validated_commit
+
+  if [[ ! -f $record ]] || ! jq -e '.ok == true' "$record" >/dev/null 2>&1; then
+    jq -cn --arg sourceUrl "$url" \
+      --arg error "$(jq -r '.error // "Manifest request failed"' "$record" 2>/dev/null || printf 'Manifest request failed')" \
+      '{sourceUrl:$sourceUrl,error:$error,phase:"manifest"}' >>"$errors"
+    return 1
+  fi
+
+  manifest="$(jq -r '.manifestPath' "$record")"
+  if ! validate_remote_catalog_manifest "$manifest"; then
+    jq -cn --arg sourceUrl "$url" --arg error "$VALIDATION_ERROR" \
+      '{sourceUrl:$sourceUrl,error:$error,phase:"validation"}' >>"$errors"
+    return 0
+  fi
+  metadata="$(manifest_metadata "$manifest")" || return 0
+  id="$(jq -r '.id' <<<"$metadata")"
+  if [[ $id == "$OKOMART_ID" ]]; then
+    jq -cn --arg sourceUrl "$url" \
+      --arg error "Catalog entries cannot reuse Okomart's plugin id" \
+      '{sourceUrl:$sourceUrl,error:$error,phase:"validation"}' >>"$errors"
+    return 0
+  fi
+  if [[ -n ${seen_ids[$id]+x} ]]; then
+    if [[ ${seen_ids[$id]} == local ]] && (( index >= local_registry_url_count )); then
+      return 0
+    fi
+    jq -cn --arg sourceUrl "$url" --arg error "Duplicate plugin id '$id'" \
+      '{sourceUrl:$sourceUrl,error:$error,phase:"validation"}' >>"$errors"
+    return 0
+  fi
+  if (( index < local_registry_url_count )); then
+    seen_ids[$id]=local
+  else
+    seen_ids[$id]=marketplace
+  fi
+
+  revision="$(jq -c '.revision' "$record")"
+  head_timestamp="$(jq -c '.headTimestamp' "$record")"
+  identity="$(registry_url_identity "$url")"
+  listing_validated_at="${REGISTRY_LISTING_VALIDATED_AT[$identity]:-}"
+  listing_validated_commit="${REGISTRY_LISTING_VALIDATED_COMMITS[$identity]:-}"
+  jq -c --arg sourceUrl "$url" \
+    --arg listingValidatedAt "$listing_validated_at" \
+    --arg listingValidatedCommit "$listing_validated_commit" \
+    --argjson revision "$revision" --argjson headTimestamp "$head_timestamp" '
+    . + {
+      sourceUrl:$sourceUrl,
+      revision:(if $listingValidatedCommit == "" then $revision
+        else $listingValidatedCommit end),
+      listingValidatedAt:(if $listingValidatedAt == "" then null
+        else ($listingValidatedAt | tonumber) end),
+      updatedAt:null,
+      _headTimestamp:$headTimestamp
+    }' <<<"$metadata" >>"$raw_entries" || true
+  return 0
+}
+
+publish_cold_catalog_wave() {
+  local raw_entries="$1" errors="$2" checked_at="$3"
+  local completed="$4" total="$5" wave="$6" work="$7"
+  local entries_file="$work/wave-entries.json"
+  local errors_file="$work/wave-errors.json"
+  local canonical generation next entry_count=0 published=false
+
+  if [[ -s $raw_entries ]]; then
+    jq -s 'map(del(._headTimestamp))
+      | sort_by(-(.listingValidatedAt // .updatedAt // 0),
+          (.name | ascii_downcase), .id)' \
+      "$raw_entries" >"$entries_file" || return 1
+    jq -s '.' "$errors" >"$errors_file" || return 1
+    canonical="$(jq -S -c 'sort_by(.sourceUrl)
+      | map(del(.updatedAt,.revision))' "$entries_file")"
+    generation="$(printf '%s' "$canonical" | sha256sum | awk '{print $1}')"
+    entry_count="$(jq 'length' "$entries_file")"
+    next="$(jq -cn --arg generation "$generation" --arg checkedAt "$checked_at" \
+      --argjson completed "$completed" --argjson total "$total" \
+      --argjson wave "$wave" --slurpfile entries "$entries_file" \
+      --slurpfile errors "$errors_file" '
+      {schemaVersion:1,
+        active:{generation:$generation,entries:($entries[0] // []),
+          errors:($errors[0] // []),checkedAt:$checkedAt,partial:true,
+          completed:$completed,total:$total,wave:$wave},
+        pending:null}
+    ')"
+    write_catalog "$next" || return 1
+    published=true
+  fi
+
+  if [[ ${OKOMART_REFRESH_PROGRESS:-0} == 1 ]]; then
+    jq -cn --argjson published "$published" --argjson wave "$wave" \
+      --argjson completed "$completed" --argjson total "$total" \
+      --argjson entryCount "$entry_count" \
+      '{ok:true,progress:true,coldPublished:$published,wave:$wave,
+        completed:$completed,total:$total,entryCount:$entryCount}'
+  fi
+}
+
 refresh_failure() {
   jq -cn --arg error "$1" '{ok:false,staged:false,error:$error}'
 }
@@ -906,98 +1014,95 @@ stage_refresh_worker() {
     return 1
   }
 
-  local github_tasks="$work/github.tasks" generic_tasks="$work/generic.tasks"
-  : >"$github_tasks"; : >"$generic_tasks"
-  local index url
-  for index in "${!REGISTRY_URLS[@]}"; do
-    url="${REGISTRY_URLS[$index]}"
-    if github_repository_parts "$url" >/dev/null; then
-      printf '%s\t%s\n' "$index" "$url" >>"$github_tasks"
-    else
-      printf '%s\t%s\n' "$index" "$url" >>"$generic_tasks"
-    fi
-  done
-  run_manifest_pool github "$github_tasks" "$work" "$GITHUB_MANIFEST_WORKERS" &
-  local github_pool=$!
-  run_manifest_pool generic "$generic_tasks" "$work" "$GENERIC_MANIFEST_WORKERS" &
-  local generic_pool=$!
-  wait "$github_pool" || true
-  wait "$generic_pool" || true
+  local current active_generation checked_at cold=false
+  local cold_publish=false cold_finalize=false
+  current="$(read_catalog)"
+  active_generation="$(jq -r '.active.generation // ""' <<<"$current")"
+  checked_at="$(utc_now)"
+  if [[ -z $active_generation ]]; then
+    cold=true
+    cold_publish=true
+    cold_finalize=true
+  elif jq -e '.active.partial == true' <<<"$current" >/dev/null 2>&1; then
+    cold=true
+    cold_finalize=true
+  fi
 
+  local github_tasks="$work/wave-github.tasks"
+  local generic_tasks="$work/wave-generic.tasks"
   local raw_entries="$work/raw-entries.jsonl" errors="$work/errors.jsonl"
   : >"$raw_entries"; : >"$errors"
-  local request_failures=0 successful_requests=0 record manifest metadata id
-  local revision head_timestamp identity listing_validated_at
-  local listing_validated_commit
+  local request_failures=0 index url cursor=0 completed=0 wave=0
+  local github_count generic_count wave_count github_pool generic_pool
+  local total=${#REGISTRY_URLS[@]}
+  local -a wave_indices=()
   declare -A ids=()
-  for index in "${!REGISTRY_URLS[@]}"; do
-    url="${REGISTRY_URLS[$index]}"
-    record="$work/result-$index.json"
-    if [[ ! -f $record ]] || ! jq -e '.ok == true' "$record" >/dev/null 2>&1; then
-      request_failures=$((request_failures + 1))
-      jq -cn --arg sourceUrl "$url" \
-        --arg error "$(jq -r '.error // "Manifest request failed"' "$record" 2>/dev/null || printf 'Manifest request failed')" \
-        '{sourceUrl:$sourceUrl,error:$error,phase:"manifest"}' >>"$errors"
-      continue
-    fi
-    successful_requests=$((successful_requests + 1))
-    manifest="$(jq -r '.manifestPath' "$record")"
-    if ! validate_remote_catalog_manifest "$manifest"; then
-      jq -cn --arg sourceUrl "$url" --arg error "$VALIDATION_ERROR" \
-        '{sourceUrl:$sourceUrl,error:$error,phase:"validation"}' >>"$errors"
-      continue
-    fi
-    metadata="$(manifest_metadata "$manifest")" || continue
-    id="$(jq -r '.id' <<<"$metadata")"
-    if [[ $id == "$OKOMART_ID" ]]; then
-      jq -cn --arg sourceUrl "$url" --arg error "Catalog entries cannot reuse Okomart's plugin id" \
-        '{sourceUrl:$sourceUrl,error:$error,phase:"validation"}' >>"$errors"
-      continue
-    fi
-    if [[ -n ${ids[$id]+x} ]]; then
-      if [[ ${ids[$id]} == local ]] && (( index >= local_registry_url_count )); then
-        continue
+  while (( cursor < total )); do
+    : >"$github_tasks"; : >"$generic_tasks"
+    wave_indices=()
+    github_count=0
+    generic_count=0
+    while (( cursor < total )); do
+      index=$cursor
+      url="${REGISTRY_URLS[$index]}"
+      if github_repository_parts "$url" >/dev/null; then
+        if (( github_count >= GITHUB_MANIFEST_WORKERS &&
+          ${#wave_indices[@]} > 0 )); then
+          break
+        fi
+        printf '%s\t%s\n' "$index" "$url" >>"$github_tasks"
+        github_count=$((github_count + 1))
+      else
+        if (( generic_count >= GENERIC_MANIFEST_WORKERS &&
+          ${#wave_indices[@]} > 0 )); then
+          break
+        fi
+        printf '%s\t%s\n' "$index" "$url" >>"$generic_tasks"
+        generic_count=$((generic_count + 1))
       fi
-      jq -cn --arg sourceUrl "$url" --arg error "Duplicate plugin id '$id'" \
-        '{sourceUrl:$sourceUrl,error:$error,phase:"validation"}' >>"$errors"
-      continue
+      wave_indices+=("$index")
+      cursor=$((cursor + 1))
+    done
+
+    github_pool=""
+    generic_pool=""
+    if [[ -s $github_tasks ]]; then
+      run_manifest_pool github "$github_tasks" "$work" "$GITHUB_MANIFEST_WORKERS" &
+      github_pool=$!
     fi
-    if (( index < local_registry_url_count )); then
-      ids[$id]=local
-    else
-      ids[$id]=marketplace
+    if [[ -s $generic_tasks ]]; then
+      run_manifest_pool generic "$generic_tasks" "$work" "$GENERIC_MANIFEST_WORKERS" &
+      generic_pool=$!
     fi
-    revision="$(jq -c '.revision' "$record")"
-    head_timestamp="$(jq -c '.headTimestamp' "$record")"
-    identity="$(registry_url_identity "$url")"
-    listing_validated_at="${REGISTRY_LISTING_VALIDATED_AT[$identity]:-}"
-    listing_validated_commit="${REGISTRY_LISTING_VALIDATED_COMMITS[$identity]:-}"
-    jq -c --arg sourceUrl "$url" \
-      --arg listingValidatedAt "$listing_validated_at" \
-      --arg listingValidatedCommit "$listing_validated_commit" \
-      --argjson revision "$revision" --argjson headTimestamp "$head_timestamp" '
-      . + {
-        sourceUrl:$sourceUrl,
-        revision:(if $listingValidatedCommit == "" then $revision
-          else $listingValidatedCommit end),
-        listingValidatedAt:(if $listingValidatedAt == "" then null
-          else ($listingValidatedAt | tonumber) end),
-        updatedAt:null,
-        _headTimestamp:$headTimestamp
-      }' \
-      <<<"$metadata" >>"$raw_entries"
+    [[ -z $github_pool ]] || wait "$github_pool" || true
+    [[ -z $generic_pool ]] || wait "$generic_pool" || true
+
+    wave=$((wave + 1))
+    wave_count=${#wave_indices[@]}
+    for index in "${wave_indices[@]}"; do
+      url="${REGISTRY_URLS[$index]}"
+      if ! process_manifest_result "$index" "$url" "$work" \
+          "$local_registry_url_count" "$raw_entries" "$errors" ids; then
+        request_failures=$((request_failures + 1))
+      fi
+    done
+    completed=$((completed + wave_count))
+    if [[ $cold_publish == true ]] && ! publish_cold_catalog_wave \
+        "$raw_entries" "$errors" "$checked_at" "$completed" "$total" \
+        "$wave" "$work"; then
+      rm -rf --one-file-system -- "$work"
+      refresh_failure "Could not publish the partial cold catalog."
+      return 1
+    fi
   done
 
-  if (( request_failures == ${#REGISTRY_URLS[@]} )); then
+  if (( request_failures == total )); then
     rm -rf --one-file-system -- "$work"
     refresh_failure "Every plugin manifest request failed; the active catalog was preserved."
     return 1
   fi
 
-  local current active_generation checked_at staged_entries timestamp_sources fallbacks
-  current="$(read_catalog)"
-  active_generation="$(jq -r '.active.generation // ""' <<<"$current")"
-  checked_at="$(utc_now)"
+  local staged_entries timestamp_sources fallbacks
   staged_entries="$work/staged-entries.jsonl"
   timestamp_sources="$work/timestamp-sources.jsonl"
   fallbacks="$work/fallbacks.jsonl"
@@ -1061,9 +1166,8 @@ stage_refresh_worker() {
     return 1
   fi
 
-  local next cold=false preserve_pending=false
-  if [[ -z $active_generation ]]; then
-    cold=true
+  local next preserve_pending=false
+  if [[ $cold_finalize == true ]]; then
     next="$(jq -cn --arg generation "$generation" --arg checkedAt "$checked_at" \
       --slurpfile entries "$entries_file" --slurpfile errors "$errors_file" \
       --slurpfile sources "$sources_file" --slurpfile fallbacks "$fallbacks_file" '
@@ -1130,9 +1234,19 @@ stage_refresh_worker() {
 }
 
 refresh_command() {
-  local output rc=0
+  local source_arg="$1" progress="${2:-false}" output rc=0
+  if [[ $progress == true ]]; then
+    OKOMART_REFRESH_PROGRESS=1 \
+      timeout --signal=TERM --kill-after=3s "${REFRESH_DEADLINE_SECONDS}s" \
+      bash "$SCRIPT_PATH" _refresh-worker "$source_arg" || rc=$?
+    if (( rc == 124 || rc == 137 )); then
+      refresh_failure "Catalog refresh exceeded its overall time limit; the active catalog was preserved."
+      return 1
+    fi
+    return $rc
+  fi
   output="$(timeout --signal=TERM --kill-after=3s "${REFRESH_DEADLINE_SECONDS}s" \
-    bash "$SCRIPT_PATH" _refresh-worker "$@")" || rc=$?
+    bash "$SCRIPT_PATH" _refresh-worker "$source_arg")" || rc=$?
   if (( rc == 124 || rc == 137 )); then
     refresh_failure "Catalog refresh exceeded its overall time limit; the active catalog was preserved."
     return 1
@@ -3271,7 +3385,7 @@ action_command() {
 usage_json() {
   jq -cn '{
     ok:false,
-    error:"Usage: okomart snapshot <source-dir> | refresh <source-dir> [--force] | enrich <generation> | promote <generation> | check-updates <source-dir> | screenshots <descriptor-json> <session-id> | cleanup-media <session-id|--all> | action <source-dir> <install|remove|enable|disable|update|update-all> <id-or-empty> <generation> <selected-update-ids-json-for-update-all> | status | ack <action-id>"
+    error:"Usage: okomart snapshot <source-dir> | refresh <source-dir> [--force] [--progress] | enrich <generation> | promote <generation> | check-updates <source-dir> | screenshots <descriptor-json> <session-id> | cleanup-media <session-id|--all> | action <source-dir> <install|remove|enable|disable|update|update-all> <id-or-empty> <generation> <selected-update-ids-json-for-update-all> | status | ack <action-id>"
   }'
 }
 
@@ -3306,14 +3420,27 @@ main() {
     ;;
   refresh)
     shift
-    if (( $# == 2 )) && [[ ${2:-} == --force ]]; then
-      refresh_command "$1"
-    elif (( $# == 1 )); then
-      refresh_command "$1"
-    else
-      json_error "Usage: okomart refresh <source-dir> [--force]"
+    local refresh_source="${1:-}" refresh_progress=false refresh_argument
+    shift || true
+    [[ -n $refresh_source ]] || {
+      json_error "Usage: okomart refresh <source-dir> [--force] [--progress]"
       return 2
-    fi
+    }
+    for refresh_argument in "$@"; do
+      case "$refresh_argument" in
+      --force) ;;
+      --progress) refresh_progress=true ;;
+      *)
+        json_error "Usage: okomart refresh <source-dir> [--force] [--progress]"
+        return 2
+        ;;
+      esac
+    done
+    (( $# <= 2 )) || {
+      json_error "Usage: okomart refresh <source-dir> [--force] [--progress]"
+      return 2
+    }
+    refresh_command "$refresh_source" "$refresh_progress"
     ;;
   _refresh-worker)
     shift

@@ -27,10 +27,11 @@ operations:
    timestamps only for entries without a HANCORE validation timestamp, then
    mark that exact pending generation ready.
 
-The active list never changes merely because a refresh completes. A ready
-pending generation makes the **オコマート** sign flicker. Pointer activation or
-`Enter`/`Space` atomically promotes the generation named by the sign. Stale
-enrichment, promotion, and action responses are rejected by generation.
+Once a complete active catalog exists, a refresh never changes it directly. A
+ready pending generation makes the **オコマート** sign flicker. Pointer
+activation or `Enter`/`Space` atomically promotes the generation named by the
+sign. Stale enrichment, promotion, and action responses are rejected by
+generation.
 
 Enable and disable actions use Omarchy's public plugin commands. Okomart
 re-checks the installed path and live enabled state after confirmation before
@@ -38,27 +39,35 @@ performing either mutation. A full bar reports `canDisable: false`; Okomart
 leaves its Disable button unavailable because bars are replaced by enabling a
 different bar rather than switched off directly.
 
-On a cold cache, successfully fetched manifests are published as `active`
-before timestamp enrichment, making the catalog browsable at the first network
-boundary. HANCORE entries are already ordered by `listingValidatedAt` at this
-point. Timestamp enrichment for sources without that metadata is staged as the
-first pending update.
+An empty cold cache is the exception. Local URLs are requested first, followed
+by compatible HANCORE sources in reverse registry order so its newest listings
+arrive first. After every complete request wave, the accumulated validated
+manifests atomically replace a partial `active` catalog and a progress event
+makes the open storefront reload it. An interrupted cold refresh retains its
+last complete wave; a later successful refresh replaces that partial catalog
+with the complete generation directly.
+
+When all manifest waves finish, HANCORE entries are ordered by
+`listingValidatedAt`. Timestamp enrichment for sources without that metadata is
+staged as the first pending update.
 
 `Ctrl+R` queues a forced refresh when another refresh is in progress. A
-registry-source failure, overall timeout, or all-plugin request failure leaves
-`active` untouched. When an active catalog is available, Okomart briefly shows
-the background refresh failure and then dismisses it after restoring the saved
-catalog; without an active catalog, the failure remains visible. Individual
-plugin failures are recorded as catalog errors and omitted from the candidate.
+registry-source failure leaves `active` untouched. An overall timeout or
+all-plugin request failure preserves a complete active catalog; on a cold
+refresh, any partial catalog from an earlier completed wave remains available.
+When an active catalog is available, Okomart briefly shows the background
+refresh failure and then dismisses it after restoring the saved catalog;
+without an active catalog, the failure remains visible. Individual plugin
+failures are recorded as catalog errors and omitted from the candidate.
 
 ## Fetch And Validation Boundaries
 
-GitHub `manifest.json` files come from the raw content endpoint through a
-16-request HTTP pool; GitHub catalog metadata is never cloned. Okomart uses a
-compatible HANCORE source's `listingValidatedAt` as its primary ordering time
-and its `listingValidatedCommit` as the revision for lazy media. This metadata
-also applies when a matching local `plugins.txt` URL wins source precedence.
-Okomart does not request a last-update timestamp for those entries.
+GitHub `manifest.json` files come from the raw content endpoint in waves of up
+to 16 concurrent requests; GitHub catalog metadata is never cloned. Okomart
+uses a compatible HANCORE source's `listingValidatedAt` as its primary ordering
+time and its `listingValidatedCommit` as the revision for lazy media. This
+metadata also applies when a matching local `plugins.txt` URL wins source
+precedence. Okomart does not request a last-update timestamp for those entries.
 
 For sources without validation metadata, path-specific commit feeds provide
 the latest commit affecting `manifest.json` through an eight-request enrichment
