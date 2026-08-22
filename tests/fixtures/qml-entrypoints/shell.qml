@@ -8,6 +8,7 @@ ShellRoot {
   readonly property string sourceDir: Quickshell.env("OKOMART_SOURCE_DIR")
   property var createdObjects: []
   property var detailsLayout: null
+  property var pluginListContext: null
 
   function manifestData() {
     return {
@@ -77,6 +78,101 @@ ShellRoot {
     return true
   }
 
+  function pluginRows(prependCount) {
+    var rows = []
+    for (var added = 0; added < prependCount; added++) {
+      rows.push({
+        id: "test.new-" + added,
+        name: "New plugin " + added,
+        description: "Inserted ahead of the active row."
+      })
+    }
+    for (var index = 0; index < 12; index++) {
+      rows.push({
+        id: "test.plugin-" + index,
+        name: "Plugin " + index,
+        description: "Viewport context test row " + index + "."
+      })
+    }
+    return rows
+  }
+
+  function loadPluginListContext() {
+    var url = encodeURI("file://" + sourceDir + "/PluginList.qml")
+    var component = Qt.createComponent(url, Component.PreferSynchronous)
+    if (component.status !== Component.Ready) {
+      console.error("OKOMART_LIST_CONTEXT_ERROR: " + component.errorString())
+      return false
+    }
+
+    pluginListContext = component.createObject(host, {
+      width: 360,
+      height: 300
+    })
+    if (!pluginListContext) {
+      console.error("OKOMART_LIST_CONTEXT_ERROR: " + component.errorString())
+      return false
+    }
+
+    createdObjects.push(pluginListContext)
+    pluginListContext.plugins = pluginRows(0)
+    pluginListContext.selectedId = "test.plugin-8"
+    return true
+  }
+
+  function failPluginListContext(message) {
+    console.error("OKOMART_LIST_CONTEXT_ERROR " + message)
+    Qt.quit()
+  }
+
+  function checkPluginListContext() {
+    pluginListContext.syncCurrentIndex()
+    Qt.callLater(function() {
+      var requestedOffset = 31
+      pluginListContext.restoreViewportAnchor({
+        pluginId: "test.plugin-8",
+        hasViewportOffset: true,
+        viewportOffset: requestedOffset
+      })
+      var before = pluginListContext.captureViewportAnchor()
+      if (!before || before.pluginId !== "test.plugin-8"
+          || before.hasViewportOffset !== true
+          || Math.abs(before.viewportOffset - requestedOffset) > 0.75) {
+        failPluginListContext("could not establish the initial viewport anchor: "
+          + JSON.stringify(before) + ", selected="
+          + pluginListContext.selectedId + ", rows="
+          + pluginListContext.plugins.length + ", index="
+          + pluginListContext.indexForId("test.plugin-8") + ", first="
+          + JSON.stringify(pluginListContext.plugins[0]) + ", firstId="
+          + pluginListContext.idFor(pluginListContext.plugins[0]) + ", ninthId="
+          + pluginListContext.idFor(pluginListContext.plugins[8]))
+        return
+      }
+
+      pluginListContext.beginModelReset()
+      pluginListContext.plugins = pluginRows(1)
+      pluginListContext.endModelReset()
+      pluginListContext.beginModelReset()
+      pluginListContext.plugins = pluginRows(3)
+      pluginListContext.endModelReset()
+      Qt.callLater(function() {
+        var after = pluginListContext.captureViewportAnchor()
+        if (!after || after.pluginId !== before.pluginId
+            || after.hasViewportOffset !== true
+            || Math.abs(after.viewportOffset - before.viewportOffset) > 0.75) {
+          failPluginListContext("active row moved after rows were inserted ahead of it")
+          return
+        }
+        if (pluginListContext.indexForId("test.plugin-8") !== 11) {
+          failPluginListContext("fixture did not move the active row")
+          return
+        }
+        console.log("OKOMART_LIST_CONTEXT_OK")
+        Qt.quit()
+      })
+    })
+  }
+
   function checkDetailsLayout() {
     Qt.callLater(function() {
       Qt.callLater(function() {
@@ -99,7 +195,7 @@ ShellRoot {
             return
           }
           console.log("OKOMART_MOPED_LAYOUT_OK")
-          Qt.quit()
+          root.checkPluginListContext()
         })
       })
     })
@@ -132,7 +228,8 @@ ShellRoot {
     onTriggered: {
       root.loadEntry("Service.qml", "service")
       root.loadEntry("Okomart.qml", "panel")
-      if (root.loadDetailsLayout()) root.checkDetailsLayout()
+      if (root.loadDetailsLayout() && root.loadPluginListContext())
+        root.checkDetailsLayout()
       else Qt.callLater(Qt.quit)
     }
   }

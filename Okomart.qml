@@ -403,11 +403,13 @@ Item {
 
   function rebuildView() {
     var next = OkomartModel.filterPlugins(allPlugins, query, installedOnly)
+    pluginList.beginModelReset()
     pluginListResetting = true
     pluginListResetSerial += 1
     var resetSerial = pluginListResetSerial
     selectedId = OkomartModel.resolveSelection(next, selectedId)
     visiblePlugins = next
+    pluginList.endModelReset()
     if (!selectedId) narrowShowingDetails = false
     Qt.callLater(function() {
       if (resetSerial === pluginListResetSerial) pluginListResetting = false

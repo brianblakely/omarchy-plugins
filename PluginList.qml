@@ -13,6 +13,9 @@ FocusScope {
   property color foreground: Color.foreground
   property color accent: Color.accent
   property real scrollNubRightOffset: 0
+  property bool viewportRestorePending: false
+  property var viewportAnchor: null
+  property int viewportRestoreSerial: 0
 
   signal selected(string pluginId)
   signal activated(var plugin)
@@ -38,6 +41,93 @@ FocusScope {
     for (var i = 0; i < plugins.length; i++)
       if (idFor(plugins[i]) === id) return i
     return -1
+  }
+
+  function captureViewportAnchor() {
+    var index = indexForId(selectedId)
+    if (index < 0) return null
+
+    var item = index === list.currentIndex
+      ? list.currentItem : list.itemAtIndex(index)
+    if (!item) {
+      return {
+        pluginId: String(selectedId),
+        hasViewportOffset: false,
+        viewportOffset: 0
+      }
+    }
+
+    var offset = Number(item.y) - Number(list.contentY)
+    var itemHeight = Number(item.height)
+    return {
+      pluginId: String(selectedId),
+      hasViewportOffset: isFinite(offset) && isFinite(itemHeight)
+        && offset < list.height && offset + itemHeight > 0,
+      viewportOffset: offset
+    }
+  }
+
+  function beginModelReset() {
+    if (!viewportRestorePending) viewportAnchor = captureViewportAnchor()
+    viewportRestorePending = true
+    viewportRestoreSerial += 1
+  }
+
+  function restoreViewportAnchor(anchor) {
+    var activeIndex = indexForId(selectedId)
+    if (activeIndex < 0) {
+      list.currentIndex = -1
+      return
+    }
+
+    if (list.currentIndex !== activeIndex) list.currentIndex = activeIndex
+    list.forceLayout()
+
+    var anchorId = anchor && anchor.pluginId !== undefined
+      ? String(anchor.pluginId) : ""
+    var anchorIndex = indexForId(anchorId)
+    if (!anchor || anchor.hasViewportOffset !== true || anchorIndex < 0) {
+      list.positionViewAtIndex(activeIndex, ListView.Contain)
+      return
+    }
+
+    list.positionViewAtIndex(anchorIndex, ListView.Beginning)
+    list.forceLayout()
+    var anchorItem = list.itemAtIndex(anchorIndex)
+    if (!anchorItem) {
+      list.positionViewAtIndex(activeIndex, ListView.Contain)
+      return
+    }
+
+    var minimumContentY = Number(list.originY)
+    var maximumContentY = minimumContentY
+      + Math.max(0, Number(list.contentHeight) - Number(list.height))
+    var desiredContentY = Number(anchorItem.y) - Number(anchor.viewportOffset)
+    list.contentY = Math.max(minimumContentY,
+      Math.min(maximumContentY, desiredContentY))
+
+    var activeItem = list.itemAtIndex(activeIndex)
+    if (!activeItem
+        || activeItem.y + activeItem.height <= list.contentY
+        || activeItem.y >= list.contentY + list.height)
+      list.positionViewAtIndex(activeIndex, ListView.Contain)
+  }
+
+  function endModelReset() {
+    if (!viewportRestorePending) {
+      Qt.callLater(syncCurrentIndex)
+      return
+    }
+
+    var restoreSerial = viewportRestoreSerial
+    var anchor = viewportAnchor
+    Qt.callLater(function() {
+      if (!viewportRestorePending || restoreSerial !== viewportRestoreSerial)
+        return
+      restoreViewportAnchor(anchor)
+      viewportAnchor = null
+      viewportRestorePending = false
+    })
   }
 
   function syncCurrentIndex() {
@@ -75,10 +165,13 @@ FocusScope {
     list.forceActiveFocus()
   }
 
-  onPluginsChanged: Qt.callLater(syncCurrentIndex)
+  onPluginsChanged: {
+    if (!viewportRestorePending) Qt.callLater(syncCurrentIndex)
+  }
   onSelectedIdChanged: {
-    if (indexForId(selectedId) !== list.currentIndex)
-      Qt.callLater(syncCurrentIndex)
+    if (indexForId(selectedId) !== list.currentIndex) {
+      if (!viewportRestorePending) Qt.callLater(syncCurrentIndex)
+    }
   }
 
   Keys.onPressed: function(event) {

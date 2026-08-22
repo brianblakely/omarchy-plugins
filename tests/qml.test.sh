@@ -93,9 +93,10 @@ run_entrypoint_load_test() {
 
   if ! grep -Fq 'OKOMART_LOAD_OK service' "$log" \
       || ! grep -Fq 'OKOMART_LOAD_OK panel' "$log" \
-      || ! grep -Fq 'OKOMART_MOPED_LAYOUT_OK' "$log"; then
+      || ! grep -Fq 'OKOMART_MOPED_LAYOUT_OK' "$log" \
+      || ! grep -Fq 'OKOMART_LIST_CONTEXT_OK' "$log"; then
     sed -n '1,220p' "$log" >&2
-    fail "Quickshell could not instantiate Okomart or verify its moped layout"
+    fail "Quickshell could not instantiate Okomart or verify its runtime layouts"
   fi
 }
 
@@ -258,6 +259,30 @@ fi
 grep -Fq 'if (indexForId(selectedId) !== list.currentIndex)' \
   "$ROOT_DIR/PluginList.qml" \
   || fail "list navigation still queues redundant selection resynchronization"
+grep -Fq 'function captureViewportAnchor()' "$ROOT_DIR/PluginList.qml" \
+  || fail "plugin list cannot capture the active row before a model reset"
+grep -Fq 'function restoreViewportAnchor(anchor)' "$ROOT_DIR/PluginList.qml" \
+  || fail "plugin list cannot restore the active row after a model reset"
+grep -Fq 'viewportOffset: offset' "$ROOT_DIR/PluginList.qml" \
+  || fail "plugin-list refreshes do not retain the active row's viewport offset"
+grep -Fq 'list.contentY = Math.max(minimumContentY' "$ROOT_DIR/PluginList.qml" \
+  || fail "plugin-list refreshes do not restore their anchored scroll position"
+grep -Fq 'pluginList.beginModelReset()' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront model replacement does not capture list context"
+grep -Fq 'pluginList.endModelReset()' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront model replacement does not restore list context"
+anchor_begin_line=$(grep -n -F 'pluginList.beginModelReset()' \
+  "$ROOT_DIR/Okomart.qml" | head -n 1 | cut -d: -f1)
+anchor_end_line=$(grep -n -F 'pluginList.endModelReset()' \
+  "$ROOT_DIR/Okomart.qml" | head -n 1 | cut -d: -f1)
+model_replace_line=$(grep -n -F 'visiblePlugins = next' \
+  "$ROOT_DIR/Okomart.qml" | head -n 1 | cut -d: -f1)
+if [[ -z $anchor_begin_line || -z $anchor_end_line \
+    || -z $model_replace_line ]] \
+    || (( anchor_begin_line >= model_replace_line \
+      || model_replace_line >= anchor_end_line )); then
+  fail "plugin-list context is not preserved around the model replacement"
+fi
 grep -Fq 'height: root.rowHeight' "$ROOT_DIR/PluginList.qml" \
   || fail "plugin-list rows do not share a fixed height"
 grep -Fq 'id: pluginListScrollNub' "$ROOT_DIR/PluginList.qml" \
