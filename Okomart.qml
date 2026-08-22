@@ -481,13 +481,6 @@ Item {
           && snapshotActionable
           && bannerText === refreshFailureDismissTimer.message)
         refreshFailureDismissTimer.restart()
-      var catalogErrors = Array.isArray(parsed.catalogErrors) ? parsed.catalogErrors : []
-      if (catalogErrors.length > 0 && bannerText === "") {
-        bannerText = catalogErrors.length + " catalog refresh "
-          + (catalogErrors.length === 1 ? "issue was" : "issues were")
-          + " recorded."
-        bannerUrgent = true
-      }
     }
     if (startBackground) {
       loadActionStatus()

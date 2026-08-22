@@ -1022,6 +1022,10 @@ if grep -Fq 'Catalog refreshed' "$ROOT_DIR/Okomart.qml" \
     || grep -Fq 'Refreshing catalog…' "$ROOT_DIR/Okomart.qml"; then
   fail "catalog refreshes still show an affirmative or informational notice"
 fi
+if grep -Fq 'catalogErrors.length' "$ROOT_DIR/Okomart.qml" \
+    || grep -Fq '" catalog refresh "' "$ROOT_DIR/Okomart.qml"; then
+  fail "per-plugin catalog errors still produce a refresh-issue banner"
+fi
 grep -Fq 'emptyText: root.catalogLoaded' "$ROOT_DIR/Okomart.qml" \
   || fail "plugin list exposes an empty result before cache loading finishes"
 grep -Fq 'root.beginAction("update", plugin)' "$ROOT_DIR/Okomart.qml" \
