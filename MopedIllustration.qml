@@ -10,9 +10,9 @@ Item {
   property color backgroundColor: Color.background
   property real strokeWidth: Math.max(1, Style.spaceReal(2))
 
-  // The source encodes its blue bands at roughly five SVG units. Expand those
+  // The source encodes its blue bands at roughly six SVG units. Expand those
   // bands only by the amount needed to reach Okomart's live interface stroke.
-  readonly property real encodedLineWidth: 5
+  readonly property real encodedLineWidth: 6
   readonly property real sourcePadding: 4
   readonly property real designWidth: MopedPaths.artWidth + sourcePadding * 2
   readonly property real designHeight: MopedPaths.artHeight + sourcePadding * 2
