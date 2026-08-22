@@ -328,19 +328,36 @@ grep -Fq 'anchors.right: parent.right' "$ROOT_DIR/PluginDetails.qml" \
   || fail "plugin details moped is not anchored to the right corner"
 grep -Fq 'anchors.bottom: parent.bottom' "$ROOT_DIR/PluginDetails.qml" \
   || fail "plugin details moped is not anchored to the bottom corner"
+grep -Fq 'anchors.rightMargin: 0' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin details moped is inset from the right corner"
+grep -Fq 'anchors.bottomMargin: 0' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin details moped is inset from the bottom corner"
 grep -Fq 'height: root.mopedClearance' "$ROOT_DIR/PluginDetails.qml" \
   || fail "plugin details cannot scroll its content clear of the moped"
 grep -Fq 'import QtQuick.Shapes' "$ROOT_DIR/MopedIllustration.qml" \
   || fail "moped illustration is not drawn with native QML shapes"
-grep -Fq 'fillColor: "transparent"' "$ROOT_DIR/MopedIllustration.qml" \
-  || fail "moped illustration is not transparent line art"
+grep -Fq 'property color backgroundColor: Color.background' \
+  "$ROOT_DIR/MopedIllustration.qml" \
+  || fail "moped illustration does not expose its bodywork fill color"
+grep -Fq 'opacity: 1.0' "$ROOT_DIR/MopedIllustration.qml" \
+  || fail "moped bodywork fills are not fully opaque"
+grep -Fq 'backgroundColor: root.background' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "moped illustration does not receive the details-pane background"
 grep -Fq 'capStyle: ShapePath.RoundCap' "$ROOT_DIR/MopedIllustration.qml" \
   || fail "moped illustration does not match the storefront rounded line style"
-for path_id in frontShieldPath frontFenderPath rearCowlPath benchSeatPath \
-  handlebarPath headlampPath scooterDetailPath; do
+for path_id in wheelPath tailLoopPath stepThroughBodyPath frontFenderPath \
+  rearCowlPath benchSeatPath handlebarPath headlampPath; do
   grep -Fq "id: $path_id" "$ROOT_DIR/MopedIllustration.qml" \
     || fail "reference-based moped illustration is missing $path_id"
+  if ! sed -n "/id: $path_id/,+5p" "$ROOT_DIR/MopedIllustration.qml" \
+      | grep -Fq 'fillColor: root.backgroundColor'; then
+    fail "closed moped shape $path_id is not filled with the pane background"
+  fi
 done
+if ! sed -n '/id: scooterDetailPath/,+5p' \
+    "$ROOT_DIR/MopedIllustration.qml" | grep -Fq 'fillColor: "transparent"'; then
+  fail "open moped detail strokes unexpectedly have a solid fill"
+fi
 grep -Fq 'text: "Select a plugin to see its details."' \
   "$ROOT_DIR/PluginDetails.qml" \
   || fail "plugin details are missing their empty selection prompt"

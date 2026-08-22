@@ -13,6 +13,7 @@ FocusScope {
   property bool narrowLayout: false
   property bool actionsEnabled: true
   property bool actionFocusPending: false
+  property color background: Color.background
   property color foreground: Color.foreground
   property color accent: Color.accent
   property color urgent: Color.urgent
@@ -539,9 +540,10 @@ FocusScope {
     height: root.mopedHeight
     anchors.right: parent.right
     anchors.bottom: parent.bottom
-    anchors.rightMargin: Style.space(4)
-    anchors.bottomMargin: Style.space(2)
+    anchors.rightMargin: 0
+    anchors.bottomMargin: 0
     strokeColor: root.accent
+    backgroundColor: root.background
   }
 
   Text {
