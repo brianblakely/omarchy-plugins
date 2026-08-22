@@ -9,13 +9,13 @@ Item {
   property real strokeWidth: Math.max(1, Style.spaceReal(2))
 
   readonly property real designWidth: 180
-  readonly property real designHeight: 112
+  readonly property real designHeight: 130
   readonly property real artScale: Math.min(
     width / designWidth, height / designHeight)
 
   implicitWidth: Style.space(168)
   implicitHeight: implicitWidth * designHeight / designWidth
-  opacity: 0.82
+  opacity: 0.84
 
   Item {
     id: drawing
@@ -29,58 +29,183 @@ Item {
       antialiasing: true
       preferredRendererType: Shape.CurveRenderer
 
+      // The partially covered wheels follow the tall front tire and the
+      // enclosed rear tire of the reference scooter.
       ShapePath {
+        id: wheelPath
         fillColor: "transparent"
         strokeColor: root.strokeColor
         strokeWidth: root.strokeWidth
         capStyle: ShapePath.RoundCap
         joinStyle: ShapePath.RoundJoin
         PathSvg {
-          path: "M 22 82 A 21 21 0 1 0 64 82 A 21 21 0 1 0 22 82"
-            + " M 116 82 A 21 21 0 1 0 158 82 A 21 21 0 1 0 116 82"
-            + " M 38 82 A 5 5 0 1 0 48 82 A 5 5 0 1 0 38 82"
-            + " M 132 82 A 5 5 0 1 0 142 82 A 5 5 0 1 0 132 82"
+          path: "M 28 88"
+            + " C 32 96 30 111 24 122"
+            + " C 20 129 13 128 10 122"
+            + " C 6 115 9 101 14 91"
+            + " M 25 91"
+            + " C 28 98 25 109 21 116"
+            + " C 18 120 16 117 16 113"
+            + " C 16 107 19 97 22 92"
+            + " M 124 103"
+            + " C 125 116 133 125 144 125"
+            + " C 155 125 162 116 162 104"
+            + " M 134 104"
+            + " C 135 112 140 117 147 117"
+            + " C 154 117 158 111 158 104"
         }
       }
 
+      // Tall leg shield flowing into the open footwell.
       ShapePath {
+        id: frontShieldPath
         fillColor: "transparent"
         strokeColor: root.strokeColor
         strokeWidth: root.strokeWidth
         capStyle: ShapePath.RoundCap
         joinStyle: ShapePath.RoundJoin
         PathSvg {
-          path: "M 35 63 C 40 49 53 40 69 39"
-            + " L 86 39 C 97 40 104 48 103 58"
-            + " C 103 64 99 69 94 74 L 66 74"
-            + " C 59 74 55 77 53 82"
-            + " M 66 74 L 102 74 C 110 74 114 78 116 82"
-            + " M 95 73 C 106 64 111 53 115 39 L 126 40 L 137 82"
-            + " M 118 69 C 124 59 144 58 153 72"
-            + " M 58 38 C 64 32 77 31 90 34"
-            + " C 94 35 94 39 90 40 L 62 40 C 59 40 57 39 58 38"
-            + " M 115 40 C 118 30 125 25 136 26 L 148 30"
-            + " M 128 26 L 132 20"
-            + " M 39 48 L 31 45 L 27 50"
+          path: "M 28 68"
+            + " C 28 60 34 39 38 33"
+            + " C 41 29 50 30 54 34"
+            + " C 58 38 55 49 53 61"
+            + " C 51 73 54 84 63 91"
+            + " C 68 95 73 96 82 96"
+            + " L 96 96"
+            + " C 104 96 109 92 109 83"
+            + " C 110 74 109 69 103 62"
+            + " M 42 89"
+            + " C 44 98 51 103 61 104"
+            + " L 118 105"
+        }
+      }
+
+      // Rounded front mudguard sits over the narrow front tire.
+      ShapePath {
+        id: frontFenderPath
+        fillColor: "transparent"
+        strokeColor: root.strokeColor
+        strokeWidth: root.strokeWidth
+        capStyle: ShapePath.RoundCap
+        joinStyle: ShapePath.RoundJoin
+        PathSvg {
+          path: "M 10 85"
+            + " C 16 72 21 67 28 67"
+            + " C 37 67 42 76 42 88"
+            + " C 44 91 45 96 42 98"
+            + " C 39 95 35 91 29 89"
+            + " Z"
+        }
+      }
+
+      // Enclosed rear cowling and the small braces beneath the bench seat.
+      ShapePath {
+        id: rearCowlPath
+        fillColor: "transparent"
+        strokeColor: root.strokeColor
+        strokeWidth: root.strokeWidth
+        capStyle: ShapePath.RoundCap
+        joinStyle: ShapePath.RoundJoin
+        PathSvg {
+          path: "M 112 104"
+            + " C 107 98 106 89 109 79"
+            + " C 112 68 121 63 133 63"
+            + " C 148 63 160 70 167 82"
+            + " C 171 89 172 97 172 104"
+            + " Q 172 106 169 106"
+            + " L 119 105"
+            + " Q 115 105 112 104"
+            + " Z"
+            + " M 102 58"
+            + " C 111 64 113 72 112 82"
+            + " M 151 61 L 161 74"
         }
       }
 
       ShapePath {
+        id: benchSeatPath
         fillColor: "transparent"
-        strokeColor: Util.alpha(root.strokeColor, 0.68)
-        strokeWidth: Math.max(1, root.strokeWidth * 0.72)
+        strokeColor: root.strokeColor
+        strokeWidth: root.strokeWidth
         capStyle: ShapePath.RoundCap
         joinStyle: ShapePath.RoundJoin
         PathSvg {
-          path: "M 112 43 A 5 5 0 1 0 122 43 A 5 5 0 1 0 112 43"
-            + " M 67 57 L 88 57 L 94 69 L 72 69 Z"
-            + " M 76 63 A 4 4 0 1 0 84 63 A 4 4 0 1 0 76 63"
-            + " M 80 67 C 83 82 98 89 113 86"
-            + " M 92 75 L 101 100 L 109 100"
-            + " M 43 61 C 48 55 55 51 63 50"
-            + " M 31 82 L 43 82 L 53 75"
-            + " M 126 82 L 137 82 L 146 76"
-            + " M 22 106 L 158 106"
+          path: "M 103 44"
+            + " L 151 48"
+            + " Q 156 48 156 53"
+            + " L 155 58"
+            + " Q 155 62 150 61"
+            + " L 102 57"
+            + " Q 99 57 99 54"
+            + " L 100 48"
+            + " Q 100 44 103 44"
+            + " Z"
+        }
+      }
+
+      // Split grips, rounded headset, and circular headlamp.
+      ShapePath {
+        id: handlebarPath
+        fillColor: "transparent"
+        strokeColor: root.strokeColor
+        strokeWidth: root.strokeWidth
+        capStyle: ShapePath.RoundCap
+        joinStyle: ShapePath.RoundJoin
+        PathSvg {
+          path: "M 18 5"
+            + " L 31 10 L 29 16 L 17 11"
+            + " Q 15 10 16 7 Q 16 4 18 5 Z"
+            + " M 31 10 L 40 13"
+            + " C 44 14 47 14 50 12"
+            + " M 29 16 L 39 21"
+            + " M 39 21"
+            + " C 40 13 44 8 50 7"
+            + " C 58 6 65 11 68 18"
+            + " C 70 23 72 26 75 27"
+            + " L 73 34 L 65 31"
+            + " C 61 30 57 33 52 39"
+            + " C 48 34 43 31 39 31"
+            + " Z"
+            + " M 75 27 L 87 32"
+            + " Q 89 33 88 35 L 87 39"
+            + " Q 86 41 84 40 L 73 34 Z"
+        }
+      }
+
+      ShapePath {
+        id: headlampPath
+        fillColor: "transparent"
+        strokeColor: root.strokeColor
+        strokeWidth: root.strokeWidth
+        capStyle: ShapePath.RoundCap
+        joinStyle: ShapePath.RoundJoin
+        PathSvg {
+          path: "M 41 19"
+            + " C 41 13 45 9 50 9"
+            + " C 56 9 60 14 60 20"
+            + " C 60 26 56 31 50 31"
+            + " C 44 31 41 26 41 19"
+            + " Z"
+        }
+      }
+
+      // Rear vents, kickstand, and the small tail loop complete the profile.
+      ShapePath {
+        id: scooterDetailPath
+        fillColor: "transparent"
+        strokeColor: root.strokeColor
+        strokeWidth: root.strokeWidth
+        capStyle: ShapePath.RoundCap
+        joinStyle: ShapePath.RoundJoin
+        PathSvg {
+          path: "M 126 91 L 146 92"
+            + " M 126 96 L 146 97"
+            + " M 126 101 L 146 102"
+            + " M 79 104 L 76 121"
+            + " L 73 123 L 79 123 L 78 121 L 82 104"
+            + " M 171 87 L 174 87"
+            + " Q 176 87 176 90 L 177 96"
+            + " Q 177 98 174 98 L 172 97"
         }
       }
     }

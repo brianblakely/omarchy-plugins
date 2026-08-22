@@ -312,6 +312,10 @@ grep -Fq 'visible: row.disabled' "$ROOT_DIR/PluginList.qml" \
   || fail "plugin-list disabled icon does not follow enabled state"
 grep -Fq 'text: "󰅖"' "$ROOT_DIR/PluginList.qml" \
   || fail "plugin-list disabled icon does not match Omarchy's disable glyph"
+if ! sed -n '/id: disabledIndicator/,+10p' "$ROOT_DIR/PluginList.qml" \
+    | grep -Fq 'color: root.accent'; then
+  fail "plugin-list disabled icon does not use the installed icon color"
+fi
 grep -Fq '(row.disabled ? ", disabled" : "")' "$ROOT_DIR/PluginList.qml" \
   || fail "plugin-list disabled state is not described accessibly"
 grep -Fq 'contentHeight: detailsColumn.implicitHeight' "$ROOT_DIR/PluginDetails.qml" \
@@ -332,6 +336,11 @@ grep -Fq 'fillColor: "transparent"' "$ROOT_DIR/MopedIllustration.qml" \
   || fail "moped illustration is not transparent line art"
 grep -Fq 'capStyle: ShapePath.RoundCap' "$ROOT_DIR/MopedIllustration.qml" \
   || fail "moped illustration does not match the storefront rounded line style"
+for path_id in frontShieldPath frontFenderPath rearCowlPath benchSeatPath \
+  handlebarPath headlampPath scooterDetailPath; do
+  grep -Fq "id: $path_id" "$ROOT_DIR/MopedIllustration.qml" \
+    || fail "reference-based moped illustration is missing $path_id"
+done
 grep -Fq 'text: "Select a plugin to see its details."' \
   "$ROOT_DIR/PluginDetails.qml" \
   || fail "plugin details are missing their empty selection prompt"
@@ -420,6 +429,16 @@ grep -Fq 'signal disableRequested(var plugin)' "$ROOT_DIR/PluginDetails.qml" \
 grep -Fq 'text: root.pluginEnabled ? "Disable" : "Enable"' \
   "$ROOT_DIR/PluginDetails.qml" \
   || fail "plugin details are missing their enable/disable button"
+REMOVE_BUTTON_LINE=$(grep -n -m1 'id: removeButton' \
+  "$ROOT_DIR/PluginDetails.qml" | cut -d: -f1)
+ENABLEMENT_BUTTON_LINE=$(grep -n -m1 'id: enablementButton' \
+  "$ROOT_DIR/PluginDetails.qml" | cut -d: -f1)
+[[ -n $REMOVE_BUTTON_LINE && -n $ENABLEMENT_BUTTON_LINE \
+  && $REMOVE_BUTTON_LINE -lt $ENABLEMENT_BUTTON_LINE ]] \
+  || fail "plugin enable/disable button is not after the uninstall button"
+grep -Fq 'var actions = [installButton, removeButton, enablementButton, updateButton]' \
+  "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin action focus order does not match the visible button order"
 grep -Fq 'plugin.canDisable === true' "$ROOT_DIR/PluginDetails.qml" \
   || fail "plugin details ignore Omarchy's canDisable guard"
 grep -Fq 'enable another bar to replace it' "$ROOT_DIR/PluginDetails.qml" \
@@ -967,9 +986,10 @@ grep -Fq '[helperPath, "ack", actionId]' "$ROOT_DIR/Okomart.qml" \
   || fail "completed action status is not acknowledged"
 grep -Fq 'OkomartModel.reconcileActionSnapshot(' "$ROOT_DIR/Okomart.qml" \
   || fail "completed plugin actions wait for a network refresh before updating the UI"
-if ! sed -n '/var results = Array.isArray(parsed.results)/,/refresh()/p' \
-    "$ROOT_DIR/Okomart.qml" \
-    | grep -Fq 'OkomartModel.reconcileActionSnapshot('; then
+if ! grep -Fq 'OkomartModel.reconcileActionSnapshot(' < <(
+    sed -n '/var results = Array.isArray(parsed.results)/,/refresh()/p' \
+      "$ROOT_DIR/Okomart.qml"
+  ); then
   fail "completed plugin actions are not reconciled before the network refresh"
 fi
 

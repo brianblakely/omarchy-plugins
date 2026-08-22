@@ -49,7 +49,7 @@ FocusScope {
       : ""
   readonly property real mopedWidth: Math.min(
     Style.space(168), Math.max(Style.space(112), width * 0.5))
-  readonly property real mopedHeight: mopedWidth * 112 / 180
+  readonly property real mopedHeight: mopedWidth * 130 / 180
   readonly property real mopedClearance:
     mopedHeight + Style.space(18)
 
@@ -146,7 +146,7 @@ FocusScope {
   }
 
   function firstActionButton() {
-    var actions = [enablementButton, installButton, removeButton, updateButton]
+    var actions = [installButton, removeButton, enablementButton, updateButton]
     for (var i = 0; i < actions.length; i++)
       if (actions[i].visible && actions[i].enabled) return actions[i]
     return null
@@ -320,36 +320,6 @@ FocusScope {
         }
 
         Button {
-          id: enablementButton
-          visible: root.enablementKnown
-          enabled: root.actionsEnabled && root.enablementChangeAllowed
-          focusable: root.enablementChangeAllowed
-          bordered: true
-          selected: !root.pluginEnabled
-          tooltipText: root.enablementBlockReason
-          text: root.pluginEnabled ? "Disable" : "Enable"
-          onClicked: {
-            if (root.pluginEnabled) root.disableRequested(root.plugin)
-            else root.enableRequested(root.plugin)
-          }
-          Keys.onPressed: function(event) {
-            if (event.key === Qt.Key_Left || event.key === Qt.Key_H) {
-              root.pluginListRequested()
-              event.accepted = true
-            }
-          }
-          onActiveFocusChanged: if (activeFocus) Qt.callLater(function() {
-            root.ensureVisible(enablementButton)
-          })
-          Accessible.name: root.hasPlugin
-            ? (root.pluginEnabled ? "Disable " : "Enable ")
-              + root.value(root.plugin.name || root.plugin.id, "plugin")
-            : "Change plugin enabled state"
-          Accessible.description: root.enablementBlockReason
-          Accessible.role: Accessible.Button
-        }
-
-        Button {
           id: removeButton
           visible: root.hasPlugin && root.installed
           enabled: root.actionsEnabled && root.removalAllowed
@@ -379,6 +349,36 @@ FocusScope {
             ? "Remove " + root.value(root.plugin.name || root.plugin.id, "plugin")
             : "Remove plugin"
           Accessible.description: root.removalBlockReason
+          Accessible.role: Accessible.Button
+        }
+
+        Button {
+          id: enablementButton
+          visible: root.enablementKnown
+          enabled: root.actionsEnabled && root.enablementChangeAllowed
+          focusable: root.enablementChangeAllowed
+          bordered: true
+          selected: !root.pluginEnabled
+          tooltipText: root.enablementBlockReason
+          text: root.pluginEnabled ? "Disable" : "Enable"
+          onClicked: {
+            if (root.pluginEnabled) root.disableRequested(root.plugin)
+            else root.enableRequested(root.plugin)
+          }
+          Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Left || event.key === Qt.Key_H) {
+              root.pluginListRequested()
+              event.accepted = true
+            }
+          }
+          onActiveFocusChanged: if (activeFocus) Qt.callLater(function() {
+            root.ensureVisible(enablementButton)
+          })
+          Accessible.name: root.hasPlugin
+            ? (root.pluginEnabled ? "Disable " : "Enable ")
+              + root.value(root.plugin.name || root.plugin.id, "plugin")
+            : "Change plugin enabled state"
+          Accessible.description: root.enablementBlockReason
           Accessible.role: Accessible.Button
         }
 

@@ -188,7 +188,7 @@ FocusScope {
               text: "󰅖"
               textFormat: Text.PlainText
               y: Math.round((parent.height - height) / 2)
-              color: Util.alpha(root.foreground, 0.58)
+              color: root.accent
               font.family: Style.font.family
               font.pixelSize: Style.font.body
               Accessible.ignored: true
