@@ -24,10 +24,11 @@ operations:
 2. Check installed plugin and Okomart remotes for updates, retaining the result
    only in the running storefront.
 3. If a changed candidate was staged, resolve required manifest-change
-   timestamps and mark that exact pending generation ready.
+   timestamps only for entries without a HANCORE validation timestamp, then
+   mark that exact pending generation ready.
 
 The active list never changes merely because a refresh completes. A ready
-pending generation makes the **オコマート** sign pulse. Pointer activation or
+pending generation makes the **オコマート** sign flicker. Pointer activation or
 `Enter`/`Space` atomically promotes the generation named by the sign. Stale
 enrichment, promotion, and action responses are rejected by generation.
 
@@ -39,7 +40,9 @@ different bar rather than switched off directly.
 
 On a cold cache, successfully fetched manifests are published as `active`
 before timestamp enrichment, making the catalog browsable at the first network
-boundary. Timestamp enrichment is staged as the first pending update.
+boundary. HANCORE entries are already ordered by `listingValidatedAt` at this
+point. Timestamp enrichment for sources without that metadata is staged as the
+first pending update.
 
 `Ctrl+R` queues a forced refresh when another refresh is in progress. A
 registry-source failure, overall timeout, or all-plugin request failure leaves
@@ -51,12 +54,19 @@ plugin failures are recorded as catalog errors and omitted from the candidate.
 ## Fetch And Validation Boundaries
 
 GitHub `manifest.json` files come from the raw content endpoint through a
-16-request HTTP pool; GitHub catalog metadata is never cloned. Path-specific
-commit feeds provide the latest commit affecting `manifest.json` through an
-eight-request enrichment pool. A new plugin always requests a timestamp. An
-existing plugin requests one only when its new version is strictly greater by
-SemVer 2.0 precedence. Equal versions, downgrades, and non-SemVer changes retain
-the previous timestamp.
+16-request HTTP pool; GitHub catalog metadata is never cloned. Okomart uses a
+compatible HANCORE source's `listingValidatedAt` as its primary ordering time
+and its `listingValidatedCommit` as the revision for lazy media. This metadata
+also applies when a matching local `plugins.txt` URL wins source precedence.
+Okomart does not request a last-update timestamp for those entries.
+
+For sources without validation metadata, path-specific commit feeds provide
+the latest commit affecting `manifest.json` through an eight-request enrichment
+pool. A new plugin or an entry with no retained timestamp requests one. A
+strictly higher SemVer version requests a replacement timestamp; equal versions,
+downgrades, and non-SemVer changes retain the previous timestamp. The final
+catalog sorts descending by each entry's validation time when present, otherwise
+its last-update time, then by case-insensitive name and plugin id.
 
 An arbitrary public HTTPS `.git` host remains supported through a separate
 two-worker fallback. Each worker creates a depth-one, blob-filtered,

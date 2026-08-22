@@ -263,13 +263,24 @@ manifest gamma b.gamma Gamma 1.0.0 "$LARGE_DESCRIPTION"
 ALPHA_REV=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 BETA_REV=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 GAMMA_REV=cccccccccccccccccccccccccccccccccccccccc
+BETA_VALIDATED_REV=6666666666666666666666666666666666666666
+GAMMA_VALIDATED_REV=7777777777777777777777777777777777777777
+BETA_VALIDATED_TIME=1740787200
+GAMMA_VALIDATED_TIME=1743465600
 commit_feed alpha "$ALPHA_REV" 2025-01-01T00:00:00Z
 commit_feed beta "$BETA_REV" 2025-01-02T00:00:00Z
 commit_feed gamma "$GAMMA_REV" 2025-01-03T00:00:00Z
 jq -n '{sources:[
   {type:"plugin-source",repo:"https://github.com/example/alpha",plugins:{"b.alpha":{}}},
+  {type:"plugin-source",repo:"https://github.com/example/beta",
+    listingValidatedAt:"2025-03-01T00:00:00.000Z",
+    listingValidatedCommit:"6666666666666666666666666666666666666666",
+    plugins:{"b.beta":{}}},
   {type:"plugin-source",repo:"https://github.com/example/alpha-fork",plugins:{"b.alpha":{}}},
-  {type:"plugin-source",repo:"https://github.com/example/gamma",plugins:{"b.gamma":{}}},
+  {type:"plugin-source",repo:"https://github.com/example/gamma",
+    listingValidatedAt:"2025-04-01T00:00:00.000Z",
+    listingValidatedCommit:"7777777777777777777777777777777777777777",
+    plugins:{"b.gamma":{}}},
   {type:"plugin-source",repo:"https://github.com/example/suite",plugins:{one:{},two:{}}},
   {type:"plugin-source",repo:"https://github.com/example/manual",plugins:{manual:{installation:{mode:"manual",note:"manual"}}}},
   {type:"plugin-source",repo:"https://github.com/example/okomart",plugins:{"b.okomart":{}}}
@@ -319,10 +330,19 @@ pass 'legacy mirrors, materializations, and duplicate state are removed'
 pass 'legacy cleanup never follows an out-of-root symlink target'
 
 CATALOG="$XDG_CACHE_HOME/okomart/catalog.json"
-assert_jq "$CATALOG" '.schemaVersion == 1 and (.active.entries|length) == 4
+assert_jq "$CATALOG" '
+  .schemaVersion == 1 and (.active.entries|length) == 4
   and .pending.ready == false
   and all(.active.entries[]; has("images")|not)
-  and ([.active.entries[].sourceUrl]|unique|length) == 4' \
+  and ([.active.entries[].sourceUrl]|unique|length) == 4
+  and .active.entries[0].id == "b.gamma"
+  and .active.entries[1].id == "b.beta"
+  and ([.active.entries[] | select(.id=="b.beta")][0].listingValidatedAt == '"$BETA_VALIDATED_TIME"')
+  and ([.active.entries[] | select(.id=="b.gamma")][0].listingValidatedAt == '"$GAMMA_VALIDATED_TIME"')
+  and (.pending.timestampSources
+    | index("https://github.com/example/beta.git") == null)
+  and (.pending.timestampSources
+    | index("https://github.com/example/gamma.git") == null)' \
   'single catalog file merges local and compatible marketplace URLs'
 (( $(jq -c '.active.entries' "$CATALOG" | wc -c) > 131072 )) \
   || fail 'large-catalog fixture did not exceed the Linux per-argument limit'
@@ -377,6 +397,21 @@ assert_jq "$CATALOG" '.pending.ready
   and ([.pending.entries[] | select(.id=="b.generic")][0].updatedAt == '"$GENERIC_TIME"')
   and ([.pending.entries[] | select(.id=="b.generic")][0].revision == "'"$GENERIC_HEAD"'")' \
   'GitHub manifest dates and generic HEAD dates are selected separately'
+assert_jq "$CATALOG" '.pending.ready
+  and ([.pending.entries[] | select(.id=="b.beta")][0]
+    | .listingValidatedAt == '"$BETA_VALIDATED_TIME"'
+      and .updatedAt == null and .revision == "'"$BETA_VALIDATED_REV"'")
+  and ([.pending.entries[] | select(.id=="b.gamma")][0]
+    | .listingValidatedAt == '"$GAMMA_VALIDATED_TIME"'
+      and .updatedAt == null and .revision == "'"$GAMMA_VALIDATED_REV"'")' \
+  'validated dates order marketplace entries without last-update lookups'
+[[ -z $(grep -F '/repos/example/beta/commits?path=manifest.json&per_page=1' \
+  "$MOCK_LOG" || true) ]] \
+  || fail 'local URL with marketplace validation metadata requested a last-update timestamp'
+[[ -z $(grep -F '/repos/example/gamma/commits?path=manifest.json&per_page=1' \
+  "$MOCK_LOG" || true) ]] \
+  || fail 'marketplace URL with validation metadata requested a last-update timestamp'
+pass 'validated marketplace entries skip last-update timestamp requests'
 
 if "$OKOMART" promote dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd \
     >"$TMP/stale-promote.json"; then fail 'stale generation promotion succeeded'; fi
@@ -437,6 +472,26 @@ assert_jq "$TMP/unchanged.json" '.ok and (.changed|not) and .pending == null' \
 assert_jq "$CATALOG" '.pending == null
   and ([.active.entries[] | select(.id=="b.alpha")][0].updatedAt == 1735689600)' \
   'equal versions preserve the selected timestamp'
+
+# A manifest version change does not seek a last-update timestamp when the
+# registry already supplies a validation time.
+manifest beta b.beta Beta 1.1.0 'Beta validated upgrade'
+: >"$MOCK_LOG"
+"$OKOMART" refresh "$SOURCE" >"$TMP/validated-upgrade.json"
+assert_jq "$CATALOG" '.pending.ready == true
+  and .pending.timestampSources == []
+  and ([.pending.entries[] | select(.id=="b.beta")][0]
+    | .version == "1.1.0"
+      and .listingValidatedAt == '"$BETA_VALIDATED_TIME"'
+      and .updatedAt == null
+      and .revision == "'"$BETA_VALIDATED_REV"'")' \
+  'validated version upgrade stages without a last-update lookup'
+[[ -z $(grep -F '/repos/example/beta/commits?path=manifest.json&per_page=1' \
+  "$MOCK_LOG" || true) ]] \
+  || fail 'validated version upgrade requested a last-update timestamp'
+pass 'validated version upgrades never seek last-update timestamps'
+VALIDATED_UPGRADE_GENERATION=$(jq -r '.pending.generation' "$CATALOG")
+"$OKOMART" promote "$VALIDATED_UPGRADE_GENERATION" >/dev/null
 
 # Only strict SemVer precedence requests a replacement timestamp.
 semver_case() {

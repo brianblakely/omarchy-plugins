@@ -232,9 +232,9 @@ version_is_higher() {
   fi
 }
 
-# SemVer 2.0 precedence for catalog timestamp selection. Invalid versions are
-# deliberately incomparable: they remain valid display metadata, but cannot
-# advance a previously selected manifest timestamp.
+# SemVer 2.0 precedence for fallback catalog timestamp selection. Invalid
+# versions are deliberately incomparable: they remain valid display metadata,
+# but cannot advance a previously selected manifest timestamp.
 semver_is_higher() {
   local available="${1:-}" previous="${2:-}"
   jq -en --arg a "$available" --arg b "$previous" '
@@ -490,6 +490,8 @@ canonical_marketplace_repository_url() {
 
 REGISTRY_URLS=()
 declare -A REGISTRY_URL_IDENTITIES=()
+declare -A REGISTRY_LISTING_VALIDATED_AT=()
+declare -A REGISTRY_LISTING_VALIDATED_COMMITS=()
 MARKETPLACE_IMPORTED_URLS=0
 
 github_repository_parts() {
@@ -532,6 +534,8 @@ parse_registry_urls() {
   local list_file="$1"
   REGISTRY_URLS=()
   REGISTRY_URL_IDENTITIES=()
+  REGISTRY_LISTING_VALIDATED_AT=()
+  REGISTRY_LISTING_VALIDATED_COMMITS=()
   MARKETPLACE_IMPORTED_URLS=0
 
   [[ -f $list_file && ! -L $list_file ]] || return 1
@@ -581,6 +585,16 @@ parse_marketplace_registry() {
         and (.type | type == "string")
         and if .type == "plugin-source" then
           (.repo | type == "string")
+          and ((.listingValidatedAt? // null) as $validatedAt
+            | $validatedAt == null
+              or (($validatedAt | type) == "string"
+                and (((try ($validatedAt
+                  | sub("\\.[0-9]+Z$"; "Z")
+                  | fromdateiso8601) catch null) | type) == "number")))
+          and ((.listingValidatedCommit? // null) as $validatedCommit
+            | $validatedCommit == null
+              or (($validatedCommit | type) == "string"
+                and ($validatedCommit | test("^[0-9A-Fa-f]{40,64}$"))))
           and (.plugins | type == "object" and length > 0)
           and all(.plugins | to_entries[];
             (.key | type == "string"
@@ -595,13 +609,29 @@ parse_marketplace_registry() {
         else true end)
     ' "$registry" >/dev/null 2>&1 || return 1
 
-  local plugin_id repository url before
-  while IFS=$'\t' read -r plugin_id repository; do
+  local plugin_id repository validated_at validated_commit url identity before
+  while IFS=$'\t' read -r plugin_id repository validated_at validated_commit; do
     [[ -n $plugin_id && -n $repository ]] || return 1
     [[ $plugin_id != "$OKOMART_ID" ]] || continue
     url="$(canonical_marketplace_repository_url "$repository")" || return 1
     [[ $(registry_url_identity "$url") != \
       $(registry_url_identity "$OFFICIAL_CATALOG_URL") ]] || continue
+    identity="$(registry_url_identity "$url")"
+    if [[ $validated_at != - ]]; then
+      if [[ -n ${REGISTRY_LISTING_VALIDATED_AT[$identity]+x} &&
+        ${REGISTRY_LISTING_VALIDATED_AT[$identity]} != "$validated_at" ]]; then
+        return 1
+      fi
+      REGISTRY_LISTING_VALIDATED_AT[$identity]="$validated_at"
+    fi
+    if [[ $validated_commit != - ]]; then
+      validated_commit="${validated_commit,,}"
+      if [[ -n ${REGISTRY_LISTING_VALIDATED_COMMITS[$identity]+x} &&
+        ${REGISTRY_LISTING_VALIDATED_COMMITS[$identity]} != "$validated_commit" ]]; then
+        return 1
+      fi
+      REGISTRY_LISTING_VALIDATED_COMMITS[$identity]="$validated_commit"
+    fi
     before=${#REGISTRY_URLS[@]}
     append_registry_url "$url" skip || return 1
     if (( ${#REGISTRY_URLS[@]} > before )); then
@@ -615,7 +645,16 @@ parse_marketplace_registry() {
       | (.plugins | to_entries[0]) as $plugin
       | select(($plugin.value.manifestPath? // "manifest.json") == "manifest.json")
       | select($plugin.value.installation? == null)
-      | [$plugin.key, .repo]
+      | [
+          $plugin.key,
+          .repo,
+          (if .listingValidatedAt? == null then "-" else
+            (.listingValidatedAt
+              | sub("\\.[0-9]+Z$"; "Z")
+              | fromdateiso8601 | floor | tostring)
+          end),
+          (.listingValidatedCommit? // "-")
+        ]
       | @tsv
     ' "$registry"
   )
@@ -888,7 +927,8 @@ stage_refresh_worker() {
   local raw_entries="$work/raw-entries.jsonl" errors="$work/errors.jsonl"
   : >"$raw_entries"; : >"$errors"
   local request_failures=0 successful_requests=0 record manifest metadata id
-  local revision head_timestamp
+  local revision head_timestamp identity listing_validated_at
+  local listing_validated_commit
   declare -A ids=()
   for index in "${!REGISTRY_URLS[@]}"; do
     url="${REGISTRY_URLS[$index]}"
@@ -929,10 +969,22 @@ stage_refresh_worker() {
     fi
     revision="$(jq -c '.revision' "$record")"
     head_timestamp="$(jq -c '.headTimestamp' "$record")"
+    identity="$(registry_url_identity "$url")"
+    listing_validated_at="${REGISTRY_LISTING_VALIDATED_AT[$identity]:-}"
+    listing_validated_commit="${REGISTRY_LISTING_VALIDATED_COMMITS[$identity]:-}"
     jq -c --arg sourceUrl "$url" \
-      --argjson revision "$revision" --argjson headTimestamp "$head_timestamp" \
-      '. + {sourceUrl:$sourceUrl,revision:$revision,
-        updatedAt:null,_headTimestamp:$headTimestamp}' \
+      --arg listingValidatedAt "$listing_validated_at" \
+      --arg listingValidatedCommit "$listing_validated_commit" \
+      --argjson revision "$revision" --argjson headTimestamp "$head_timestamp" '
+      . + {
+        sourceUrl:$sourceUrl,
+        revision:(if $listingValidatedCommit == "" then $revision
+          else $listingValidatedCommit end),
+        listingValidatedAt:(if $listingValidatedAt == "" then null
+          else ($listingValidatedAt | tonumber) end),
+        updatedAt:null,
+        _headTimestamp:$headTimestamp
+      }' \
       <<<"$metadata" >>"$raw_entries"
   done
 
@@ -951,7 +1003,7 @@ stage_refresh_worker() {
   fallbacks="$work/fallbacks.jsonl"
   : >"$staged_entries"; : >"$timestamp_sources"; : >"$fallbacks"
   local entry old new_version old_version need_timestamp old_updated old_revision
-  local fetched_revision fetched_timestamp
+  local fetched_revision fetched_timestamp listing_validated_timestamp
   while IFS= read -r entry; do
     [[ -n $entry ]] || continue
     url="$(jq -r '.sourceUrl' <<<"$entry")"
@@ -961,14 +1013,20 @@ stage_refresh_worker() {
     ' <<<"$current")"
     new_version="$(jq -r '.version' <<<"$entry")"
     old_version="$(jq -r 'if . == null then "" else .version end' <<<"$old")"
-    need_timestamp=false
-    if [[ $old == null ]] || semver_is_higher "$new_version" "$old_version"; then
-      need_timestamp=true
-    fi
     old_updated="$(jq -c 'if . == null then null else (.updatedAt // null) end' <<<"$old")"
     old_revision="$(jq -c 'if . == null then null else (.revision // null) end' <<<"$old")"
     fetched_revision="$(jq -c '.revision // null' <<<"$entry")"
     fetched_timestamp="$(jq -c '._headTimestamp // null' <<<"$entry")"
+    listing_validated_timestamp="$(jq -c '.listingValidatedAt // null' <<<"$entry")"
+    need_timestamp=false
+    if [[ $listing_validated_timestamp == null ]]; then
+      if [[ $old == null || $old_updated == null ]] ||
+        semver_is_higher "$new_version" "$old_version"; then
+        need_timestamp=true
+      fi
+    elif [[ $fetched_revision != null ]]; then
+      old_revision="$fetched_revision"
+    fi
     if [[ $need_timestamp == true ]]; then
       jq -cn --arg sourceUrl "$url" '{sourceUrl:$sourceUrl}' >>"$timestamp_sources"
       if [[ $fetched_timestamp != null && $fetched_revision != null ]]; then
@@ -992,7 +1050,8 @@ stage_refresh_worker() {
   errors_file="$work/catalog-errors.json"
   sources_file="$work/timestamp-sources.json"
   fallbacks_file="$work/timestamp-fallbacks.json"
-  if ! jq -s 'sort_by(-(.updatedAt // 0), (.name | ascii_downcase), .id)' \
+  if ! jq -s 'sort_by(-(.listingValidatedAt // .updatedAt // 0),
+      (.name | ascii_downcase), .id)' \
       "$staged_entries" >"$entries_file" \
     || ! jq -s '.' "$errors" >"$errors_file" \
     || ! jq -s 'map(.sourceUrl)' "$timestamp_sources" >"$sources_file" \
@@ -1176,7 +1235,8 @@ enrich_command() {
         | if $update == null then . else
             .updatedAt=$update.updatedAt | .revision=$update.revision
           end)
-      | sort_by(-(.updatedAt // 0), (.name | ascii_downcase), .id)
+      | sort_by(-(.listingValidatedAt // .updatedAt // 0),
+          (.name | ascii_downcase), .id)
     ' >"$entries_file" \
     || ! jq -s '.' "$errors" >"$enrichment_errors_file"; then
     rm -rf --one-file-system -- "$work"
@@ -1791,7 +1851,8 @@ merge_plugins_json() {
         }
       ]
     )
-    | sort_by(-(.updatedAt // 0), (.name | ascii_downcase), .id)
+    | sort_by(-(.listingValidatedAt // .updatedAt // 0),
+        (.name | ascii_downcase), .id)
   ' >"$output"
 }
 
