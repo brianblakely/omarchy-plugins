@@ -51,8 +51,16 @@ FocusScope {
   readonly property real mopedWidth: Math.min(
     Style.space(168), Math.max(Style.space(112), width * 0.5))
   readonly property real mopedHeight: mopedWidth * 646 / 892
-  readonly property real mopedClearance:
+  readonly property real mopedRequiredClearance:
     mopedHeight + Style.space(18)
+  readonly property real screenshotContentBottom:
+    screenshotSection.y + screenshotSection.height
+  readonly property bool mopedHasRoom:
+    hasPlugin && (screenshots.length === 0
+      || screenshotContentBottom + detailsColumn.spacing
+        + mopedRequiredClearance <= detailsScroll.availableHeight)
+  readonly property real mopedClearance:
+    mopedHasRoom ? mopedRequiredClearance : 0
 
   activeFocusOnTab: true
 
@@ -496,6 +504,7 @@ FocusScope {
       }
 
       Column {
+        id: screenshotSection
         visible: root.screenshots.length > 0
         width: parent.width
         spacing: Style.space(8)
@@ -524,7 +533,7 @@ FocusScope {
       }
 
       Item {
-        visible: root.hasPlugin
+        visible: root.mopedHasRoom
         width: 1
         height: root.mopedClearance
       }
@@ -534,7 +543,7 @@ FocusScope {
 
   MopedIllustration {
     id: detailsMoped
-    visible: root.hasPlugin
+    visible: root.mopedHasRoom
     z: 10
     width: root.mopedWidth
     height: root.mopedHeight

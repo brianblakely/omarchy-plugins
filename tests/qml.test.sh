@@ -92,9 +92,10 @@ run_entrypoint_load_test() {
   fi
 
   if ! grep -Fq 'OKOMART_LOAD_OK service' "$log" \
-      || ! grep -Fq 'OKOMART_LOAD_OK panel' "$log"; then
+      || ! grep -Fq 'OKOMART_LOAD_OK panel' "$log" \
+      || ! grep -Fq 'OKOMART_MOPED_LAYOUT_OK' "$log"; then
     sed -n '1,220p' "$log" >&2
-    fail "Quickshell could not instantiate Okomart's entrypoints"
+    fail "Quickshell could not instantiate Okomart or verify its moped layout"
   fi
 }
 
@@ -334,6 +335,23 @@ grep -Fq 'anchors.bottomMargin: 0' "$ROOT_DIR/PluginDetails.qml" \
   || fail "plugin details moped is inset from the bottom corner"
 grep -Fq 'height: root.mopedClearance' "$ROOT_DIR/PluginDetails.qml" \
   || fail "plugin details cannot scroll its content clear of the moped"
+grep -Fq 'id: screenshotSection' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin details cannot measure the screenshot section for moped clearance"
+grep -Fq 'readonly property bool mopedHasRoom:' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin details do not gate the moped on available viewport height"
+grep -Fq 'screenshotContentBottom + detailsColumn.spacing' \
+  "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin details do not account for content through the screenshots"
+grep -Fq '+ mopedRequiredClearance <= detailsScroll.availableHeight' \
+  "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin details do not keep the moped below the screenshots"
+grep -Fq 'mopedHasRoom ? mopedRequiredClearance : 0' \
+  "$ROOT_DIR/PluginDetails.qml" \
+  || fail "hidden moped artwork still leaves unused scroll clearance"
+if [[ $(grep -Fc 'visible: root.mopedHasRoom' \
+    "$ROOT_DIR/PluginDetails.qml") -ne 2 ]]; then
+  fail "moped artwork and its scroll clearance do not share the height gate"
+fi
 for asset in moped-source.svg MopedPaths.js; do
   [[ -f $ROOT_DIR/assets/$asset ]] \
     || fail "moped illustration is missing its $asset vector layer"
