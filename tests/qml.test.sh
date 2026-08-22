@@ -908,10 +908,11 @@ grep -Fq 'colorizationColor: Color.accent' "$ROOT_DIR/Okomart.qml" \
   || fail "storefront sign glow does not use the accent color"
 grep -Fq 'blurEnabled: true' "$ROOT_DIR/Okomart.qml" \
   || fail "storefront sign lettering does not emit a blurred glow"
-grep -Fq 'property real glowPulse: 0.30' "$ROOT_DIR/Okomart.qml" \
-  || fail "storefront sign glow is not prominent at the low pulse state"
-grep -Fq 'to: 0.82' "$ROOT_DIR/Okomart.qml" \
-  || fail "storefront sign glow is not prominent at the high pulse state"
+if grep -Fq 'glowPulse' "$ROOT_DIR/Okomart.qml"; then
+  fail "storefront sign glow still uses a continuous pulse"
+fi
+grep -Fq '0.34 + 0.62 * catalogSign.glowFlicker' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront sign glow is too transparent between flickers"
 if sed -n '/id: signGlow/,/^        }/p' "$ROOT_DIR/Okomart.qml" \
     | grep -Eq '(border\.|radius:)'; then
   fail "storefront sign glow is still a rectangular border"
@@ -920,14 +921,14 @@ grep -Fq 'id: signFlickerTimer' "$ROOT_DIR/Okomart.qml" \
   || fail "storefront sign glow has no occasional flicker timer"
 grep -Fq 'triggeredOnStart: true' "$ROOT_DIR/Okomart.qml" \
   || fail "storefront sign does not visibly flicker when pending state begins"
-grep -Fq '7000 + Math.floor(Math.random() * 9000)' "$ROOT_DIR/Okomart.qml" \
+grep -Fq '2800 + Math.floor(Math.random() * 9200)' "$ROOT_DIR/Okomart.qml" \
   || fail "storefront sign flicker is not sparse and irregular"
 grep -Fq 'id: signFlickerAnimation' "$ROOT_DIR/Okomart.qml" \
   || fail "storefront sign glow has no neon flicker sequence"
-[[ $(grep -Fc 'property: "glowFlicker"' "$ROOT_DIR/Okomart.qml") -ge 4 ]] \
+[[ $(grep -Fc 'property: "glowFlicker"' "$ROOT_DIR/Okomart.qml") -ge 8 ]] \
   || fail "storefront sign glow does not sputter through a multi-step flicker"
-grep -Fq '0.42 + 0.58 * catalogSign.glowFlicker' "$ROOT_DIR/Okomart.qml" \
-  || fail "storefront sign lettering does not participate in the flicker"
+grep -Fq '0.78 + 0.22 * catalogSign.glowFlicker' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront sign lettering is too transparent during the flicker"
 if sed -n '/function applyCatalogActivation(raw, generation)/,/^  }/p' \
     "$ROOT_DIR/Okomart.qml" | grep -Eq '(query|installedOnly|selectedId)[[:space:]]*='; then
   fail "catalog activation resets storefront query, filter, or selection state"

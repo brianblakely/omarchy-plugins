@@ -976,7 +976,6 @@ Item {
 
       FocusScope {
         id: catalogSign
-        property real glowPulse: 0.30
         property real glowFlicker: 1.0
 
         x: storefront.frameLeft + root.headerEdgeInset
@@ -1001,28 +1000,7 @@ Item {
           blur: 0.84
           blurMax: 40
           opacity: root.pendingReady
-            ? catalogSign.glowPulse * catalogSign.glowFlicker : 0
-        }
-
-        SequentialAnimation {
-          running: root.pendingReady
-          loops: Animation.Infinite
-          NumberAnimation {
-            target: catalogSign
-            property: "glowPulse"
-            from: 0.30
-            to: 0.82
-            duration: 1700
-            easing.type: Easing.InOutSine
-          }
-          NumberAnimation {
-            target: catalogSign
-            property: "glowPulse"
-            from: 0.82
-            to: 0.30
-            duration: 1700
-            easing.type: Easing.InOutSine
-          }
+            ? 0.34 + 0.62 * catalogSign.glowFlicker : 0
         }
 
         Timer {
@@ -1030,39 +1008,61 @@ Item {
           running: root.pendingReady
           repeat: true
           triggeredOnStart: true
-          interval: 7000 + Math.floor(Math.random() * 9000)
+          interval: 2800 + Math.floor(Math.random() * 9200)
           onTriggered: {
-            interval = 7000 + Math.floor(Math.random() * 9000)
+            interval = 2800 + Math.floor(Math.random() * 9200)
             signFlickerAnimation.restart()
           }
         }
 
         SequentialAnimation {
           id: signFlickerAnimation
-          NumberAnimation {
+          PropertyAction {
             target: catalogSign
             property: "glowFlicker"
-            to: 0.08
-            duration: 45
+            value: 0.16
           }
-          NumberAnimation {
+          PauseAnimation { duration: 38 }
+          PropertyAction {
             target: catalogSign
             property: "glowFlicker"
-            to: 0.9
-            duration: 65
+            value: 0.94
           }
-          NumberAnimation {
+          PauseAnimation { duration: 62 }
+          PropertyAction {
             target: catalogSign
             property: "glowFlicker"
-            to: 0.24
-            duration: 35
+            value: 0.32
           }
-          PauseAnimation { duration: 40 }
-          NumberAnimation {
+          PauseAnimation { duration: 31 }
+          PropertyAction {
             target: catalogSign
             property: "glowFlicker"
-            to: 1.0
-            duration: 90
+            value: 1.0
+          }
+          PauseAnimation { duration: 96 }
+          PropertyAction {
+            target: catalogSign
+            property: "glowFlicker"
+            value: 0.10
+          }
+          PauseAnimation { duration: 23 }
+          PropertyAction {
+            target: catalogSign
+            property: "glowFlicker"
+            value: 0.82
+          }
+          PauseAnimation { duration: 47 }
+          PropertyAction {
+            target: catalogSign
+            property: "glowFlicker"
+            value: 0.27
+          }
+          PauseAnimation { duration: 29 }
+          PropertyAction {
+            target: catalogSign
+            property: "glowFlicker"
+            value: 1.0
           }
         }
 
@@ -1083,7 +1083,7 @@ Item {
           text: "オコマート"
           color: root.storefrontColor
           opacity: root.pendingReady
-            ? 0.42 + 0.58 * catalogSign.glowFlicker : 1.0
+            ? 0.78 + 0.22 * catalogSign.glowFlicker : 1.0
           font.family: Style.font.family
           font.pixelSize: root.wideLayout ? Style.font.displayLarge : Style.font.display
           horizontalAlignment: root.wideLayout ? Text.AlignLeft : Text.AlignHCenter
