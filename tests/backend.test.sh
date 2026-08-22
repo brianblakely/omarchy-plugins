@@ -274,6 +274,14 @@ jq -n '{sources:[
   {type:"plugin-source",repo:"https://github.com/example/manual",plugins:{manual:{installation:{mode:"manual",note:"manual"}}}},
   {type:"plugin-source",repo:"https://github.com/example/okomart",plugins:{"b.okomart":{}}}
 ]}' >"$MOCK_DATA/marketplace.json"
+# The live marketplace has outgrown the original one-megabyte download cap.
+# Keep this valid JSON fixture above that boundary so a cold refresh cannot
+# regress to rejecting the registry solely because of its current size.
+printf -v MARKETPLACE_PADDING '%*s' $((1024 * 1024)) ''
+printf '%s' "$MARKETPLACE_PADDING" >>"$MOCK_DATA/marketplace.json"
+unset MARKETPLACE_PADDING
+(( $(stat -c %s -- "$MOCK_DATA/marketplace.json") > 1024 * 1024 )) \
+  || fail 'marketplace fixture did not exceed the former download cap'
 
 # A snapshot is a disk-only read and creates no duplicate snapshot state.
 "$OKOMART" snapshot "$SOURCE" >"$TMP/cold-local.json" || true
@@ -300,6 +308,7 @@ printf '{}\n' >"$XDG_STATE_HOME/okomart/snapshot.json"
 "$OKOMART" refresh "$SOURCE" >"$TMP/refresh-cold.json"
 assert_jq "$TMP/refresh-cold.json" '.ok and .coldPublished and .changed
   and .pending.ready == false' 'cold refresh publishes manifests before enrichment'
+pass 'cold refresh accepts a valid marketplace larger than one megabyte'
 for legacy in catalog registry.git repositories; do
   [[ ! -e $XDG_CACHE_HOME/okomart/$legacy ]] || fail "legacy $legacy survived cleanup"
 done
