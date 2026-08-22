@@ -359,6 +359,18 @@ grep -Fq 'fillColor: root.backgroundColor' \
 grep -Fq 'fillColor: root.strokeColor' \
   "$ROOT_DIR/MopedIllustration.qml" \
   || fail "moped linework does not use the storefront accent"
+grep -Fq 'property real strokeWidth: Math.max(1, Style.spaceReal(2))' \
+  "$ROOT_DIR/MopedIllustration.qml" \
+  || fail "moped linework does not use Okomart's interface stroke weight"
+grep -Fq 'strokeWidth: root.lineworkStrokeWidth' \
+  "$ROOT_DIR/MopedIllustration.qml" \
+  || fail "moped SVG linework is not expanded to the interface stroke weight"
+grep -Fq 'Math.max(0, strokeWidth / artScale - encodedLineWidth)' \
+  "$ROOT_DIR/MopedIllustration.qml" \
+  || fail "moped line weight does not remain stable as the overlay scales"
+grep -Fq 'strokeColor: root.strokeColor' \
+  "$ROOT_DIR/MopedIllustration.qml" \
+  || fail "moped outline does not cover the bodywork fill edge"
 grep -Fq 'fillRule: ShapePath.OddEvenFill' \
   "$ROOT_DIR/MopedIllustration.qml" \
   || fail "moped SVG paths do not preserve their even-odd fills"

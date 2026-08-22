@@ -8,11 +8,20 @@ Item {
 
   property color strokeColor: Color.accent
   property color backgroundColor: Color.background
+  property real strokeWidth: Math.max(1, Style.spaceReal(2))
 
-  readonly property real designWidth: MopedPaths.artWidth
-  readonly property real designHeight: MopedPaths.artHeight
+  // The source encodes its blue bands at roughly five SVG units. Expand those
+  // bands only by the amount needed to reach Okomart's live interface stroke.
+  readonly property real encodedLineWidth: 5
+  readonly property real sourcePadding: 4
+  readonly property real designWidth: MopedPaths.artWidth + sourcePadding * 2
+  readonly property real designHeight: MopedPaths.artHeight + sourcePadding * 2
   readonly property real artScale: Math.min(
     width / designWidth, height / designHeight)
+  readonly property real lineworkStrokeWidth:
+    artScale > 0
+      ? Math.max(0, strokeWidth / artScale - encodedLineWidth)
+      : 0
 
   implicitWidth: Style.space(168)
   implicitHeight: implicitWidth * designHeight / designWidth
@@ -20,10 +29,10 @@ Item {
   opacity: 1.0
 
   Shape {
-    x: -MopedPaths.artX * root.artScale
-    y: -MopedPaths.artY * root.artScale
-    width: MopedPaths.artX + MopedPaths.artWidth
-    height: MopedPaths.artY + MopedPaths.artHeight
+    x: -(MopedPaths.artX - root.sourcePadding) * root.artScale
+    y: -(MopedPaths.artY - root.sourcePadding) * root.artScale
+    width: MopedPaths.artX + MopedPaths.artWidth + root.sourcePadding
+    height: MopedPaths.artY + MopedPaths.artHeight + root.sourcePadding
     scale: root.artScale
     transformOrigin: Item.TopLeft
     antialiasing: true
@@ -40,8 +49,10 @@ Item {
     ShapePath {
       fillColor: root.strokeColor
       fillRule: ShapePath.OddEvenFill
-      strokeColor: "transparent"
-      strokeWidth: 0
+      strokeColor: root.strokeColor
+      strokeWidth: root.lineworkStrokeWidth
+      capStyle: ShapePath.RoundCap
+      joinStyle: ShapePath.RoundJoin
       PathSvg { path: MopedPaths.lineworkPath }
     }
   }
