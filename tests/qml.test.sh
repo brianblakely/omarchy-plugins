@@ -901,9 +901,11 @@ grep -Fq 'running: root.pendingReady' "$ROOT_DIR/Okomart.qml" \
 grep -Fq 'import QtQuick.Effects' "$ROOT_DIR/Okomart.qml" \
   || fail "storefront sign glow does not import the glyph effect"
 grep -Fq 'id: signGlow' "$ROOT_DIR/Okomart.qml" \
-  || fail "storefront sign is missing its glyph glow"
-grep -Fq 'source: signText' "$ROOT_DIR/Okomart.qml" \
-  || fail "storefront sign glow is not shaped by the lettering"
+  || fail "storefront sign is missing its tight glyph glow"
+grep -Fq 'id: signOuterGlow' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront sign is missing its diffuse outer glow"
+[[ $(grep -Fc 'source: signText' "$ROOT_DIR/Okomart.qml") -ge 2 ]] \
+  || fail "storefront sign glow layers are not shaped by the lettering"
 grep -Fq 'colorizationColor: Color.accent' "$ROOT_DIR/Okomart.qml" \
   || fail "storefront sign glow does not use the accent color"
 grep -Fq 'blurEnabled: true' "$ROOT_DIR/Okomart.qml" \
@@ -911,9 +913,13 @@ grep -Fq 'blurEnabled: true' "$ROOT_DIR/Okomart.qml" \
 if grep -Fq 'glowPulse' "$ROOT_DIR/Okomart.qml"; then
   fail "storefront sign glow still uses a continuous pulse"
 fi
-grep -Fq '0.34 + 0.62 * catalogSign.glowFlicker' "$ROOT_DIR/Okomart.qml" \
-  || fail "storefront sign glow is too transparent between flickers"
-if sed -n '/id: signGlow/,/^        }/p' "$ROOT_DIR/Okomart.qml" \
+grep -Fq '0.26 + 0.62 * catalogSign.glowFlicker' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront sign diffuse glow is too transparent between flickers"
+grep -Fq '0.45 + 0.55 * catalogSign.glowFlicker' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront sign tight glow is too transparent between flickers"
+grep -Fq 'blur: 0.30' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront sign is missing its concentrated neon bloom"
+if sed -n '/id: signOuterGlow/,/id: signFlickerTimer/p' "$ROOT_DIR/Okomart.qml" \
     | grep -Eq '(border\.|radius:)'; then
   fail "storefront sign glow is still a rectangular border"
 fi

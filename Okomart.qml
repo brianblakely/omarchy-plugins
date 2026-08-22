@@ -989,6 +989,22 @@ Item {
         enabled: root.pendingReady && !root.activatingCatalog
         activeFocusOnTab: enabled
 
+        // Keep a tight, luminous bloom over a separate diffuse halo. One wide
+        // blur spreads the glyph energy too thinly to read as lit neon.
+        MultiEffect {
+          id: signOuterGlow
+          anchors.fill: signText
+          source: signText
+          autoPaddingEnabled: true
+          colorization: 1.0
+          colorizationColor: Color.accent
+          blurEnabled: true
+          blur: 0.58
+          blurMax: 32
+          opacity: root.pendingReady
+            ? 0.26 + 0.62 * catalogSign.glowFlicker : 0
+        }
+
         MultiEffect {
           id: signGlow
           anchors.fill: signText
@@ -997,10 +1013,10 @@ Item {
           colorization: 1.0
           colorizationColor: Color.accent
           blurEnabled: true
-          blur: 0.84
-          blurMax: 40
+          blur: 0.30
+          blurMax: 12
           opacity: root.pendingReady
-            ? 0.34 + 0.62 * catalogSign.glowFlicker : 0
+            ? 0.45 + 0.55 * catalogSign.glowFlicker : 0
         }
 
         Timer {
