@@ -20,6 +20,8 @@ FocusScope {
   signal backRequested()
   signal installRequested(var plugin)
   signal removeRequested(var plugin)
+  signal enableRequested(var plugin)
+  signal disableRequested(var plugin)
   signal updateRequested(var plugin)
   signal pluginListRequested()
   signal searchRequested()
@@ -35,6 +37,21 @@ FocusScope {
     hasPlugin && OkomartModel.canRemovePlugin(plugin)
   readonly property bool updateAvailable:
     installed && plugin.safeUpdate === true
+  readonly property bool enablementKnown:
+    installed && typeof plugin.enabled === "boolean"
+  readonly property bool pluginEnabled:
+    enablementKnown && plugin.enabled === true
+  readonly property bool enablementChangeAllowed:
+    enablementKnown && (!pluginEnabled || plugin.canDisable === true)
+  readonly property string enablementBlockReason:
+    enablementKnown && pluginEnabled && plugin.canDisable !== true
+      ? "A bar cannot be disabled directly; enable another bar to replace it."
+      : ""
+  readonly property real mopedWidth: Math.min(
+    Style.space(168), Math.max(Style.space(112), width * 0.5))
+  readonly property real mopedHeight: mopedWidth * 112 / 180
+  readonly property real mopedClearance:
+    mopedHeight + Style.space(18)
 
   activeFocusOnTab: true
 
@@ -122,13 +139,14 @@ FocusScope {
   }
 
   function actionHasFocus() {
-    return installButton.activeFocus
+    return enablementButton.activeFocus
+      || installButton.activeFocus
       || removeButton.activeFocus
       || updateButton.activeFocus
   }
 
   function firstActionButton() {
-    var actions = [installButton, removeButton, updateButton]
+    var actions = [enablementButton, installButton, removeButton, updateButton]
     for (var i = 0; i < actions.length; i++)
       if (actions[i].visible && actions[i].enabled) return actions[i]
     return null
@@ -142,6 +160,7 @@ FocusScope {
       return true
     }
     var hasAction = installButton.visible
+      || (enablementButton.visible && root.enablementChangeAllowed)
       || (removeButton.visible && removalAllowed)
       || updateButton.visible
     actionFocusPending = !actionsEnabled && hasAction
@@ -272,8 +291,9 @@ FocusScope {
         wrapMode: Text.WordWrap
       }
 
-      Row {
+      Flow {
         visible: root.hasPlugin && (root.installed || root.plugin.catalog)
+        width: parent.width
         spacing: Style.space(10)
 
         Button {
@@ -296,6 +316,36 @@ FocusScope {
           Accessible.name: root.hasPlugin
             ? "Install " + root.value(root.plugin.name || root.plugin.id, "plugin")
             : "Install plugin"
+          Accessible.role: Accessible.Button
+        }
+
+        Button {
+          id: enablementButton
+          visible: root.enablementKnown
+          enabled: root.actionsEnabled && root.enablementChangeAllowed
+          focusable: root.enablementChangeAllowed
+          bordered: true
+          selected: !root.pluginEnabled
+          tooltipText: root.enablementBlockReason
+          text: root.pluginEnabled ? "Disable" : "Enable"
+          onClicked: {
+            if (root.pluginEnabled) root.disableRequested(root.plugin)
+            else root.enableRequested(root.plugin)
+          }
+          Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Left || event.key === Qt.Key_H) {
+              root.pluginListRequested()
+              event.accepted = true
+            }
+          }
+          onActiveFocusChanged: if (activeFocus) Qt.callLater(function() {
+            root.ensureVisible(enablementButton)
+          })
+          Accessible.name: root.hasPlugin
+            ? (root.pluginEnabled ? "Disable " : "Enable ")
+              + root.value(root.plugin.name || root.plugin.id, "plugin")
+            : "Change plugin enabled state"
+          Accessible.description: root.enablementBlockReason
           Accessible.role: Accessible.Button
         }
 
@@ -472,9 +522,26 @@ FocusScope {
         }
       }
 
-      Item { width: 1; height: Style.space(2) }
+      Item {
+        visible: root.hasPlugin
+        width: 1
+        height: root.mopedClearance
+      }
     }
 
+  }
+
+  MopedIllustration {
+    id: detailsMoped
+    visible: root.hasPlugin
+    z: 10
+    width: root.mopedWidth
+    height: root.mopedHeight
+    anchors.right: parent.right
+    anchors.bottom: parent.bottom
+    anchors.rightMargin: Style.space(4)
+    anchors.bottomMargin: Style.space(2)
+    strokeColor: root.accent
   }
 
   Text {

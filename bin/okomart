@@ -1705,15 +1705,44 @@ build_installed_index() {
   return $rc
 }
 
+read_plugin_enablement() {
+  local output="$1" raw
+  raw="$(
+    timeout --signal=TERM --kill-after=1s 3s \
+      omarchy plugin list --json 2>/dev/null
+  )" || return 1
+  jq -ce '
+    select(type == "array")
+    | select(all(.[];
+        type == "object"
+        and (.id | type == "string"
+          and test("^[A-Za-z0-9][A-Za-z0-9._-]*$")
+          and (contains("..") | not))
+        and (.enabled | type == "boolean")
+        and (.canDisable | type == "boolean")))
+    | select(([.[].id] | length) == ([.[].id] | unique | length))
+    | map({id,enabled,canDisable})
+  ' <<<"$raw" >"$output"
+}
+
 merge_plugins_json() {
   local catalog="$1"
   local installed="$2"
-  local output="$3"
+  local enablement="$3"
+  local output="$4"
   jq -n \
     --slurpfile catalog "$catalog" \
-    --slurpfile installed "$installed" '
+    --slurpfile installed "$installed" \
+    --slurpfile enablement "$enablement" '
     ($catalog[0].entries // []) as $c |
-    ($installed[0] // []) as $i |
+    (($installed[0] // []) | map(
+      . as $plugin
+      | ([($enablement[0] // [])[] | select(.id == $plugin.id)][0] // null) as $state
+      | . + {
+          enabled:(if $state == null then null else $state.enabled end),
+          canDisable:(if $state == null then false else $state.canDisable end)
+        }
+    )) as $i |
     (
       [
         $c[] as $available |
@@ -1722,6 +1751,7 @@ merge_plugins_json() {
           $available + {
             catalog:true,installed:false,
             catalogCommit:($available.revision // ""),
+            enabled:null,canDisable:false,
             versionUpdateAvailable:false,
             safeUpdate:false
           }
@@ -1904,17 +1934,25 @@ snapshot_payload() {
     return 2
   }
 
-  local catalog active generation pending catalog_file installed plugins self
+  local catalog active generation pending catalog_file installed enablement plugins self
   catalog="$(read_catalog)"
   active="$(jq -c '.active // {generation:"",entries:[],errors:[],checkedAt:""}' <<<"$catalog")"
   generation="$(jq -r '.generation // ""' <<<"$active")"
   pending="$(jq -c '.pending | if . == null then null else {generation,ready} end' <<<"$catalog")"
   catalog_file="$(mktemp "$STATE_ROOT/.active-catalog.XXXXXX")" || return 1
   installed="$(mktemp "$STATE_ROOT/.installed-index.XXXXXX")" || { rm -f -- "$catalog_file"; return 1; }
-  plugins="$(mktemp "$STATE_ROOT/.plugins.XXXXXX")" || { rm -f -- "$catalog_file" "$installed"; return 1; }
+  enablement="$(mktemp "$STATE_ROOT/.plugin-enablement.XXXXXX")" || {
+    rm -f -- "$catalog_file" "$installed"
+    return 1
+  }
+  plugins="$(mktemp "$STATE_ROOT/.plugins.XXXXXX")" || {
+    rm -f -- "$catalog_file" "$installed" "$enablement"
+    return 1
+  }
   printf '%s\n' "$active" >"$catalog_file"
   build_installed_index "$installed" "$remote_checks" || printf '[]\n' >"$installed"
-  merge_plugins_json "$catalog_file" "$installed" "$plugins" || printf '[]\n' >"$plugins"
+  read_plugin_enablement "$enablement" || printf '[]\n' >"$enablement"
+  merge_plugins_json "$catalog_file" "$installed" "$enablement" "$plugins" || printf '[]\n' >"$plugins"
   if [[ $remote_checks == true ]]; then
     self="$(self_update_json "$source_dir" "$source_is_development_link")"
   else
@@ -1932,7 +1970,7 @@ snapshot_payload() {
       self:$self,plugins:($plugins[0] // [])}
   '
   local rc=$?
-  rm -f -- "$catalog_file" "$installed" "$plugins"
+  rm -f -- "$catalog_file" "$installed" "$enablement" "$plugins"
   return $rc
 }
 
@@ -2321,6 +2359,84 @@ preflight_remove() {
       PREFLIGHT_ERROR="The installed plugin manifest changed after confirmation."
       return 1
     fi
+  fi
+}
+
+plugin_enablement_record() {
+  local id="$1" records record_file
+  record_file="$(mktemp "$STATE_ROOT/.plugin-enablement-check.XXXXXX")" || return 1
+  if ! read_plugin_enablement "$record_file"; then
+    rm -f -- "$record_file"
+    return 1
+  fi
+  records="$(jq -ce --arg id "$id" '
+    [.[] | select(.id == $id)][0] | select(. != null)
+  ' "$record_file" 2>/dev/null)" || {
+    rm -f -- "$record_file"
+    return 1
+  }
+  rm -f -- "$record_file"
+  printf '%s\n' "$records"
+}
+
+preflight_enablement() {
+  local operation="$1"
+  local id="$2"
+  local snapshot_file="$3"
+  local expected_path expected_enabled expected_can_disable target live live_enabled
+  local -a fields=()
+  PREFLIGHT_ERROR=""
+
+  mapfile -t fields < <(
+    jq -r --arg id "$id" '
+      [.plugins[] | select(.id == $id and .installed == true)][0]
+      | if . == null then "", "null", "false" else
+          (.installedPath // ""),
+          (if (.enabled | type) == "boolean" then
+            (.enabled | tostring) else "null" end),
+          (if .canDisable == true then "true" else "false" end)
+        end
+    ' "$snapshot_file" 2>/dev/null
+  )
+  expected_path="${fields[0]:-}"
+  expected_enabled="${fields[1]:-null}"
+  expected_can_disable="${fields[2]:-false}"
+  if [[ -z $expected_path ]]; then
+    PREFLIGHT_ERROR="Plugin is not installed in the confirmed snapshot."
+    return 1
+  fi
+  if [[ $operation == enable && $expected_enabled != false ]]; then
+    PREFLIGHT_ERROR="Plugin is no longer disabled. Refresh and review its state."
+    return 1
+  fi
+  if [[ $operation == disable && $expected_enabled != true ]]; then
+    PREFLIGHT_ERROR="Plugin is no longer enabled. Refresh and review its state."
+    return 1
+  fi
+  if [[ $operation == disable && $expected_can_disable != true ]]; then
+    PREFLIGHT_ERROR="This plugin cannot be disabled; enable a replacement bar instead."
+    return 1
+  fi
+
+  target="$PLUGINS_DIR/$id"
+  if [[ ( ! -e $target && ! -L $target ) ||
+    $(realpath -m -- "$target") != "$expected_path" ]]; then
+    PREFLIGHT_ERROR="The installed plugin changed after confirmation."
+    return 1
+  fi
+  live="$(plugin_enablement_record "$id")" || {
+    PREFLIGHT_ERROR="Could not verify the plugin's current enabled state."
+    return 1
+  }
+  live_enabled="$(jq -r '.enabled' <<<"$live")"
+  if [[ $live_enabled != "$expected_enabled" ]]; then
+    PREFLIGHT_ERROR="The plugin's enabled state changed after confirmation."
+    return 1
+  fi
+  if [[ $operation == disable ]] &&
+    ! jq -e '.canDisable == true' <<<"$live" >/dev/null 2>&1; then
+    PREFLIGHT_ERROR="This plugin cannot be disabled; enable a replacement bar instead."
+    return 1
   fi
 }
 
@@ -2720,6 +2836,26 @@ worker_command() {
       persistence_failed=true
     fi
     ;;
+  enable | disable)
+    if ! preflight_enablement "$operation" "$id" "$confirmed_snapshot_file"; then
+      status="$(append_action_message "$status" "$id" "$operation" false "$PREFLIGHT_ERROR")"
+      overall=false
+    elif ! active_generation_matches "$confirmed_snapshot_id"; then
+      status="$(append_action_message "$status" "$id" "$operation" false \
+        "The active catalog changed during preflight. Reopen the action and review it again.")"
+      overall=false
+    else
+      local next_status rc=0
+      next_status="$(run_plugin_action "$status" "$operation" "$id" \
+        plugin "$operation" "$id")" || rc=$?
+      status="$next_status"
+      (( rc == 0 )) || overall=false
+    fi
+    if ! write_action_status "$status"; then
+      overall=false
+      persistence_failed=true
+    fi
+    ;;
   update)
     if ! preflight_update "$id" "$confirmed_snapshot_file" "$source_dir"; then
       status="$(append_action_message "$status" "$id" update false "$PREFLIGHT_ERROR")"
@@ -2908,7 +3044,7 @@ action_command() {
     return 2
   }
   [[ -n $source_arg ]] || {
-    json_error "Usage: okomart action <source-dir> <install|remove|update|update-all> [id] [snapshot-id] <selected-update-ids-json-for-update-all>"
+    json_error "Usage: okomart action <source-dir> <install|remove|enable|disable|update|update-all> [id] [snapshot-id] <selected-update-ids-json-for-update-all>"
     return 2
   }
   local source_dir
@@ -2918,13 +3054,14 @@ action_command() {
     return 2
   }
   case "$operation" in
-  install | remove | update)
+  install | remove | enable | disable | update)
     valid_plugin_id "$id" || {
       json_error "A valid plugin id is required"
       return 2
     }
-    [[ $operation != remove || $id != "$OKOMART_ID" ]] || {
-      json_error "Okomart cannot remove itself from its storefront"
+    [[ ( $operation != remove && $operation != disable ) ||
+      $id != "$OKOMART_ID" ]] || {
+      json_error "Okomart cannot remove or disable itself from its storefront"
       return 2
     }
     [[ -z $selected_updates_json ]] || {
@@ -3073,7 +3210,7 @@ action_command() {
 usage_json() {
   jq -cn '{
     ok:false,
-    error:"Usage: okomart snapshot <source-dir> | refresh <source-dir> [--force] | enrich <generation> | promote <generation> | check-updates <source-dir> | screenshots <descriptor-json> <session-id> | cleanup-media <session-id|--all> | action <source-dir> <install|remove|update|update-all> <id-or-empty> <generation> <selected-update-ids-json-for-update-all> | status | ack <action-id>"
+    error:"Usage: okomart snapshot <source-dir> | refresh <source-dir> [--force] | enrich <generation> | promote <generation> | check-updates <source-dir> | screenshots <descriptor-json> <session-id> | cleanup-media <session-id|--all> | action <source-dir> <install|remove|enable|disable|update|update-all> <id-or-empty> <generation> <selected-update-ids-json-for-update-all> | status | ack <action-id>"
   }'
 }
 

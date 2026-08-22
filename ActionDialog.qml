@@ -33,6 +33,8 @@ FocusScope {
   readonly property string title: {
     if (mode === "install") return "Install and enable plugin?"
     if (mode === "remove") return "Remove plugin?"
+    if (mode === "enable") return "Enable plugin?"
+    if (mode === "disable") return "Disable plugin?"
     if (mode === "update") return "Update plugin?"
     if (mode === "updates") return "Apply plugin updates?"
     if (mode === "results") return "Plugin operation results"
@@ -41,6 +43,8 @@ FocusScope {
   readonly property string confirmLabel: {
     if (mode === "install") return "Install & Enable"
     if (mode === "remove") return "Remove"
+    if (mode === "enable") return "Enable"
+    if (mode === "disable") return "Disable"
     if (mode === "update") return "Update"
     if (mode === "updates")
       return selectedUpdateIds.length === eligibleUpdates.length
@@ -60,6 +64,10 @@ FocusScope {
   readonly property bool canConfirm: !busy
     && (mode !== "updates" || selectedUpdateIds.length > 0)
     && (mode !== "update" || (plugin && plugin.safeUpdate === true))
+    && (mode !== "enable" || (plugin && plugin.installed === true
+      && plugin.enabled === false))
+    && (mode !== "disable" || (plugin && plugin.installed === true
+      && plugin.enabled === true && plugin.canDisable === true))
   readonly property bool hasReviewList: mode === "updates" || mode === "results"
   readonly property string installSourceUrl: mode === "install"
     ? OkomartModel.clickableSourceUrl(plugin) : ""
@@ -181,6 +189,14 @@ FocusScope {
       if (kind === "local")
         return pluginName(plugin) + " is a local folder. Omarchy will disable it and move it to a timestamped backup."
       return "Omarchy will disable and delete the installed checkout for " + pluginName(plugin) + "."
+    }
+    if (mode === "enable") {
+      return "Omarchy will enable " + pluginName(plugin)
+        + ". Bar widgets use their manifest's default placement."
+    }
+    if (mode === "disable") {
+      return "Omarchy will disable " + pluginName(plugin)
+        + " without uninstalling its checkout. It can be enabled again later."
     }
     if (mode === "update") {
       return "Okomart will update " + pluginName(plugin) + ".\n\n"
@@ -334,6 +350,7 @@ FocusScope {
       Text {
         id: detailText
         visible: root.mode === "install" || root.mode === "remove"
+          || root.mode === "enable" || root.mode === "disable"
           || root.mode === "update"
         height: visible ? implicitHeight : 0
         width: parent.width

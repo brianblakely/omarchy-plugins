@@ -51,11 +51,13 @@ export MOCK_COUNTER="$TMP/counter"
 export MOCK_MAX_COUNTER="$TMP/max-counter"
 export MOCK_GIT_LOG="$TMP/git.log"
 export MOCK_GENERIC_REPO="$TMP/generic-repository"
+export MOCK_PLUGIN_STATES="$TMP/plugin-states.json"
 export MOCK_CURL_DELAY=0.08
 mkdir -p -- "$HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME" "$XDG_RUNTIME_DIR" \
   "$MOCK_DATA/manifests" "$MOCK_DATA/commits" "$MOCK_DATA/trees" "$TMP/mock-bin"
 chmod 700 "$XDG_RUNTIME_DIR"
 : >"$MOCK_LOG"; : >"$MOCK_GIT_LOG"; printf '0\n' >"$MOCK_COUNTER"; printf '0\n' >"$MOCK_MAX_COUNTER"
+printf '[]\n' >"$MOCK_PLUGIN_STATES"
 
 mkdir -p -- "$XDG_CACHE_HOME/okomart/abandoned-work" "$TMP/outside-cache"
 printf 'keep\n' >"$TMP/outside-cache/sentinel"
@@ -122,8 +124,24 @@ chmod 755 "$TMP/mock-bin/hyprctl"
 cat >"$TMP/mock-bin/omarchy" <<'MOCK_OMARCHY'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ $* == 'plugin list --json' ]]; then
+  cat -- "$MOCK_PLUGIN_STATES"
+  exit 0
+fi
 printf 'omarchy %s\n' "$*" >>"$MOCK_LOG"
 if [[ -n ${MOCK_ACTION_SLEEP:-} ]]; then sleep "$MOCK_ACTION_SLEEP"; fi
+if [[ ${1:-} == plugin && ( ${2:-} == enable || ${2:-} == disable ) ]]; then
+  id=${3:-}
+  [[ -n $id ]] || exit 2
+  jq -e --arg id "$id" 'any(.[]; .id == $id)' "$MOCK_PLUGIN_STATES" \
+    >/dev/null || exit 1
+  next=$(mktemp "${MOCK_PLUGIN_STATES}.XXXXXX")
+  jq --arg id "$id" --argjson enabled \
+    "$([[ ${2:-} == enable ]] && printf true || printf false)" '
+      map(if .id == $id then .enabled=$enabled else . end)
+    ' "$MOCK_PLUGIN_STATES" >"$next"
+  mv -fT -- "$next" "$MOCK_PLUGIN_STATES"
+fi
 exit 0
 MOCK_OMARCHY
 chmod 755 "$TMP/mock-bin/omarchy"
@@ -549,10 +567,61 @@ printf 'local screenshot\n' >"$LOCAL_PLUGIN/screenshots/local.png"
 jq -n '{schemaVersion:1,id:"b.local",name:"Local",version:"1.0.0",
   author:"Test",description:"Installed local plugin",kinds:["panel"],
   entryPoints:{panel:"Local.qml"}}' >"$LOCAL_PLUGIN/manifest.json"
+jq -n '[{id:"b.local",enabled:true,canDisable:true}]' >"$MOCK_PLUGIN_STATES"
 "$OKOMART" snapshot "$SOURCE" >"$TMP/installed-local.json"
 assert_jq "$TMP/installed-local.json" '([.plugins[] | select(.id=="b.local")][0]
-  | .installed and (has("images")|not))' \
-  'installed screenshot paths are omitted from local snapshots'
+  | .installed and .enabled and .canDisable and (has("images")|not))' \
+  'installed snapshots include authoritative enabled state without screenshot paths'
+
+ENABLEMENT_GENERATION=$(jq -r '.active.generation' "$CATALOG")
+export MOCK_RUNTIME_VERSION
+MOCK_RUNTIME_VERSION=$(jq -r '.version' "$ROOT/manifest.json")
+: >"$MOCK_LOG"
+run_action_to_completion "$SOURCE" disable b.local "$ENABLEMENT_GENERATION" \
+  >"$TMP/action-disable.json"
+assert_jq "$TMP/action-disable.json" '.ok and (.running|not)
+  and any(.results[]; .id=="b.local" and .operation=="disable" and .ok)' \
+  'installed plugin can be disabled through the detached action worker'
+grep -Fqx 'omarchy plugin disable b.local' "$MOCK_LOG" \
+  || fail 'disable action did not use the public Omarchy plugin command'
+if grep -Fqx 'omarchy restart shell' "$MOCK_LOG"; then
+  fail 'disable action restarted the shell instead of using the live mutation'
+fi
+"$OKOMART" snapshot "$SOURCE" >"$TMP/disabled-local.json"
+assert_jq "$TMP/disabled-local.json" '([.plugins[] | select(.id=="b.local")][0]
+  | .installed and .enabled == false and .canDisable)' \
+  'disabled state is reflected in the next local snapshot'
+
+: >"$MOCK_LOG"
+run_action_to_completion "$SOURCE" enable b.local "$ENABLEMENT_GENERATION" \
+  >"$TMP/action-enable.json"
+assert_jq "$TMP/action-enable.json" '.ok and (.running|not)
+  and any(.results[]; .id=="b.local" and .operation=="enable" and .ok)' \
+  'disabled plugin can be enabled through the detached action worker'
+grep -Fqx 'omarchy plugin enable b.local' "$MOCK_LOG" \
+  || fail 'enable action did not use the public Omarchy plugin command'
+"$OKOMART" snapshot "$SOURCE" >"$TMP/enabled-local.json"
+assert_jq "$TMP/enabled-local.json" '([.plugins[] | select(.id=="b.local")][0]
+  | .installed and .enabled and .canDisable)' \
+  'enabled state is reflected in the next local snapshot'
+
+jq 'map(if .id == "b.local" then .canDisable=false else . end)' \
+  "$MOCK_PLUGIN_STATES" >"$TMP/non-disableable-state.json"
+mv -fT -- "$TMP/non-disableable-state.json" "$MOCK_PLUGIN_STATES"
+: >"$MOCK_LOG"
+if run_action_to_completion "$SOURCE" disable b.local "$ENABLEMENT_GENERATION" \
+    >"$TMP/action-disable-blocked.json"; then
+  fail 'full-bar-style plugin unexpectedly allowed a direct disable action'
+fi
+assert_jq "$TMP/action-disable-blocked.json" '.ok == false and (.running|not)
+  and any(.results[]; .id=="b.local" and .operation=="disable"
+    and (.ok|not) and (.output|contains("enable a replacement bar")))' \
+  'plugins marked non-disableable are rejected before mutation'
+if grep -Fqx 'omarchy plugin disable b.local' "$MOCK_LOG"; then
+  fail 'blocked disable action still invoked the public Omarchy command'
+fi
+pass 'blocked disable action does not invoke Omarchy mutation'
+unset MOCK_RUNTIME_VERSION
 CATALOG_HASH_BEFORE=$(sha256sum "$CATALOG" | awk '{print $1}')
 "$OKOMART" check-updates "$SOURCE" >"$TMP/update-check.json"
 assert_jq "$TMP/update-check.json" '.ok and .remoteChecked

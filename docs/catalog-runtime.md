@@ -14,8 +14,10 @@ scratch data use the private runtime directory and are removed after use.
 ## Open, Refresh, And Activation
 
 Opening the storefront reads `active` and installed manifests without network
-access, so a warm launch is immediately usable. The frontend then starts these
-independent background operations:
+access, then asks the running Omarchy shell for each installed plugin's
+authoritative `enabled` and `canDisable` state. A warm launch is therefore
+immediately usable. The frontend then starts these independent background
+operations:
 
 1. Merge the local `plugins.txt` URLs with compatible standalone HANCORE
    entries and fetch their manifests.
@@ -29,14 +31,22 @@ pending generation makes the **オコマート** sign pulse. Pointer activation 
 `Enter`/`Space` atomically promotes the generation named by the sign. Stale
 enrichment, promotion, and action responses are rejected by generation.
 
+Enable and disable actions use Omarchy's public plugin commands. Okomart
+re-checks the installed path and live enabled state after confirmation before
+performing either mutation. A full bar reports `canDisable: false`; Okomart
+leaves its Disable button unavailable because bars are replaced by enabling a
+different bar rather than switched off directly.
+
 On a cold cache, successfully fetched manifests are published as `active`
 before timestamp enrichment, making the catalog browsable at the first network
 boundary. Timestamp enrichment is staged as the first pending update.
 
 `Ctrl+R` queues a forced refresh when another refresh is in progress. A
 registry-source failure, overall timeout, or all-plugin request failure leaves
-`active` untouched. Individual plugin failures are recorded as catalog errors
-and omitted from the candidate.
+`active` untouched. When an active catalog is available, Okomart briefly shows
+the background refresh failure and then dismisses it after restoring the saved
+catalog; without an active catalog, the failure remains visible. Individual
+plugin failures are recorded as catalog errors and omitted from the candidate.
 
 ## Fetch And Validation Boundaries
 

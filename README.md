@@ -6,7 +6,7 @@ you may order after your
 
 Okomart (`オコマート`) is a storefront and manager for
 [Omarchy](https://omarchy.org/) plugins. It lets you search, preview, install,
-update, and remove plugins without the terminal.
+enable, disable, update, and remove plugins without the terminal.
 
 ![Okomart screenshot](preview.png)
 
@@ -30,7 +30,11 @@ local third-party plugins already installed under `~/.config/omarchy/plugins/`.
 
 - Search matches plugin names, descriptions, and authors.
 - The "Installed" filter limits the list to local plugins.
-- Plugin details show metadata, installation state, actions, and screenshots.
+- Plugin details show metadata, installation and enabled state, actions, and
+  screenshots.
+- Installed plugins can be enabled or disabled without removing their checkout.
+  Full bar plugins are replaced by enabling another bar and cannot be disabled
+  directly.
 - The "Updates" button lists all plugin updates and asks you for confirmation to
   install them.
 

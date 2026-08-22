@@ -477,6 +477,10 @@ Item {
     try { parsed = JSON.parse(String(raw || "")) } catch (e) {}
     if (parsed && Array.isArray(parsed.plugins)) {
       setSnapshotData(parsed)
+      if (refreshFailureDismissTimer.message !== ""
+          && snapshotActionable
+          && bannerText === refreshFailureDismissTimer.message)
+        refreshFailureDismissTimer.restart()
       var catalogErrors = Array.isArray(parsed.catalogErrors) ? parsed.catalogErrors : []
       if (catalogErrors.length > 0 && bannerText === "") {
         bannerText = catalogErrors.length + " catalog refresh "
@@ -507,6 +511,8 @@ Item {
       bannerText = refreshError.trim() || "Catalog refresh failed."
       if (parsed && parsed.error) bannerText = String(parsed.error)
       bannerUrgent = true
+      refreshFailureDismissTimer.message = bannerText
+      if (snapshotActionable) refreshFailureDismissTimer.restart()
     } else if (!parsed.changed && !parsed.pending) {
       bannerText = ""
       bannerUrgent = false
@@ -537,6 +543,8 @@ Item {
     refreshing = true
     refreshOutput = ""
     refreshError = ""
+    refreshFailureDismissTimer.stop()
+    refreshFailureDismissTimer.message = ""
     bannerText = ""
     bannerUrgent = false
     refreshProcess.command = force === true
@@ -873,6 +881,20 @@ Item {
   }
 
   Timer {
+    id: refreshFailureDismissTimer
+    property string message: ""
+    interval: 6000
+    repeat: false
+    onTriggered: {
+      if (root.snapshotActionable && root.bannerText === message) {
+        root.bannerText = ""
+        root.bannerUrgent = false
+      }
+      message = ""
+    }
+  }
+
+  Timer {
     id: initialFocusTimer
     interval: 50
     repeat: true
@@ -954,7 +976,7 @@ Item {
 
       FocusScope {
         id: catalogSign
-        property real glowPulse: 0.18
+        property real glowPulse: 0.30
         property real glowFlicker: 1.0
 
         x: storefront.frameLeft + root.headerEdgeInset
@@ -976,8 +998,8 @@ Item {
           colorization: 1.0
           colorizationColor: Color.accent
           blurEnabled: true
-          blur: 0.72
-          blurMax: 32
+          blur: 0.84
+          blurMax: 40
           opacity: root.pendingReady
             ? catalogSign.glowPulse * catalogSign.glowFlicker : 0
         }
@@ -988,16 +1010,16 @@ Item {
           NumberAnimation {
             target: catalogSign
             property: "glowPulse"
-            from: 0.18
-            to: 0.66
+            from: 0.30
+            to: 0.82
             duration: 1700
             easing.type: Easing.InOutSine
           }
           NumberAnimation {
             target: catalogSign
             property: "glowPulse"
-            from: 0.66
-            to: 0.18
+            from: 0.82
+            to: 0.30
             duration: 1700
             easing.type: Easing.InOutSine
           }
@@ -1007,6 +1029,7 @@ Item {
           id: signFlickerTimer
           running: root.pendingReady
           repeat: true
+          triggeredOnStart: true
           interval: 7000 + Math.floor(Math.random() * 9000)
           onTriggered: {
             interval = 7000 + Math.floor(Math.random() * 9000)
@@ -1059,6 +1082,8 @@ Item {
           anchors.verticalCenter: parent.verticalCenter
           text: "オコマート"
           color: root.storefrontColor
+          opacity: root.pendingReady
+            ? 0.42 + 0.58 * catalogSign.glowFlicker : 1.0
           font.family: Style.font.family
           font.pixelSize: root.wideLayout ? Style.font.displayLarge : Style.font.display
           horizontalAlignment: root.wideLayout ? Text.AlignLeft : Text.AlignHCenter
@@ -1262,6 +1287,8 @@ Item {
         }
         onInstallRequested: function(plugin) { root.openActionDialog("install", plugin, []) }
         onRemoveRequested: function(plugin) { root.openActionDialog("remove", plugin, []) }
+        onEnableRequested: function(plugin) { root.openActionDialog("enable", plugin, []) }
+        onDisableRequested: function(plugin) { root.openActionDialog("disable", plugin, []) }
         onUpdateRequested: function(plugin) { root.openActionDialog("update", plugin, []) }
         onPluginListRequested: root.focusPluginListFromSearch()
         onSearchRequested: searchField.forceActiveFocus()
@@ -1318,6 +1345,8 @@ Item {
           busy = true
           if (mode === "install") root.beginAction("install", plugin)
           else if (mode === "remove") root.beginAction("remove", plugin)
+          else if (mode === "enable") root.beginAction("enable", plugin)
+          else if (mode === "disable") root.beginAction("disable", plugin)
           else if (mode === "update") root.beginAction("update", plugin)
           else if (mode === "updates")
             root.beginAction("update-all", null, selectedUpdateIds)

@@ -27,6 +27,7 @@ fail() {
 for file in \
   Okomart.qml \
   StorefrontFrame.qml \
+  MopedIllustration.qml \
   PluginList.qml \
   PluginDetails.qml \
   ScreenshotCarousel.qml \
@@ -45,6 +46,7 @@ if command -v qmllint >/dev/null 2>&1; then
   qmllint "${QMLLINT_IMPORT_ARGS[@]}" \
     "$ROOT_DIR/Okomart.qml" \
     "$ROOT_DIR/StorefrontFrame.qml" \
+    "$ROOT_DIR/MopedIllustration.qml" \
     "$ROOT_DIR/PluginList.qml" \
     "$ROOT_DIR/PluginDetails.qml" \
     "$ROOT_DIR/ScreenshotCarousel.qml" \
@@ -296,7 +298,7 @@ grep -Fq 'modelData.versionUpdateAvailable === true' "$ROOT_DIR/PluginList.qml" 
 grep -Fq 'text: row.updateAvailable ? "\uf021" : "󰏗"' \
   "$ROOT_DIR/PluginList.qml" \
   || fail "plugin-list state marker does not match Omarchy's update glyph"
-grep -Fq '", installed, update available"' "$ROOT_DIR/PluginList.qml" \
+grep -Fq '(row.updateAvailable ? ", update available" : "")' "$ROOT_DIR/PluginList.qml" \
   || fail "plugin-list update marker is not described accessibly"
 if sed -n '/id: installedIndicator/,+10p' "$ROOT_DIR/PluginList.qml" \
     | grep -Fq 'radius:'; then
@@ -304,8 +306,32 @@ if sed -n '/id: installedIndicator/,+10p' "$ROOT_DIR/PluginList.qml" \
 fi
 grep -Fq 'modelData.installed === true' "$ROOT_DIR/PluginList.qml" \
   || fail "plugin-list installed marker does not use the catalog installation state"
+grep -Fq 'id: disabledIndicator' "$ROOT_DIR/PluginList.qml" \
+  || fail "plugin list is missing its disabled-state icon"
+grep -Fq 'visible: row.disabled' "$ROOT_DIR/PluginList.qml" \
+  || fail "plugin-list disabled icon does not follow enabled state"
+grep -Fq 'text: "󰅖"' "$ROOT_DIR/PluginList.qml" \
+  || fail "plugin-list disabled icon does not match Omarchy's disable glyph"
+grep -Fq '(row.disabled ? ", disabled" : "")' "$ROOT_DIR/PluginList.qml" \
+  || fail "plugin-list disabled state is not described accessibly"
 grep -Fq 'contentHeight: detailsColumn.implicitHeight' "$ROOT_DIR/PluginDetails.qml" \
   || fail "plugin details do not expose their scrollable content height"
+grep -Fq 'MopedIllustration {' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin details are missing the moped illustration"
+grep -Fq 'z: 10' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin details moped does not float over the scroll pane"
+grep -Fq 'anchors.right: parent.right' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin details moped is not anchored to the right corner"
+grep -Fq 'anchors.bottom: parent.bottom' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin details moped is not anchored to the bottom corner"
+grep -Fq 'height: root.mopedClearance' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin details cannot scroll its content clear of the moped"
+grep -Fq 'import QtQuick.Shapes' "$ROOT_DIR/MopedIllustration.qml" \
+  || fail "moped illustration is not drawn with native QML shapes"
+grep -Fq 'fillColor: "transparent"' "$ROOT_DIR/MopedIllustration.qml" \
+  || fail "moped illustration is not transparent line art"
+grep -Fq 'capStyle: ShapePath.RoundCap' "$ROOT_DIR/MopedIllustration.qml" \
+  || fail "moped illustration does not match the storefront rounded line style"
 grep -Fq 'text: "Select a plugin to see its details."' \
   "$ROOT_DIR/PluginDetails.qml" \
   || fail "plugin details are missing their empty selection prompt"
@@ -327,7 +353,7 @@ grep -Fq 'if (event.key === Qt.Key_Left || event.key === Qt.Key_H)' \
   "$ROOT_DIR/PluginDetails.qml" \
   || fail "plugin details do not handle their leftward list boundary"
 [[ $(grep -Fc 'root.pluginListRequested()' \
-  "$ROOT_DIR/PluginDetails.qml") -eq 3 ]] \
+  "$ROOT_DIR/PluginDetails.qml") -eq 4 ]] \
   || fail "every plugin action must directly return leftward focus to the list"
 grep -Fq 'function actionHasFocus()' "$ROOT_DIR/PluginDetails.qml" \
   || fail "plugin details cannot distinguish action focus from viewport focus"
@@ -377,10 +403,8 @@ if grep -Eqi 'badge|detailBadges' "$ROOT_DIR/PluginDetails.qml" \
       "$ROOT_DIR/OkomartModel.js"; then
   fail "plugin badge feature is still present"
 fi
-if grep -Fq 'modelData.enabled' "$ROOT_DIR/PluginList.qml" \
-    || grep -Eqi '"[^"]*enabled[^"]*"' "$ROOT_DIR/PluginList.qml"; then
-  fail "plugin list still renders an enabled-state indicator"
-fi
+grep -Fq 'typeof modelData.enabled === "boolean"' "$ROOT_DIR/PluginList.qml" \
+  || fail "plugin-list disabled icon does not require authoritative enabled state"
 grep -Fq 'if (state === "available" || state === "current") return ""' \
   "$ROOT_DIR/OkomartModel.js" \
   || fail "plugin details expose routine update status snippets"
@@ -389,6 +413,17 @@ if grep -Eq '\{ label: "(ID|Kinds|License|State)"' "$ROOT_DIR/PluginDetails.qml"
 fi
 grep -Fq 'text: "Install"' "$ROOT_DIR/PluginDetails.qml" \
   || fail "plugin details do not use the concise Install label"
+grep -Fq 'signal enableRequested(var plugin)' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin details do not expose an enable action"
+grep -Fq 'signal disableRequested(var plugin)' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin details do not expose a disable action"
+grep -Fq 'text: root.pluginEnabled ? "Disable" : "Enable"' \
+  "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin details are missing their enable/disable button"
+grep -Fq 'plugin.canDisable === true' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "plugin details ignore Omarchy's canDisable guard"
+grep -Fq 'enable another bar to replace it' "$ROOT_DIR/PluginDetails.qml" \
+  || fail "full-bar disable guard has no user-facing explanation"
 grep -Fq 'signal updateRequested(var plugin)' "$ROOT_DIR/PluginDetails.qml" \
   || fail "plugin details do not expose a single-plugin update action"
 grep -Fq 'visible: root.updateAvailable' "$ROOT_DIR/PluginDetails.qml" \
@@ -622,6 +657,14 @@ grep -Fq 'mode === "updates"' "$ROOT_DIR/ActionDialog.qml" \
   || fail "update confirmation mode is missing"
 grep -Fq 'mode === "update"' "$ROOT_DIR/ActionDialog.qml" \
   || fail "single-plugin update confirmation mode is missing"
+grep -Fq 'if (mode === "enable") return "Enable plugin?"' \
+  "$ROOT_DIR/ActionDialog.qml" \
+  || fail "plugin enable confirmation mode is missing"
+grep -Fq 'if (mode === "disable") return "Disable plugin?"' \
+  "$ROOT_DIR/ActionDialog.qml" \
+  || fail "plugin disable confirmation mode is missing"
+grep -Fq 'without uninstalling its checkout' "$ROOT_DIR/ActionDialog.qml" \
+  || fail "disable confirmation does not explain checkout retention"
 grep -Fq 'then restart the Omarchy shell so every entry point gets a clean load' \
   "$ROOT_DIR/ActionDialog.qml" \
   || fail "install confirmation does not disclose its shell restart"
@@ -694,6 +737,16 @@ grep -Fq 'String(snapshot.snapshotId)' "$ROOT_DIR/Okomart.qml" \
   || fail "actions are not bound to the confirmed active generation"
 grep -Fq 'exitCode !== 0 || !parsed || parsed.ok !== true' "$ROOT_DIR/Okomart.qml" \
   || fail "background catalog refresh failures are not surfaced"
+grep -Fq 'id: refreshFailureDismissTimer' "$ROOT_DIR/Okomart.qml" \
+  || fail "recoverable catalog refresh failures do not expire"
+if ! sed -n '/function applyCachedSnapshot/,/^  }/p' "$ROOT_DIR/Okomart.qml" \
+    | grep -Fq 'refreshFailureDismissTimer.restart()'; then
+  fail "loading a saved catalog does not schedule refresh failure dismissal"
+fi
+if ! sed -n '/id: refreshFailureDismissTimer/,/^  }/p' "$ROOT_DIR/Okomart.qml" \
+    | grep -Fq 'root.snapshotActionable && root.bannerText === message'; then
+  fail "refresh failure dismissal can clear an unrelated or blocking message"
+fi
 grep -Fq 'readonly property bool snapshotActionable' "$ROOT_DIR/Okomart.qml" \
   || fail "missing active generations are not blocked from plugin actions"
 grep -Fq 'OkomartModel.snapshotConfirmsUpdates(parsed, exitCode)' \
@@ -716,6 +769,14 @@ grep -Fq 'p.versionUpdateAvailable === true' "$ROOT_DIR/Okomart.qml" \
   || fail "global updates are not gated by manifest version"
 grep -Fq 'onUpdateRequested: function(plugin)' "$ROOT_DIR/Okomart.qml" \
   || fail "single-plugin update is not connected to the storefront"
+grep -Fq 'onEnableRequested: function(plugin)' "$ROOT_DIR/Okomart.qml" \
+  || fail "plugin enable is not connected to the storefront"
+grep -Fq 'onDisableRequested: function(plugin)' "$ROOT_DIR/Okomart.qml" \
+  || fail "plugin disable is not connected to the storefront"
+grep -Fq 'root.beginAction("enable", plugin)' "$ROOT_DIR/Okomart.qml" \
+  || fail "confirmed plugin enable does not start its backend action"
+grep -Fq 'root.beginAction("disable", plugin)' "$ROOT_DIR/Okomart.qml" \
+  || fail "confirmed plugin disable does not start its backend action"
 if ! sed -n \
     '/function actionIncludesSelf(kind, selectedUpdateIds)/,/^  }/p' \
     "$ROOT_DIR/Okomart.qml" \
@@ -777,18 +838,26 @@ grep -Fq 'colorizationColor: Color.accent' "$ROOT_DIR/Okomart.qml" \
   || fail "storefront sign glow does not use the accent color"
 grep -Fq 'blurEnabled: true' "$ROOT_DIR/Okomart.qml" \
   || fail "storefront sign lettering does not emit a blurred glow"
+grep -Fq 'property real glowPulse: 0.30' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront sign glow is not prominent at the low pulse state"
+grep -Fq 'to: 0.82' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront sign glow is not prominent at the high pulse state"
 if sed -n '/id: signGlow/,/^        }/p' "$ROOT_DIR/Okomart.qml" \
     | grep -Eq '(border\.|radius:)'; then
   fail "storefront sign glow is still a rectangular border"
 fi
 grep -Fq 'id: signFlickerTimer' "$ROOT_DIR/Okomart.qml" \
   || fail "storefront sign glow has no occasional flicker timer"
+grep -Fq 'triggeredOnStart: true' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront sign does not visibly flicker when pending state begins"
 grep -Fq '7000 + Math.floor(Math.random() * 9000)' "$ROOT_DIR/Okomart.qml" \
   || fail "storefront sign flicker is not sparse and irregular"
 grep -Fq 'id: signFlickerAnimation' "$ROOT_DIR/Okomart.qml" \
   || fail "storefront sign glow has no neon flicker sequence"
 [[ $(grep -Fc 'property: "glowFlicker"' "$ROOT_DIR/Okomart.qml") -ge 4 ]] \
   || fail "storefront sign glow does not sputter through a multi-step flicker"
+grep -Fq '0.42 + 0.58 * catalogSign.glowFlicker' "$ROOT_DIR/Okomart.qml" \
+  || fail "storefront sign lettering does not participate in the flicker"
 if sed -n '/function applyCatalogActivation(raw, generation)/,/^  }/p' \
     "$ROOT_DIR/Okomart.qml" | grep -Eq '(query|installedOnly|selectedId)[[:space:]]*='; then
   fail "catalog activation resets storefront query, filter, or selection state"

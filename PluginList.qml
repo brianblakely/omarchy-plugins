@@ -139,6 +139,8 @@ FocusScope {
 
       readonly property bool rowSelected: index === list.currentIndex
       readonly property bool installed: !!(modelData && modelData.installed === true)
+      readonly property bool disabled: installed
+        && typeof modelData.enabled === "boolean" && modelData.enabled === false
       readonly property bool updateAvailable: installed
         && modelData.versionUpdateAvailable === true
       readonly property string pluginId: root.idFor(modelData)
@@ -164,22 +166,39 @@ FocusScope {
           width: parent.width
           spacing: Style.space(7)
 
-          Text {
-            id: installedIndicator
-            visible: row.installed
-            text: row.updateAvailable ? "\uf021" : "󰏗"
-            textFormat: Text.PlainText
-            y: Math.round((parent.height - height) / 2)
-            color: root.accent
-            font.family: Style.font.family
-            font.pixelSize: Style.font.body
-            Accessible.ignored: true
+          Row {
+            id: stateIndicators
+            spacing: Style.space(4)
+
+            Text {
+              id: installedIndicator
+              visible: row.installed
+              text: row.updateAvailable ? "\uf021" : "󰏗"
+              textFormat: Text.PlainText
+              y: Math.round((parent.height - height) / 2)
+              color: root.accent
+              font.family: Style.font.family
+              font.pixelSize: Style.font.body
+              Accessible.ignored: true
+            }
+
+            Text {
+              id: disabledIndicator
+              visible: row.disabled
+              text: "󰅖"
+              textFormat: Text.PlainText
+              y: Math.round((parent.height - height) / 2)
+              color: Util.alpha(root.foreground, 0.58)
+              font.family: Style.font.family
+              font.pixelSize: Style.font.body
+              Accessible.ignored: true
+            }
           }
 
           Text {
             width: Math.max(0, parent.width
-              - (installedIndicator.visible
-                ? installedIndicator.width + parent.spacing : 0))
+              - (stateIndicators.width > 0
+                ? stateIndicators.width + parent.spacing : 0))
             text: row.title
             textFormat: Text.PlainText
             color: root.foreground
@@ -216,8 +235,10 @@ FocusScope {
         onDoubleClicked: root.activated(row.modelData)
       }
 
-      Accessible.name: row.title + (row.updateAvailable
-        ? ", installed, update available" : (row.installed ? ", installed" : ""))
+      Accessible.name: row.title
+        + (row.installed ? ", installed" : "")
+        + (row.disabled ? ", disabled" : "")
+        + (row.updateAvailable ? ", update available" : "")
       Accessible.description: row.description
       Accessible.role: Accessible.ListItem
     }

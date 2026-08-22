@@ -60,6 +60,8 @@ function plugin(overrides = {}) {
     version: "1.0.0",
     installed: false,
     installedVersion: "",
+    enabled: null,
+    canDisable: false,
     availableVersion: "1.0.0",
     versionUpdateAvailable: false,
     updateState: "not-installed",
@@ -134,7 +136,23 @@ test("reconciles successful plugin actions before the next network snapshot", ()
         installedPath: "/plugins/b.remove-catalog",
         installedSourceUrl: "https://github.com/example/remove.git",
         installType: "git",
+        enabled: true,
+        canDisable: true,
         currentCommit: "remove-head",
+        catalog: true
+      }),
+      plugin({
+        id: "b.enable",
+        installed: true,
+        enabled: false,
+        canDisable: true,
+        catalog: true
+      }),
+      plugin({
+        id: "b.disable",
+        installed: true,
+        enabled: true,
+        canDisable: true,
         catalog: true
       }),
       plugin({
@@ -168,6 +186,8 @@ test("reconciles successful plugin actions before the next network snapshot", ()
     { id: "b.remove-catalog", operation: "remove", ok: true },
     { id: "b.remove-local", operation: "remove", ok: true },
     { id: "b.update", operation: "update", ok: true },
+    { id: "b.enable", operation: "enable", ok: true },
+    { id: "b.disable", operation: "disable", ok: true },
     { id: "b.failed", operation: "install", ok: false },
     { id: "b.okomart", operation: "update", ok: true },
     { id: "Omarchy shell", operation: "reload", ok: true }
@@ -175,7 +195,7 @@ test("reconciles successful plugin actions before the next network snapshot", ()
   const plain = JSON.parse(JSON.stringify(reconciled))
 
   assert.deepEqual(snapshot, before)
-  assert.equal(plain.plugins.length, 4)
+  assert.equal(plain.plugins.length, 6)
 
   const installed = plain.plugins.find(item => item.id === "b.install")
   assert.equal(installed.installed, true)
@@ -184,11 +204,14 @@ test("reconciles successful plugin actions before the next network snapshot", ()
     "https://github.com/example/install.git")
   assert.equal(installed.currentCommit, "install-head")
   assert.equal(installed.updateState, "up-to-date")
+  assert.equal(installed.enabled, true)
+  assert.equal(installed.canDisable, true)
 
   const removed = plain.plugins.find(item => item.id === "b.remove-catalog")
   assert.equal(removed.installed, false)
   assert.equal("installedPath" in removed, false)
   assert.equal("updateState" in removed, false)
+  assert.equal("enabled" in removed, false)
   assert.equal(plain.plugins.some(item => item.id === "b.remove-local"), false)
 
   const updated = plain.plugins.find(item => item.id === "b.update")
@@ -197,6 +220,9 @@ test("reconciles successful plugin actions before the next network snapshot", ()
   assert.equal(updated.updateState, "up-to-date")
   assert.equal(updated.versionUpdateAvailable, false)
   assert.equal(updated.safeUpdate, false)
+
+  assert.equal(plain.plugins.find(item => item.id === "b.enable").enabled, true)
+  assert.equal(plain.plugins.find(item => item.id === "b.disable").enabled, false)
 
   assert.equal(plain.plugins.find(item => item.id === "b.failed").installed, false)
   assert.equal(plain.self.installedVersion, "0.0.54")

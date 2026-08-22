@@ -140,6 +140,9 @@ function reconciledInstalledPlugin(plugin, operation) {
   var next = copyRecord(plugin)
   if (operation === "install") {
     next.installed = true
+    next.enabled = true
+    next.canDisable = !Array.isArray(next.kinds)
+      || next.kinds.indexOf("bar") < 0
     next.installedVersion = metadataValue(next.version, "")
     next.installedSourceUrl = metadataValue(next.sourceUrl, "")
     next.installType = "git"
@@ -163,6 +166,12 @@ function reconciledInstalledPlugin(plugin, operation) {
   return next
 }
 
+function reconciledEnabledPlugin(plugin, operation) {
+  var next = copyRecord(plugin)
+  next.enabled = operation === "enable"
+  return next
+}
+
 function reconciledRemovedPlugin(plugin) {
   if (plugin.catalog !== true) return null
 
@@ -173,7 +182,7 @@ function reconciledRemovedPlugin(plugin) {
   var installedFields = [
     "installedVersion", "installedPath", "installedSourceUrl", "installType",
     "updateState", "statusText", "currentCommit", "availableCommit",
-    "availableVersion", "dirty", "validationError"
+    "availableVersion", "dirty", "validationError", "enabled", "canDisable"
   ]
   for (var i = 0; i < installedFields.length; i++) delete next[installedFields[i]]
   return next
@@ -190,6 +199,7 @@ function reconcileActionSnapshot(snapshot, results, selfId) {
     var operation = isRecord(result) ? trimmedString(result.operation) : ""
     if (result && result.ok === true && id.length > 0
         && (operation === "install" || operation === "remove"
+          || operation === "enable" || operation === "disable"
           || operation === "update"))
       actions["$" + id] = operation
   }
@@ -203,6 +213,8 @@ function reconcileActionSnapshot(snapshot, results, selfId) {
     if (action === "remove") {
       var remaining = reconciledRemovedPlugin(plugin)
       if (remaining !== null) plugins.push(remaining)
+    } else if (action === "enable" || action === "disable") {
+      plugins.push(reconciledEnabledPlugin(plugin, action))
     } else if (action === "install" || action === "update") {
       plugins.push(reconciledInstalledPlugin(plugin, action))
     } else {
