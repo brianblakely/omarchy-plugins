@@ -9,6 +9,7 @@ ShellRoot {
   property var createdObjects: []
   property var detailsLayout: null
   property var pluginListContext: null
+  property var panelEntry: null
 
   function manifestData() {
     return {
@@ -41,6 +42,7 @@ ShellRoot {
 
     if ("manifest" in object) object.manifest = manifestData()
     if ("shell" in object) object.shell = mockShell
+    if (kind === "panel") panelEntry = object
 
     createdObjects.push(object)
     console.log("OKOMART_LOAD_OK " + kind)
@@ -125,6 +127,79 @@ ShellRoot {
     Qt.quit()
   }
 
+  function detailsSnapshot(generation, firstName) {
+    return {
+      ok: true,
+      snapshotId: generation,
+      activeGeneration: generation,
+      pending: null,
+      plugins: [
+        {
+          id: "test.details-1",
+          name: firstName,
+          description: "The active details row.",
+          sourceUrl: "https://example.com/test.details-1.git"
+        },
+        {
+          id: "test.details-2",
+          name: "Second plugin",
+          description: "A different details row.",
+          sourceUrl: "https://example.com/test.details-2.git"
+        }
+      ]
+    }
+  }
+
+  function failDetailsContext(message) {
+    console.error("OKOMART_DETAILS_CONTEXT_ERROR " + message)
+    Qt.quit()
+  }
+
+  function checkDetailsContext() {
+    panelEntry.setSnapshotData(detailsSnapshot("details-generation-1", "Original name"))
+    Qt.callLater(function() {
+      var original = panelEntry.selectedPlugin
+      if (!original || original.id !== "test.details-1") {
+        failDetailsContext("initial selection did not populate details")
+        return
+      }
+
+      panelEntry.lazyScreenshots = ["kept-image"]
+      panelEntry.lazyScreenshotRevision = "kept-revision"
+      panelEntry.setSnapshotData(detailsSnapshot("details-generation-2", "Updated name"))
+      Qt.callLater(function() {
+        if (panelEntry.selectedPlugin !== original
+            || panelEntry.selectedPlugin.name !== "Original name") {
+          failDetailsContext("list replacement refreshed the active plugin object")
+          return
+        }
+        if (panelEntry.lazyScreenshots.length !== 1
+            || panelEntry.lazyScreenshots[0] !== "kept-image"
+            || panelEntry.lazyScreenshotRevision !== "kept-revision") {
+          failDetailsContext("list replacement refreshed active plugin media")
+          return
+        }
+
+        panelEntry.selectedId = "test.details-2"
+        Qt.callLater(function() {
+          if (!panelEntry.selectedPlugin
+              || panelEntry.selectedPlugin === original
+              || panelEntry.selectedPlugin.id !== "test.details-2") {
+            failDetailsContext("an actual selection change did not refresh details")
+            return
+          }
+          if (panelEntry.lazyScreenshots.length !== 0
+              || panelEntry.lazyScreenshotRevision !== "") {
+            failDetailsContext("an actual selection change retained stale media")
+            return
+          }
+          console.log("OKOMART_DETAILS_CONTEXT_OK")
+          Qt.quit()
+        })
+      })
+    })
+  }
+
   function checkPluginListContext() {
     pluginListContext.syncCurrentIndex()
     Qt.callLater(function() {
@@ -168,7 +243,7 @@ ShellRoot {
           return
         }
         console.log("OKOMART_LIST_CONTEXT_OK")
-        Qt.quit()
+        root.checkDetailsContext()
       })
     })
   }

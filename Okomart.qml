@@ -59,6 +59,8 @@ Item {
   property var snapshot: ({})
   property var allPlugins: []
   property var visiblePlugins: []
+  property var selectedPlugin: null
+  property int selectedPluginSerial: 0
   property var updateRows: []
   property string pendingGeneration: ""
   property bool pendingReady: false
@@ -90,11 +92,6 @@ Item {
   readonly property real splitX: storefront.frameLeft
     + Math.max(Style.space(292), Math.min(Style.space(420),
       (storefront.frameRight - storefront.frameLeft) * 0.405))
-  readonly property var selectedPlugin: {
-    for (var i = 0; i < visiblePlugins.length; i++)
-      if (String(visiblePlugins[i].id || "") === selectedId) return visiblePlugins[i]
-    return null
-  }
   readonly property int safeUpdateCount: {
     var count = 0
     for (var i = 0; i < updateRows.length; i++)
@@ -127,8 +124,14 @@ Item {
     scheduleLazyScreenshots()
   }
   onSelectedIdChanged: {
-    resetLazyScreenshots()
-    scheduleLazyScreenshots()
+    selectedPluginSerial += 1
+    var selectionSerial = selectedPluginSerial
+    Qt.callLater(function() {
+      if (selectionSerial !== selectedPluginSerial) return
+      selectedPlugin = pluginForId(visiblePlugins, selectedId)
+      resetLazyScreenshots()
+      scheduleLazyScreenshots()
+    })
   }
   onWindowSideChanged: Qt.callLater(applyCurrentWindowSize)
   onQueryChanged: rebuildView()
@@ -136,6 +139,14 @@ Item {
 
   function runtimeVersion(_arg) {
     return manifest && manifest.version ? String(manifest.version) : ""
+  }
+
+  function pluginForId(plugins, requestedId) {
+    var values = Array.isArray(plugins) ? plugins : []
+    var id = String(requestedId || "")
+    for (var i = 0; i < values.length; i++)
+      if (String(values[i].id || "") === id) return values[i]
+    return null
   }
 
   function refreshInactiveBorderColor() {
@@ -434,8 +445,6 @@ Item {
   }
 
   function setSnapshotData(parsed) {
-    var previousGeneration = String(snapshot.activeGeneration || snapshot.snapshotId || "")
-    var nextGeneration = String(parsed.activeGeneration || parsed.snapshotId || "")
     snapshot = parsed
     allPlugins = Array.isArray(parsed.plugins) ? parsed.plugins : []
     updateRows = buildUpdates(parsed)
@@ -445,13 +454,9 @@ Item {
       && pendingGeneration)
     catalogLoaded = true
     rebuildView()
-    if (previousGeneration !== nextGeneration) {
-      resetLazyScreenshots()
-      Qt.callLater(scheduleLazyScreenshots)
-    }
   }
 
-  function loadCachedSnapshot(startBackground, checkAfterLoad, rediscoverScreenshots) {
+  function loadCachedSnapshot(startBackground, checkAfterLoad) {
     if (!helperPath) {
       bannerText = "Okomart could not determine its source directory."
       bannerUrgent = true
@@ -463,28 +468,23 @@ Item {
         || startBackground === true
       cacheProcess.queuedCheckAfterLoad = cacheProcess.queuedCheckAfterLoad
         || checkAfterLoad === true
-      cacheProcess.queuedRediscoverScreenshots = cacheProcess.queuedRediscoverScreenshots
-        || rediscoverScreenshots === true
       return
     }
     cacheLoading = true
     cachedOutput = ""
     cacheProcess.startBackground = startBackground === true
     cacheProcess.checkAfterLoad = checkAfterLoad === true
-    cacheProcess.rediscoverScreenshots = rediscoverScreenshots === true
     cacheProcess.command = [helperPath, "snapshot", sourceDir]
     cacheProcess.running = true
   }
 
-  function applyCachedSnapshot(raw, startBackground, checkAfterLoad, rediscoverScreenshots) {
+  function applyCachedSnapshot(raw, startBackground, checkAfterLoad) {
     var reloadQueued = cacheProcess.reloadQueued
     var queuedStartBackground = cacheProcess.queuedStartBackground
     var queuedCheckAfterLoad = cacheProcess.queuedCheckAfterLoad
-    var queuedRediscoverScreenshots = cacheProcess.queuedRediscoverScreenshots
     cacheProcess.reloadQueued = false
     cacheProcess.queuedStartBackground = false
     cacheProcess.queuedCheckAfterLoad = false
-    cacheProcess.queuedRediscoverScreenshots = false
     cacheLoading = false
     var parsed = null
     try { parsed = JSON.parse(String(raw || "")) } catch (e) {}
@@ -503,14 +503,9 @@ Item {
       maybeStartEnrichment()
       if (checkAfterLoad) checkUpdates()
     }
-    if (rediscoverScreenshots) {
-      resetLazyScreenshots()
-      Qt.callLater(scheduleLazyScreenshots)
-    }
     if (reloadQueued) {
       Qt.callLater(function() {
-        root.loadCachedSnapshot(queuedStartBackground, queuedCheckAfterLoad,
-          queuedRediscoverScreenshots)
+        root.loadCachedSnapshot(queuedStartBackground, queuedCheckAfterLoad)
       })
     }
   }
@@ -616,7 +611,7 @@ Item {
         || String(parsed.generation || "") !== generation
         || generation !== pendingGeneration) return
     pendingReady = false
-    loadCachedSnapshot(false, true, true)
+    loadCachedSnapshot(false, true)
   }
 
   function checkUpdates() {
@@ -696,7 +691,7 @@ Item {
         + (failedResults.length === 1 ? "." : "s.")
       : String(parsed.message || "Plugin operation completed.")
     bannerUrgent = failedResults.length > 0 || parsed.ok === false
-    loadCachedSnapshot(false, true, true)
+    loadCachedSnapshot(false, true)
     if (failedResults.length > 0)
       dialog.openFor("results", null, failedResults)
   }
@@ -808,17 +803,15 @@ Item {
     id: cacheProcess
     property bool startBackground: false
     property bool checkAfterLoad: false
-    property bool rediscoverScreenshots: false
     property bool reloadQueued: false
     property bool queuedStartBackground: false
     property bool queuedCheckAfterLoad: false
-    property bool queuedRediscoverScreenshots: false
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: root.cachedOutput = text
     }
     onExited: root.applyCachedSnapshot(
-      root.cachedOutput, startBackground, checkAfterLoad, rediscoverScreenshots)
+      root.cachedOutput, startBackground, checkAfterLoad)
   }
 
   Process {

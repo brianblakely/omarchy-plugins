@@ -51,6 +51,11 @@ Every list-model rebuild anchors the active plugin by id and restores that
 row's viewport offset after the replacement. Entries arriving ahead of it do
 not move the user's context or send the list back to the top.
 
+The details pane retains its current plugin object and media across those
+list-model replacements. A changed active plugin id is the only list-state
+transition that refreshes details, so request waves cannot reset details scroll
+or media state.
+
 When all manifest waves finish, HANCORE entries are ordered by
 `listingValidatedAt`. Timestamp enrichment for sources without that metadata is
 staged as the first pending update.

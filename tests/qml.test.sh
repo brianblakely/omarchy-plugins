@@ -94,7 +94,8 @@ run_entrypoint_load_test() {
   if ! grep -Fq 'OKOMART_LOAD_OK service' "$log" \
       || ! grep -Fq 'OKOMART_LOAD_OK panel' "$log" \
       || ! grep -Fq 'OKOMART_MOPED_LAYOUT_OK' "$log" \
-      || ! grep -Fq 'OKOMART_LIST_CONTEXT_OK' "$log"; then
+      || ! grep -Fq 'OKOMART_LIST_CONTEXT_OK' "$log" \
+      || ! grep -Fq 'OKOMART_DETAILS_CONTEXT_OK' "$log"; then
     sed -n '1,220p' "$log" >&2
     fail "Quickshell could not instantiate Okomart or verify its runtime layouts"
   fi
@@ -732,6 +733,21 @@ grep -Fq 'interval: 350' "$ROOT_DIR/Okomart.qml" \
   || fail "plugin screenshot discovery is not debounced for 350 ms"
 grep -Fq 'onSelectedIdChanged:' "$ROOT_DIR/Okomart.qml" \
   || fail "selection changes do not cancel lazy screenshot discovery"
+grep -Fq 'property var selectedPlugin: null' "$ROOT_DIR/Okomart.qml" \
+  || fail "plugin details are not held independently from list rows"
+grep -Fq 'selectedPlugin = pluginForId(visiblePlugins, selectedId)' \
+  "$ROOT_DIR/Okomart.qml" \
+  || fail "plugin details do not refresh when the active plugin changes"
+if grep -Fq 'readonly property var selectedPlugin:' "$ROOT_DIR/Okomart.qml"; then
+  fail "plugin details still rebind whenever the list model is replaced"
+fi
+if sed -n '/function setSnapshotData(parsed)/,/^  }/p' "$ROOT_DIR/Okomart.qml" \
+    | grep -Eq 'selectedPlugin[[:space:]]*=|resetLazyScreenshots'; then
+  fail "snapshot replacement still refreshes the active plugin details"
+fi
+if grep -Fq 'rediscoverScreenshots' "$ROOT_DIR/Okomart.qml"; then
+  fail "snapshot reloads can still force active plugin media to refresh"
+fi
 grep -Fq 'onNarrowShowingDetailsChanged:' "$ROOT_DIR/Okomart.qml" \
   || fail "narrow details lifecycle does not control screenshot discovery"
 grep -Fq 'if (mediaProcess.running) mediaProcess.running = false' \
