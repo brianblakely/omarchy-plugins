@@ -144,6 +144,8 @@ a private runtime session directory and materialize only matching image blobs.
 The directory is removed with the details session, and abandoned sessions are
 cleaned on the next launch. Installed screenshots use the same debounce.
 
-Each carousel instantiates only the current image and its wrapping previous and
-next neighbors. Images decode asynchronously with QML caching disabled. Tree,
+Each carousel incrementally retains the current image and its wrapping previous
+and next neighbors. A directly selected target is added while the outgoing
+image remains alive through the reveal, so switching never rebuilds the visible
+image delegate. Images decode asynchronously with QML caching disabled. Tree,
 rate-limit, clone, and image failures simply omit screenshots.

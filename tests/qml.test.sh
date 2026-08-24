@@ -95,6 +95,7 @@ run_entrypoint_load_test() {
       || ! grep -Fq 'OKOMART_LOAD_OK panel' "$log" \
       || ! grep -Fq 'OKOMART_MOPED_LAYOUT_OK' "$log" \
       || ! grep -Fq 'OKOMART_LIST_CONTEXT_OK' "$log" \
+      || ! grep -Fq 'OKOMART_CAROUSEL_CONTEXT_OK' "$log" \
       || ! grep -Fq 'OKOMART_DETAILS_CONTEXT_OK' "$log" \
       || ! grep -Fq 'OKOMART_WINDOW_MODE_OK' "$log"; then
     sed -n '1,220p' "$log" >&2
@@ -623,8 +624,18 @@ if grep -Fq 'asynchronous: false' "$ROOT_DIR/ScreenshotCarousel.qml" \
 fi
 grep -Fq 'id: imageRepeater' "$ROOT_DIR/ScreenshotCarousel.qml" \
   || fail "screenshot carousel cannot inspect its preloaded images"
-grep -Fq 'model: root.loadedIndices' "$ROOT_DIR/ScreenshotCarousel.qml" \
-  || fail "screenshot carousel instantiates more than the current neighbor window"
+grep -Fq 'model: loadedImageModel' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot carousel does not retain delegates across preload-window changes"
+grep -Fq 'function syncLoadedImages()' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot carousel cannot update its preload window incrementally"
+grep -Fq 'loadedImageModel.remove(row)' "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot carousel does not release images outside its preload window"
+grep -Fq 'loadedImageModel.append({ imageIndex: desiredIndex })' \
+  "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot carousel cannot preload a newly selected image"
+grep -Fq 'indices.indexOf(displayedIndex) < 0' \
+  "$ROOT_DIR/ScreenshotCarousel.qml" \
+  || fail "screenshot carousel can discard its outgoing image during selection"
 grep -Fq 'function imageForIndex(index)' "$ROOT_DIR/ScreenshotCarousel.qml" \
   || fail "screenshot selection does not wait for its decoded image"
 grep -Fq '!targetImage || targetImage.status !== Image.Ready' \

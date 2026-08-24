@@ -29,13 +29,22 @@ FocusScope {
   readonly property var loadedIndices: {
     if (imageCount < 1) return []
     var center = ((loadCenterIndex % imageCount) + imageCount) % imageCount
-    if (imageCount === 1) return [center]
-    if (imageCount === 2) return [center, (center + 1) % imageCount]
-    return [
-      (center - 1 + imageCount) % imageCount,
-      center,
-      (center + 1) % imageCount
-    ]
+    var indices = imageCount === 1
+      ? [center]
+      : (imageCount === 2
+        ? [center, (center + 1) % imageCount]
+        : [
+          (center - 1 + imageCount) % imageCount,
+          center,
+          (center + 1) % imageCount
+        ])
+    if (displayedIndex >= 0 && displayedIndex < imageCount
+        && indices.indexOf(displayedIndex) < 0)
+      indices.push(displayedIndex)
+    if (incomingIndex >= 0 && incomingIndex < imageCount
+        && indices.indexOf(incomingIndex) < 0)
+      indices.push(incomingIndex)
+    return indices
   }
   readonly property real imageHeight: imageHeightOverride >= 0
     ? imageHeightOverride : Math.max(Style.space(230), width * 0.56)
@@ -67,6 +76,25 @@ FocusScope {
       if (candidate && candidate.imageIndex === index) return candidate
     }
     return null
+  }
+
+  function syncLoadedImages() {
+    var desired = loadedIndices
+    for (var row = loadedImageModel.count - 1; row >= 0; row--) {
+      var loadedIndex = Number(loadedImageModel.get(row).imageIndex)
+      if (desired.indexOf(loadedIndex) < 0) loadedImageModel.remove(row)
+    }
+    for (var desiredRow = 0; desiredRow < desired.length; desiredRow++) {
+      var desiredIndex = Number(desired[desiredRow])
+      var found = false
+      for (var loadedRow = 0; loadedRow < loadedImageModel.count; loadedRow++) {
+        if (Number(loadedImageModel.get(loadedRow).imageIndex) === desiredIndex) {
+          found = true
+          break
+        }
+      }
+      if (!found) loadedImageModel.append({ imageIndex: desiredIndex })
+    }
   }
 
   function imageBecameReady(index) {
@@ -138,8 +166,12 @@ FocusScope {
   }
 
   onImagesChanged: reset()
+  onLoadedIndicesChanged: syncLoadedImages()
 
-  Component.onCompleted: transitionReady = true
+  Component.onCompleted: {
+    syncLoadedImages()
+    transitionReady = true
+  }
 
   Keys.onPressed: function(event) {
     if (imageCount <= 1) return
@@ -177,6 +209,10 @@ FocusScope {
     }
   }
 
+  ListModel {
+    id: loadedImageModel
+  }
+
   Item {
     id: carouselContent
     anchors.top: parent.top
@@ -186,11 +222,10 @@ FocusScope {
 
     Repeater {
       id: imageRepeater
-      model: root.loadedIndices
+      model: loadedImageModel
 
       delegate: Image {
-        required property var modelData
-        readonly property int imageIndex: Number(modelData)
+        required property int imageIndex
         anchors.fill: parent
         visible: imageIndex === root.displayedIndex
           || (imageIndex === root.incomingIndex

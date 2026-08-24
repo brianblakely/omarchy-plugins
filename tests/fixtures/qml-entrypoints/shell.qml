@@ -9,6 +9,7 @@ ShellRoot {
   property var createdObjects: []
   property var detailsLayout: null
   property var pluginListContext: null
+  property var screenshotCarouselContext: null
   property var panelEntry: null
   property var serviceEntry: null
 
@@ -194,6 +195,62 @@ ShellRoot {
     return true
   }
 
+  function loadScreenshotCarouselContext() {
+    var url = encodeURI("file://" + sourceDir + "/ScreenshotCarousel.qml")
+    var component = Qt.createComponent(url, Component.PreferSynchronous)
+    if (component.status !== Component.Ready) {
+      console.error("OKOMART_CAROUSEL_CONTEXT_ERROR: " + component.errorString())
+      return false
+    }
+
+    screenshotCarouselContext = component.createObject(host, {
+      width: 360,
+      height: 260
+    })
+    if (!screenshotCarouselContext) {
+      console.error("OKOMART_CAROUSEL_CONTEXT_ERROR: " + component.errorString())
+      return false
+    }
+
+    createdObjects.push(screenshotCarouselContext)
+    screenshotCarouselContext.images = [
+      sourceDir + "/assets/moped-source.svg",
+      sourceDir + "/preview.png",
+      sourceDir + "/assets/moped-source.svg",
+      sourceDir + "/preview.png"
+    ]
+    return true
+  }
+
+  function checkScreenshotCarouselContext() {
+    var outgoing = screenshotCarouselContext.imageForIndex(0)
+    var outgoingSource = outgoing ? String(outgoing.source) : ""
+    if (!outgoing || outgoingSource === "") {
+      console.error("OKOMART_CAROUSEL_CONTEXT_ERROR outgoing screenshot was not loaded: images="
+        + screenshotCarouselContext.imageCount + ", loaded="
+        + JSON.stringify(screenshotCarouselContext.loadedIndices)
+        + ", outgoing=" + outgoing + ", source=" + outgoingSource)
+      Qt.quit()
+      return
+    }
+
+    screenshotCarouselContext.select(2)
+    var retained = screenshotCarouselContext.imageForIndex(0)
+    var incoming = screenshotCarouselContext.imageForIndex(2)
+    if (retained !== outgoing || String(retained.source) !== outgoingSource) {
+      console.error("OKOMART_CAROUSEL_CONTEXT_ERROR selection rebuilt the outgoing screenshot")
+      Qt.quit()
+      return
+    }
+    if (!incoming || String(incoming.source) === "") {
+      console.error("OKOMART_CAROUSEL_CONTEXT_ERROR selected screenshot was not preloaded")
+      Qt.quit()
+      return
+    }
+    console.log("OKOMART_CAROUSEL_CONTEXT_OK")
+    root.checkPluginListContext()
+  }
+
   function failPluginListContext(message) {
     console.error("OKOMART_LIST_CONTEXT_ERROR " + message)
     Qt.quit()
@@ -350,7 +407,7 @@ ShellRoot {
             return
           }
           console.log("OKOMART_MOPED_LAYOUT_OK")
-          root.checkPluginListContext()
+          root.checkScreenshotCarouselContext()
         })
       })
     })
@@ -399,7 +456,8 @@ ShellRoot {
       root.loadEntry("Service.qml", "service")
       root.loadEntry("Okomart.qml", "panel")
       if (root.checkWindowModeEvents()
-          && root.loadDetailsLayout() && root.loadPluginListContext())
+          && root.loadDetailsLayout() && root.loadPluginListContext()
+          && root.loadScreenshotCarouselContext())
         root.checkDetailsLayout()
       else Qt.callLater(Qt.quit)
     }
