@@ -71,6 +71,7 @@ init_paths() {
   ACTION_STATE="$STATE_ROOT/action.json"
   ACTION_LOCK="$STATE_ROOT/action.lock"
   ACTION_LOG="$STATE_ROOT/action.log"
+  WINDOW_MODE_STATE="$STATE_ROOT/window-mode.json"
   local runtime_base
   if [[ -n ${XDG_RUNTIME_DIR:-} ]]; then
     runtime_base="$(realpath -m -- "$XDG_RUNTIME_DIR")"
@@ -120,6 +121,38 @@ atomic_write() {
     rm -f -- "$tmp"
     return 1
   fi
+}
+
+read_window_mode() {
+  local mode=""
+  if [[ -f $WINDOW_MODE_STATE && ! -L $WINDOW_MODE_STATE ]]; then
+    mode="$(jq -er '
+      select(type == "object" and .schemaVersion == 1)
+      | select(.mode == "floating" or .mode == "tiled")
+      | .mode
+    ' "$WINDOW_MODE_STATE" 2>/dev/null || true)"
+  fi
+  if [[ $mode == floating || $mode == tiled ]]; then
+    printf '%s\n' "$mode"
+  else
+    printf 'floating\n'
+  fi
+}
+
+remember_window_mode_command() {
+  local mode="${1:-}" payload
+  (( $# == 1 )) && [[ $mode == floating || $mode == tiled ]] || {
+    json_error "Usage: okomart remember-window-mode <floating|tiled>"
+    return 2
+  }
+
+  payload="$(jq -cn --arg mode "$mode" \
+    '{schemaVersion:1,mode:$mode}')"
+  if ! atomic_write "$WINDOW_MODE_STATE" "$payload"; then
+    json_error "Could not remember Okomart's window mode"
+    return 1
+  fi
+  jq -cn --arg mode "$mode" '{ok:true,mode:$mode}'
 }
 
 safe_remove_legacy_path() {
@@ -282,7 +315,7 @@ prepare_window_command() {
   local side position="${1:-}" bar_size="${2:-}"
   local monitor_output gap_output monitor_geometry gap
   local monitor_name monitor_scale screen_width screen_height transform
-  local available_width available_height
+  local available_width available_height window_mode
   local -a monitor_fields=()
 
   require_tool hyprctl
@@ -381,7 +414,14 @@ prepare_window_command() {
     return 1
   }
   local rule output="" status=0
-  rule="hl.window_rule({ name = \"okomart-floating-window\", match = { class = \"^org.quickshell$\", title = \"^Okomart$\" }, float = true, center = true, size = { $side, $side }, border_size = 0 })"
+  window_mode="$(read_window_mode)"
+  # Retain the established rule name so an in-session plugin update replaces
+  # the previous floating-only rule instead of leaving two matching rules.
+  if [[ $window_mode == tiled ]]; then
+    rule="hl.window_rule({ name = \"okomart-floating-window\", match = { class = \"^org.quickshell$\", title = \"^Okomart$\" }, float = false, border_size = 0 })"
+  else
+    rule="hl.window_rule({ name = \"okomart-floating-window\", match = { class = \"^org.quickshell$\", title = \"^Okomart$\" }, float = true, center = true, size = { $side, $side }, border_size = 0 })"
+  fi
   output="$(hyprctl eval "$rule" 2>&1)" || status=$?
   if (( status != 0 )) || [[ $output != "ok" ]]; then
     json_error "Could not register the Okomart window rule"
@@ -398,9 +438,11 @@ prepare_window_command() {
     --arg barPosition "$position" \
     --argjson barSize "$bar_size" \
     --argjson transform "$transform" \
+    --arg mode "$window_mode" \
     '{
       ok:true,
       prepared:true,
+      mode:$mode,
       width:$side,
       height:$side,
       monitor:$monitor,
@@ -3385,16 +3427,22 @@ action_command() {
 usage_json() {
   jq -cn '{
     ok:false,
-    error:"Usage: okomart snapshot <source-dir> | refresh <source-dir> [--force] [--progress] | enrich <generation> | promote <generation> | check-updates <source-dir> | screenshots <descriptor-json> <session-id> | cleanup-media <session-id|--all> | action <source-dir> <install|remove|enable|disable|update|update-all> <id-or-empty> <generation> <selected-update-ids-json-for-update-all> | status | ack <action-id>"
+    error:"Usage: okomart prepare-window <bar-position> <bar-size> | remember-window-mode <floating|tiled> | snapshot <source-dir> | refresh <source-dir> [--force] [--progress] | enrich <generation> | promote <generation> | check-updates <source-dir> | screenshots <descriptor-json> <session-id> | cleanup-media <session-id|--all> | action <source-dir> <install|remove|enable|disable|update|update-all> <id-or-empty> <generation> <selected-update-ids-json-for-update-all> | status | ack <action-id>"
   }'
 }
 
 main() {
   local command="${1:-}"
-  if [[ $command == prepare-window ]]; then
+  if [[ $command == prepare-window || $command == remember-window-mode ]]; then
     require_tool jq
+    require_tool realpath
+    init_paths
     shift
-    prepare_window_command "$@"
+    if [[ $command == prepare-window ]]; then
+      prepare_window_command "$@"
+    else
+      remember_window_mode_command "$@"
+    fi
     return
   fi
 

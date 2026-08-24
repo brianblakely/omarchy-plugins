@@ -35,7 +35,7 @@ jq -e '
   .schemaVersion == 1
   and .id == "b.okomart"
   and .name == "Okomart"
-  and .version == "0.0.78"
+  and .version == "0.0.79"
   and .author == "Brian Blakely"
   and .license == "MIT"
   and .kinds == ["service", "panel"]
@@ -50,8 +50,14 @@ grep -Fq 'Quickshell.execDetached([' "$SERVICE" \
 grep -Fq 'Quickshell.execDetached([helperPath, "_recover-self-update", sourceDir])' \
   "$SERVICE" \
   || fail "service reload does not recover a completed Okomart self-update"
-grep -Fq 'onHelperPathChanged: recoverSelfUpdate()' "$SERVICE" \
-  || fail "self-update recovery does not wait for the injected manifest"
+if ! sed -n '/onHelperPathChanged: {/,/^  }/p' "$SERVICE" \
+    | grep -Fq 'recoverSelfUpdate()'; then
+  fail "self-update recovery does not wait for the injected manifest"
+fi
+if ! sed -n '/onHelperPathChanged: {/,/^  }/p' "$SERVICE" \
+    | grep -Fq 'flushWindowMode()'; then
+  fail "queued window mode does not wait for the injected manifest"
+fi
 grep -Fq 'X-Okomart-Managed=true' "$ASSET" \
   || fail "desktop entry is missing its ownership marker"
 grep -Fq 'omarchy-shell shell summon b.okomart' "$ASSET" \

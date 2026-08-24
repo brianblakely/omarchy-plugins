@@ -11,6 +11,21 @@ cache root and removes every other file, directory, or symlink there. Catalog
 locking lives under the state root, while refresh, enrichment, and GitHub tree
 scratch data use the private runtime directory and are removed after use.
 
+## Window Mode
+
+The enabled Okomart service observes Hyprland's `openwindow`,
+`changefloatingmode`, and `closewindow` events for the Quickshell window titled
+`Okomart`. Mode writes are serialized so rapid toggles cannot finish out of
+order. The last observed value is atomically stored as a small versioned JSON
+document at `$XDG_STATE_HOME/okomart/window-mode.json`, falling back to
+`~/.local/state/okomart/window-mode.json`.
+
+Before each map, the helper reads that document and registers the named
+Okomart rule as either floating or tiled. A missing, malformed, or symlinked
+state file falls back to floating mode. Floating mode keeps the focused-screen
+square sizing and centering behavior; tiled mode omits those floating-only
+rule properties so Hyprland's active layout owns placement.
+
 ## Open, Refresh, And Activation
 
 Opening the storefront reads `active` and installed manifests without network

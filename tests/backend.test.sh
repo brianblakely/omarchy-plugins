@@ -224,9 +224,73 @@ chmod 755 "$TMP/mock-bin/curl"
 export PATH="$TMP/mock-bin:$PATH"
 
 "$OKOMART" prepare-window top 26 >"$TMP/window.json"
-assert_jq "$TMP/window.json" '.ok and .prepared and .width == 1044
+assert_jq "$TMP/window.json" '.ok and .prepared and .mode == "floating"
+  and .width == 1044
   and .height == 1044 and .monitor == "fixture"' \
-  'window preparation still registers focused-monitor square geometry'
+  'window preparation defaults to focused-monitor floating geometry'
+grep -Fq 'float = true' "$MOCK_LOG" \
+  || fail 'first-run window preparation did not request floating mode'
+grep -Fq 'center = true' "$MOCK_LOG" \
+  || fail 'floating window preparation did not center Okomart'
+
+"$OKOMART" remember-window-mode tiled >"$TMP/remember-tiled.json"
+assert_jq "$TMP/remember-tiled.json" '.ok and .mode == "tiled"' \
+  'window mode accepts a tiled preference'
+assert_jq "$XDG_STATE_HOME/okomart/window-mode.json" \
+  '.schemaVersion == 1 and .mode == "tiled"' \
+  'window mode persists under Okomart state'
+[[ $(stat -c '%a' "$XDG_STATE_HOME/okomart/window-mode.json") == 600 ]] \
+  || fail 'remembered window mode is not private'
+pass 'remembered window mode is private'
+
+: >"$MOCK_LOG"
+"$OKOMART" prepare-window top 26 >"$TMP/tiled-window.json"
+assert_jq "$TMP/tiled-window.json" '.ok and .prepared and .mode == "tiled"
+  and .width == 1044 and .height == 1044' \
+  'window preparation restores tiled mode'
+grep -Fq 'float = false' "$MOCK_LOG" \
+  || fail 'remembered tiled mode did not register a tiled window rule'
+if grep -Fq 'center = true' "$MOCK_LOG" || grep -Fq 'size = {' "$MOCK_LOG"; then
+  fail 'tiled window preparation retained floating-only placement rules'
+fi
+pass 'tiled window preparation omits floating-only placement rules'
+
+if "$OKOMART" remember-window-mode maximized >"$TMP/invalid-window-mode.json"; then
+  fail 'unsupported window mode was remembered'
+fi
+assert_jq "$TMP/invalid-window-mode.json" '.ok == false' \
+  'unsupported window mode is rejected'
+assert_jq "$XDG_STATE_HOME/okomart/window-mode.json" '.mode == "tiled"' \
+  'invalid input leaves the remembered window mode unchanged'
+
+printf '%s\n' '{"schemaVersion":1,"mode":"maximized"}' \
+  >"$XDG_STATE_HOME/okomart/window-mode.json"
+: >"$MOCK_LOG"
+"$OKOMART" prepare-window top 26 >"$TMP/invalid-state-window.json"
+assert_jq "$TMP/invalid-state-window.json" '.ok and .mode == "floating"' \
+  'invalid persisted state falls back to floating'
+grep -Fq 'float = true' "$MOCK_LOG" \
+  || fail 'invalid persisted state did not register the floating fallback'
+
+mkdir -p -- "$TMP/outside-window-state"
+printf '%s\n' '{"schemaVersion":1,"mode":"tiled"}' \
+  >"$TMP/outside-window-state/window-mode.json"
+rm -f -- "$XDG_STATE_HOME/okomart/window-mode.json"
+ln -s -- "$TMP/outside-window-state/window-mode.json" \
+  "$XDG_STATE_HOME/okomart/window-mode.json"
+: >"$MOCK_LOG"
+"$OKOMART" prepare-window top 26 >"$TMP/symlink-state-window.json"
+assert_jq "$TMP/symlink-state-window.json" '.ok and .mode == "floating"' \
+  'symlinked persisted state falls back to floating'
+
+"$OKOMART" remember-window-mode floating >"$TMP/remember-floating.json"
+assert_jq "$TMP/remember-floating.json" '.ok and .mode == "floating"' \
+  'window mode can return to floating'
+[[ -f $XDG_STATE_HOME/okomart/window-mode.json \
+  && ! -L $XDG_STATE_HOME/okomart/window-mode.json ]] \
+  || fail 'window-mode write did not replace the state symlink itself'
+assert_jq "$TMP/outside-window-state/window-mode.json" '.mode == "tiled"' \
+  'window-mode writes never follow a state symlink'
 : >"$MOCK_LOG"
 
 SOURCE="$TMP/source"

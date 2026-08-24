@@ -95,7 +95,8 @@ run_entrypoint_load_test() {
       || ! grep -Fq 'OKOMART_LOAD_OK panel' "$log" \
       || ! grep -Fq 'OKOMART_MOPED_LAYOUT_OK' "$log" \
       || ! grep -Fq 'OKOMART_LIST_CONTEXT_OK' "$log" \
-      || ! grep -Fq 'OKOMART_DETAILS_CONTEXT_OK' "$log"; then
+      || ! grep -Fq 'OKOMART_DETAILS_CONTEXT_OK' "$log" \
+      || ! grep -Fq 'OKOMART_WINDOW_MODE_OK' "$log"; then
     sed -n '1,220p' "$log" >&2
     fail "Quickshell could not instantiate Okomart or verify its runtime layouts"
   fi
@@ -153,6 +154,16 @@ if ! sed -n '/function runtimeVersion(_arg)/,/^  }/p' "$ROOT_DIR/Okomart.qml" \
     | grep -Fq 'String(manifest.version)'; then
   fail "runtime version probe does not report the loaded manifest"
 fi
+grep -Fq 'import Quickshell.Hyprland' "$ROOT_DIR/Service.qml" \
+  || fail "Okomart cannot observe Hyprland window-mode changes"
+grep -Fq 'name === "changefloatingmode"' "$ROOT_DIR/Service.qml" \
+  || fail "Okomart does not detect floating/tiling changes"
+grep -Fq '"remember-window-mode",' "$ROOT_DIR/Service.qml" \
+  || fail "Okomart does not persist the observed window mode"
+grep -Fq 'if (!helperPath || windowModeWriter.running' "$ROOT_DIR/Service.qml" \
+  || fail "window-mode writes are not serialized"
+grep -Fq 'function onRawEvent(event)' "$ROOT_DIR/Service.qml" \
+  || fail "the Okomart service does not subscribe to Hyprland events"
 grep -Fq 'import QtQuick.Shapes' "$ROOT_DIR/StorefrontFrame.qml" \
   || fail "storefront is not drawn with QtQuick.Shapes"
 grep -Fq 'PathSvg { path: root.roofPath() }' "$ROOT_DIR/StorefrontFrame.qml" \

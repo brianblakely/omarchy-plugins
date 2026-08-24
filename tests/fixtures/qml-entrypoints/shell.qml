@@ -10,6 +10,7 @@ ShellRoot {
   property var detailsLayout: null
   property var pluginListContext: null
   property var panelEntry: null
+  property var serviceEntry: null
 
   function manifestData() {
     return {
@@ -43,9 +44,52 @@ ShellRoot {
     if ("manifest" in object) object.manifest = manifestData()
     if ("shell" in object) object.shell = mockShell
     if (kind === "panel") panelEntry = object
+    if (kind === "service") serviceEntry = object
 
     createdObjects.push(object)
     console.log("OKOMART_LOAD_OK " + kind)
+  }
+
+  function checkWindowModeEvents() {
+    if (!serviceEntry) {
+      console.error("OKOMART_WINDOW_MODE_ERROR service entry is unavailable")
+      return false
+    }
+
+    // Keep the test local: without an injected manifest the service queues the
+    // observed mode but cannot launch its persistence helper.
+    serviceEntry.manifest = null
+    serviceEntry.handleHyprlandEvent({
+      name: "openwindow",
+      data: "0xABC,1,org.quickshell,Okomart"
+    })
+    if (serviceEntry.okomartWindowAddress !== "abc") {
+      console.error("OKOMART_WINDOW_MODE_ERROR open event did not track Okomart")
+      return false
+    }
+    serviceEntry.handleHyprlandEvent({
+      name: "changefloatingmode",
+      data: "abc,0"
+    })
+    if (serviceEntry.pendingWindowMode !== "tiled") {
+      console.error("OKOMART_WINDOW_MODE_ERROR tiled event was not queued")
+      return false
+    }
+    serviceEntry.handleHyprlandEvent({
+      name: "changefloatingmode",
+      data: "0xABC,1"
+    })
+    if (serviceEntry.pendingWindowMode !== "floating") {
+      console.error("OKOMART_WINDOW_MODE_ERROR latest event did not win")
+      return false
+    }
+    serviceEntry.handleHyprlandEvent({ name: "closewindow", data: "abc" })
+    if (serviceEntry.okomartWindowAddress !== "") {
+      console.error("OKOMART_WINDOW_MODE_ERROR close event retained the window")
+      return false
+    }
+    console.log("OKOMART_WINDOW_MODE_OK")
+    return true
   }
 
   function loadDetailsLayout() {
@@ -303,7 +347,8 @@ ShellRoot {
     onTriggered: {
       root.loadEntry("Service.qml", "service")
       root.loadEntry("Okomart.qml", "panel")
-      if (root.loadDetailsLayout() && root.loadPluginListContext())
+      if (root.checkWindowModeEvents()
+          && root.loadDetailsLayout() && root.loadPluginListContext())
         root.checkDetailsLayout()
       else Qt.callLater(Qt.quit)
     }
