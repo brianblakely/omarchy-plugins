@@ -26,8 +26,9 @@ rule as either floating or tiled. A missing, malformed, or unsupported setting
 falls back to floating mode. On the first open, the service writes that
 effective default back through the same inline shell setting, so the initial
 mode is durable even if the user never toggles it. Floating mode keeps the
-focused-screen square sizing and centering behavior; tiled mode omits those
-floating-only rule properties so Hyprland's active layout owns placement.
+focused-screen square sizing and centering behavior; tiled mode registers
+Hyprland's explicit `tile` effect and omits floating-only rule properties so
+the active layout owns placement.
 
 ## Open, Refresh, And Activation
 

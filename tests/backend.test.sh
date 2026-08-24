@@ -252,12 +252,13 @@ assert_jq "$SHELL_CONFIG" '
 assert_jq "$TMP/tiled-window.json" '.ok and .prepared and .mode == "tiled"
   and .width == 1044 and .height == 1044' \
   'window preparation restores tiled mode'
-grep -Fq 'float = false' "$MOCK_LOG" \
-  || fail 'remembered tiled mode did not register a tiled window rule'
-if grep -Fq 'center = true' "$MOCK_LOG" || grep -Fq 'size = {' "$MOCK_LOG"; then
+grep -Fq 'tile = true' "$MOCK_LOG" \
+  || fail 'remembered tiled mode did not register Hyprland tile mode'
+if grep -Fq 'float = ' "$MOCK_LOG" || grep -Fq 'center = true' "$MOCK_LOG" \
+    || grep -Fq 'size = {' "$MOCK_LOG"; then
   fail 'tiled window preparation retained floating-only placement rules'
 fi
-pass 'tiled window preparation omits floating-only placement rules'
+pass 'first-use floating rule is replaced by an explicit tiled rule'
 
 jq '(.plugins[] | select(.id == "b.okomart")).windowMode = "maximized"' \
   "$SHELL_CONFIG" >"$TMP/shell-invalid-mode.json"

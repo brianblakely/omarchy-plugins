@@ -406,7 +406,7 @@ prepare_window_command() {
   # Retain the established rule name so an in-session plugin update replaces
   # the previous floating-only rule instead of leaving two matching rules.
   if [[ $window_mode == tiled ]]; then
-    rule="hl.window_rule({ name = \"okomart-floating-window\", match = { class = \"^org.quickshell$\", title = \"^Okomart$\" }, float = false, border_size = 0 })"
+    rule="hl.window_rule({ name = \"okomart-floating-window\", match = { class = \"^org.quickshell$\", title = \"^Okomart$\" }, tile = true, border_size = 0 })"
   else
     rule="hl.window_rule({ name = \"okomart-floating-window\", match = { class = \"^org.quickshell$\", title = \"^Okomart$\" }, float = true, center = true, size = { $side, $side }, border_size = 0 })"
   fi
