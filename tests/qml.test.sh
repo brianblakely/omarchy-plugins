@@ -296,6 +296,10 @@ grep -Fq 'viewportOffset: offset' "$ROOT_DIR/PluginList.qml" \
   || fail "plugin-list refreshes do not retain the active row's viewport offset"
 grep -Fq 'list.contentY = Math.max(minimumContentY' "$ROOT_DIR/PluginList.qml" \
   || fail "plugin-list refreshes do not restore their anchored scroll position"
+if sed -n '/function endModelReset()/,/^  }/p' "$ROOT_DIR/PluginList.qml" \
+    | grep -Fq 'Qt.callLater'; then
+  fail "plugin-list viewport restoration is deferred past the model replacement"
+fi
 grep -Fq 'pluginList.beginModelReset()' "$ROOT_DIR/Okomart.qml" \
   || fail "storefront model replacement does not capture list context"
 grep -Fq 'pluginList.endModelReset()' "$ROOT_DIR/Okomart.qml" \

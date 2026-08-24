@@ -75,8 +75,9 @@ last complete wave; a later successful refresh replaces that partial catalog
 with the complete generation directly.
 
 Every list-model rebuild anchors the active plugin by id and restores that
-row's viewport offset after the replacement. Entries arriving ahead of it do
-not move the user's context or send the list back to the top.
+row's viewport offset in the same GUI event turn as the replacement. Entries
+arriving ahead of it do not move the user's context or expose the list's
+intermediate top position.
 
 The details pane retains its current plugin object and media across those
 list-model replacements. A changed active plugin id is the only list-state

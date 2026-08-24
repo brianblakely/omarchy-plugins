@@ -299,6 +299,14 @@ ShellRoot {
       pluginListContext.beginModelReset()
       pluginListContext.plugins = pluginRows(1)
       pluginListContext.endModelReset()
+      var immediate = pluginListContext.captureViewportAnchor()
+      if (!immediate || immediate.pluginId !== before.pluginId
+          || immediate.hasViewportOffset !== true
+          || Math.abs(immediate.viewportOffset - before.viewportOffset) > 0.75) {
+        failPluginListContext("viewport restoration was deferred past the model reset: "
+          + JSON.stringify(immediate))
+        return
+      }
       pluginListContext.beginModelReset()
       pluginListContext.plugins = pluginRows(3)
       pluginListContext.endModelReset()

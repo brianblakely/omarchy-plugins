@@ -15,7 +15,6 @@ FocusScope {
   property real scrollNubRightOffset: 0
   property bool viewportRestorePending: false
   property var viewportAnchor: null
-  property int viewportRestoreSerial: 0
 
   signal selected(string pluginId)
   signal activated(var plugin)
@@ -70,7 +69,6 @@ FocusScope {
   function beginModelReset() {
     if (!viewportRestorePending) viewportAnchor = captureViewportAnchor()
     viewportRestorePending = true
-    viewportRestoreSerial += 1
   }
 
   function restoreViewportAnchor(anchor) {
@@ -115,19 +113,14 @@ FocusScope {
 
   function endModelReset() {
     if (!viewportRestorePending) {
-      Qt.callLater(syncCurrentIndex)
+      syncCurrentIndex()
       return
     }
 
-    var restoreSerial = viewportRestoreSerial
     var anchor = viewportAnchor
-    Qt.callLater(function() {
-      if (!viewportRestorePending || restoreSerial !== viewportRestoreSerial)
-        return
-      restoreViewportAnchor(anchor)
-      viewportAnchor = null
-      viewportRestorePending = false
-    })
+    restoreViewportAnchor(anchor)
+    viewportAnchor = null
+    viewportRestorePending = false
   }
 
   function syncCurrentIndex() {
