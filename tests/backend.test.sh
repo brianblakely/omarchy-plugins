@@ -110,6 +110,8 @@ cat >"$TMP/mock-bin/hyprctl" <<'MOCK_HYPR'
 set -euo pipefail
 if [[ $* == 'monitors -j' ]]; then
   printf '%s\n' '[{"focused":true,"name":"fixture","width":1920,"height":1080,"scale":1,"transform":0}]'
+elif [[ $* == 'clients -j' ]]; then
+  printf '%s\n' '[{"address":"0xabc","mapped":true,"class":"org.quickshell","title":"Okomart","floating":false}]'
 elif [[ $* == '-j getoption general:gaps_out' ]]; then
   printf '%s\n' '{"custom":"10"}'
 elif [[ ${1:-} == eval ]]; then
@@ -236,8 +238,39 @@ assert_jq "$TMP/window.json" '.ok and .prepared and .mode == "floating"
   'window preparation defaults to focused-monitor floating geometry'
 grep -Fq 'float = true' "$MOCK_LOG" \
   || fail 'first-run window preparation did not request floating mode'
+grep -Fq 'name = "okomart-floating-window", enabled = false' "$MOCK_LOG" \
+  || fail 'first-run window preparation did not disable the legacy shared rule'
+grep -Fq 'b_okomart_window_rule_floating:set_enabled(true)' "$MOCK_LOG" \
+  || fail 'first-run window preparation did not enable the floating rule'
+grep -Fq 'b_okomart_window_rule_tiled:set_enabled(false)' "$MOCK_LOG" \
+  || fail 'first-run window preparation did not disable the tiled rule'
 grep -Fq 'center = true' "$MOCK_LOG" \
   || fail 'floating window preparation did not center Okomart'
+
+: >"$MOCK_LOG"
+"$OKOMART" apply-window-mode 1044 >"$TMP/applied-floating-window.json"
+assert_jq "$TMP/applied-floating-window.json" '
+  .ok and .applied and .mode == "floating"
+  and .address == "0xabc" and .size == 1044' \
+  'first mapped window is forced to the floating default'
+grep -Fq 'action = "enable"' "$MOCK_LOG" \
+  || fail 'first mapped window did not enable floating mode'
+grep -Fq 'hl.dsp.window.resize({ x = 1044, y = 1044' "$MOCK_LOG" \
+  || fail 'first mapped floating window did not restore square geometry'
+grep -Fq 'hl.dsp.window.center({ window = "address:0xabc" })' "$MOCK_LOG" \
+  || fail 'first mapped floating window was not centered'
+
+: >"$MOCK_LOG"
+"$OKOMART" apply-window-mode 0 >"$TMP/service-floating-window.json"
+assert_jq "$TMP/service-floating-window.json" '
+  .ok and .applied and .mode == "floating" and .size == 0' \
+  'service map event can enforce floating mode without geometry'
+grep -Fq 'action = "enable"' "$MOCK_LOG" \
+  || fail 'service map event did not enable floating mode'
+if grep -Fq 'hl.dsp.window.resize' "$MOCK_LOG" \
+    || grep -Fq 'hl.dsp.window.center' "$MOCK_LOG"; then
+  fail 'mode-only service enforcement changed floating geometry'
+fi
 
 jq '(.plugins[] | select(.id == "b.okomart")).windowMode = "tiled"' \
   "$SHELL_CONFIG" >"$TMP/shell-tiled.json"
@@ -254,11 +287,24 @@ assert_jq "$TMP/tiled-window.json" '.ok and .prepared and .mode == "tiled"
   'window preparation restores tiled mode'
 grep -Fq 'tile = true' "$MOCK_LOG" \
   || fail 'remembered tiled mode did not register Hyprland tile mode'
-if grep -Fq 'float = ' "$MOCK_LOG" || grep -Fq 'center = true' "$MOCK_LOG" \
-    || grep -Fq 'size = {' "$MOCK_LOG"; then
-  fail 'tiled window preparation retained floating-only placement rules'
+grep -Fq 'b_okomart_window_rule_floating:set_enabled(false)' "$MOCK_LOG" \
+  || fail 'remembered tiled mode did not disable the floating rule'
+grep -Fq 'b_okomart_window_rule_tiled:set_enabled(true)' "$MOCK_LOG" \
+  || fail 'remembered tiled mode did not enable the tiled rule'
+pass 'window preparation exclusively enables the persisted mode rule'
+
+: >"$MOCK_LOG"
+"$OKOMART" apply-window-mode 1044 >"$TMP/applied-tiled-window.json"
+assert_jq "$TMP/applied-tiled-window.json" '
+  .ok and .applied and .mode == "tiled"
+  and .address == "0xabc" and .size == 1044' \
+  'next mapped window is forced to the persisted tiled mode'
+grep -Fq 'action = "disable"' "$MOCK_LOG" \
+  || fail 'next mapped window did not disable floating mode'
+if grep -Fq 'hl.dsp.window.resize' "$MOCK_LOG" \
+    || grep -Fq 'hl.dsp.window.center' "$MOCK_LOG"; then
+  fail 'tiled mapped-window enforcement retained floating geometry actions'
 fi
-pass 'first-use floating rule is replaced by an explicit tiled rule'
 
 jq '(.plugins[] | select(.id == "b.okomart")).windowMode = "maximized"' \
   "$SHELL_CONFIG" >"$TMP/shell-invalid-mode.json"

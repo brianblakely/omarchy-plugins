@@ -126,6 +126,16 @@ grep -Fq 'parsed.prepared === true' \
   || fail "Okomart does not verify that its map-time rule was registered"
 grep -Fq 'function showPreparedWindow()' "$ROOT_DIR/Okomart.qml" \
   || fail "Okomart is missing its post-preparation map step"
+grep -Fq '"apply-window-mode",' "$ROOT_DIR/Okomart.qml" \
+  || fail "Okomart does not enforce the persisted mode after its first map"
+if ! sed -n '/function open(payloadJson)/,/^  }/p' "$ROOT_DIR/Okomart.qml" \
+    | grep -Fq 'enforceMappedWindowMode()'; then
+  fail "Okomart does not launch live mode enforcement on every open"
+fi
+if ! sed -n '/function applyWindowRule(raw, exitCode)/,/^  }/p' "$ROOT_DIR/Okomart.qml" \
+    | grep -Fq 'enforceMappedWindowMode()'; then
+  fail "Okomart does not launch live mode enforcement after preparation"
+fi
 if sed -n '/function open(payloadJson)/,/^  }/p' "$ROOT_DIR/Okomart.qml" \
     | grep -Fq 'window.visible = true'; then
   fail "Okomart maps before its floating rule is prepared"
@@ -164,6 +174,8 @@ grep -Fq 'settings.windowMode = mode' "$ROOT_DIR/Service.qml" \
   || fail "Okomart does not store window mode as an inline plugin setting"
 grep -Fq 'ensureWindowModeSetting()' "$ROOT_DIR/Service.qml" \
   || fail "Okomart does not persist the effective mode on first open"
+grep -Fq '[helperPath, "apply-window-mode", "0"]' "$ROOT_DIR/Service.qml" \
+  || fail "Okomart's service does not enforce mode from the mapped-window event"
 if grep -Fq 'remember-window-mode' "$ROOT_DIR/Service.qml"; then
   fail "Okomart still launches a separate window-mode persistence helper"
 fi

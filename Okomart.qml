@@ -206,6 +206,7 @@ Item {
     loadCachedSnapshot(true)
     windowOpenPending = true
     prepareFloatingWindow()
+    enforceMappedWindowMode()
   }
 
   function close() {
@@ -248,6 +249,7 @@ Item {
         && preparedWidth > 0 && preparedWidth === preparedHeight) {
       windowSide = preparedWidth
       applyCurrentWindowSize()
+      enforceMappedWindowMode()
       showPreparedWindow()
       return
     }
@@ -270,6 +272,15 @@ Item {
     window.visible = true
     scheduleLazyScreenshots()
     Qt.callLater(focusInitialPluginList)
+  }
+
+  function enforceMappedWindowMode() {
+    if (!helperPath) return
+    Quickshell.execDetached([
+      helperPath,
+      "apply-window-mode",
+      String(windowSide)
+    ])
   }
 
   function applyCurrentWindowSize() {

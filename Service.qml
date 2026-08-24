@@ -110,6 +110,13 @@ Item {
     rememberWindowMode("floating")
   }
 
+  function enforceMappedWindowMode() {
+    if (!helperPath) return
+    // The service receives Hyprland's real map event, so this mode-only pass
+    // closes the first-use race even if the panel toplevel predated its rule.
+    Quickshell.execDetached([helperPath, "apply-window-mode", "0"])
+  }
+
   function trackActiveOkomartWindow() {
     var toplevel = Hyprland.activeToplevel
     if (!toplevel) return
@@ -127,6 +134,7 @@ Item {
       if (isOkomartWindow(opened[2], opened[3])) {
         okomartWindowAddress = normalizedWindowAddress(opened[0])
         ensureWindowModeSetting()
+        enforceMappedWindowMode()
       }
     } else if (name === "changefloatingmode") {
       var changed = eventParts(event, 2)

@@ -401,15 +401,19 @@ prepare_window_command() {
     json_error "Focused screen does not have enough room for Okomart"
     return 1
   }
+  local floating_enabled=false tiled_enabled=false
   local rule output="" status=0
   window_mode="$(read_window_mode)"
-  # Retain the established rule name so an in-session plugin update replaces
-  # the previous floating-only rule instead of leaving two matching rules.
   if [[ $window_mode == tiled ]]; then
-    rule="hl.window_rule({ name = \"okomart-floating-window\", match = { class = \"^org.quickshell$\", title = \"^Okomart$\" }, tile = true, border_size = 0 })"
+    tiled_enabled=true
   else
-    rule="hl.window_rule({ name = \"okomart-floating-window\", match = { class = \"^org.quickshell$\", title = \"^Okomart$\" }, float = true, center = true, size = { $side, $side }, border_size = 0 })"
+    floating_enabled=true
   fi
+
+  # Lua window-rule updates append effects to an existing named rule. Disable
+  # the legacy shared rule, then keep floating and tiled effects on independent
+  # rule handles and enable exactly one before the window maps.
+  rule="hl.window_rule({ name = \"okomart-floating-window\", enabled = false }); if b_okomart_window_rule_floating == nil or b_okomart_window_rule_floating:is_enabled() == nil then b_okomart_window_rule_floating = hl.window_rule({ name = \"okomart-window-floating\", enabled = false, match = { class = \"^org.quickshell$\", title = \"^Okomart$\" }, float = true, center = true, size = { $side, $side }, border_size = 0 }); b_okomart_window_rule_side = $side elseif b_okomart_window_rule_side ~= $side then b_okomart_window_rule_floating = hl.window_rule({ name = \"okomart-window-floating\", enabled = false, match = { class = \"^org.quickshell$\", title = \"^Okomart$\" }, center = true, size = { $side, $side }, border_size = 0 }); b_okomart_window_rule_side = $side end; if b_okomart_window_rule_tiled == nil or b_okomart_window_rule_tiled:is_enabled() == nil then b_okomart_window_rule_tiled = hl.window_rule({ name = \"okomart-window-tiled\", enabled = false, match = { class = \"^org.quickshell$\", title = \"^Okomart$\" }, tile = true, border_size = 0 }) end; b_okomart_window_rule_floating:set_enabled($floating_enabled); b_okomart_window_rule_tiled:set_enabled($tiled_enabled)"
   output="$(hyprctl eval "$rule" 2>&1)" || status=$?
   if (( status != 0 )) || [[ $output != "ok" ]]; then
     json_error "Could not register the Okomart window rule"
@@ -439,6 +443,67 @@ prepare_window_command() {
       gap:$gap,
       bar:{position:$barPosition,size:$barSize}
     }'
+}
+
+apply_window_mode_command() {
+  local side="${1:-}" clients address="" window_mode action lua output="" status=0
+
+  require_tool hyprctl
+  (( $# == 1 )) || {
+    json_error "Usage: okomart apply-window-mode <window-size>"
+    return 2
+  }
+  [[ $side =~ ^[0-9]+$ ]] && (( side <= 32768 )) || {
+    json_error "Window size must be an integer from 0 through 32768"
+    return 2
+  }
+
+  # A Quickshell window can be created before its first map-time rule exists.
+  # Wait briefly for that mapped client, then enforce the persisted mode on its
+  # exact address so first use and later reopens do not depend on rule timing.
+  for (( attempt = 0; attempt < 40; attempt++ )); do
+    clients="$(hyprctl clients -j 2>/dev/null)" || clients=""
+    address="$(
+      jq -er '
+        [.[] | select(
+          (.mapped // false) == true
+          and (.class // "") == "org.quickshell"
+          and (.title // "") == "Okomart"
+        )][-1].address // empty
+      ' <<<"$clients" 2>/dev/null || true
+    )"
+    [[ -z $address ]] || break
+    sleep 0.025
+  done
+  address="${address,,}"
+  [[ $address =~ ^0x[0-9a-f]+$ ]] || {
+    json_error "Could not find the mapped Okomart window"
+    return 1
+  }
+
+  window_mode="$(read_window_mode)"
+  if [[ $window_mode == floating ]]; then
+    action=enable
+    lua="hl.dispatch(hl.dsp.window.float({ action = \"$action\", window = \"address:$address\" }))"
+    if (( side > 0 )); then
+      lua+="; hl.dispatch(hl.dsp.window.resize({ x = $side, y = $side, relative = false, window = \"address:$address\" })); hl.dispatch(hl.dsp.window.center({ window = \"address:$address\" }))"
+    fi
+  else
+    action=disable
+    lua="hl.dispatch(hl.dsp.window.float({ action = \"$action\", window = \"address:$address\" }))"
+  fi
+
+  output="$(hyprctl eval "$lua" 2>&1)" || status=$?
+  if (( status != 0 )) || [[ $output != "ok" ]]; then
+    json_error "Could not apply the Okomart window mode"
+    return 1
+  fi
+
+  jq -cn \
+    --arg mode "$window_mode" \
+    --arg address "$address" \
+    --argjson size "$side" \
+    '{ok:true,applied:true,mode:$mode,address:$address,size:$size}'
 }
 
 source_origin() {
@@ -3427,6 +3492,14 @@ main() {
     init_paths
     shift
     prepare_window_command "$@"
+    return
+  fi
+  if [[ $command == apply-window-mode ]]; then
+    require_tool jq
+    require_tool realpath
+    init_paths
+    shift
+    apply_window_mode_command "$@"
     return
   fi
 

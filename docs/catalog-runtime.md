@@ -27,8 +27,16 @@ falls back to floating mode. On the first open, the service writes that
 effective default back through the same inline shell setting, so the initial
 mode is durable even if the user never toggles it. Floating mode keeps the
 focused-screen square sizing and centering behavior; tiled mode registers
-Hyprland's explicit `tile` effect and omits floating-only rule properties so
-the active layout owns placement.
+Hyprland's explicit `tile` effect and omits floating-only placement properties
+so the active layout owns placement. Okomart keeps those effects on independent
+named rules, disables its former shared rule, and enables exactly one mode rule
+before each map. This prevents a rule from a prior Okomart window in the same
+Hyprland session from affecting the next run. Because Quickshell can create a
+panel toplevel before its first rule is registered, Okomart also enforces the
+selected mode against the mapped window's exact Hyprland address. The service
+does a mode-only pass from Hyprland's actual `openwindow` event; the panel also
+requests square resizing and centering when floating. Tiled mode leaves
+placement to the active layout.
 
 ## Open, Refresh, And Activation
 
