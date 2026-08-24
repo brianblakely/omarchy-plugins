@@ -878,17 +878,9 @@ grep -Fq 'dialogContent.reviewHeightBudget' \
   || fail "review pane does not yield space to action errors"
 grep -Fq 'String(snapshot.snapshotId)' "$ROOT_DIR/Okomart.qml" \
   || fail "actions are not bound to the confirmed active generation"
-grep -Fq 'exitCode !== 0 || !parsed || parsed.ok !== true' "$ROOT_DIR/Okomart.qml" \
-  || fail "background catalog refresh failures are not surfaced"
-grep -Fq 'id: refreshFailureDismissTimer' "$ROOT_DIR/Okomart.qml" \
-  || fail "recoverable catalog refresh failures do not expire"
-if ! sed -n '/function applyCachedSnapshot/,/^  }/p' "$ROOT_DIR/Okomart.qml" \
-    | grep -Fq 'refreshFailureDismissTimer.restart()'; then
-  fail "loading a saved catalog does not schedule refresh failure dismissal"
-fi
-if ! sed -n '/id: refreshFailureDismissTimer/,/^  }/p' "$ROOT_DIR/Okomart.qml" \
-    | grep -Fq 'root.snapshotActionable && root.bannerText === message'; then
-  fail "refresh failure dismissal can clear an unrelated or blocking message"
+if grep -Eq 'banner(Text|Urgent)|statusBanner|refreshFailureDismissTimer' \
+    "$ROOT_DIR/Okomart.qml"; then
+  fail "storefront still contains the bottom status-message subsystem"
 fi
 grep -Fq 'readonly property bool snapshotActionable' "$ROOT_DIR/Okomart.qml" \
   || fail "missing active generations are not blocked from plugin actions"

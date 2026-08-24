@@ -92,9 +92,8 @@ staged as the first pending update.
 registry-source failure leaves `active` untouched. An overall timeout or
 all-plugin request failure preserves a complete active catalog; on a cold
 refresh, any partial catalog from an earlier completed wave remains available.
-When an active catalog is available, Okomart briefly shows the background
-refresh failure and then dismisses it after restoring the saved catalog;
-without an active catalog, the failure remains visible. Individual plugin
+Background refresh failures retain the saved catalog and are written to the
+shell log without adding status messages to the storefront. Individual plugin
 failures are recorded as catalog errors and omitted from the candidate.
 
 ## Fetch And Validation Boundaries

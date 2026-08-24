@@ -54,8 +54,6 @@ Item {
   property string windowRuleOutput: ""
   property string actionOutput: ""
   property string actionError: ""
-  property string bannerText: ""
-  property bool bannerUrgent: false
   property var snapshot: ({})
   property var allPlugins: []
   property var visiblePlugins: []
@@ -468,11 +466,7 @@ Item {
   }
 
   function loadCachedSnapshot(startBackground, checkAfterLoad) {
-    if (!helperPath) {
-      bannerText = "Okomart could not determine its source directory."
-      bannerUrgent = true
-      return
-    }
+    if (!helperPath) return
     if (cacheProcess.running) {
       cacheProcess.reloadQueued = true
       cacheProcess.queuedStartBackground = cacheProcess.queuedStartBackground
@@ -499,13 +493,7 @@ Item {
     cacheLoading = false
     var parsed = null
     try { parsed = JSON.parse(String(raw || "")) } catch (e) {}
-    if (parsed && Array.isArray(parsed.plugins)) {
-      setSnapshotData(parsed)
-      if (refreshFailureDismissTimer.message !== ""
-          && snapshotActionable
-          && bannerText === refreshFailureDismissTimer.message)
-        refreshFailureDismissTimer.restart()
-    }
+    if (parsed && Array.isArray(parsed.plugins)) setSnapshotData(parsed)
     if (startBackground) {
       loadActionStatus()
       refresh(false)
@@ -538,14 +526,9 @@ Item {
     var parsed = null
     try { parsed = JSON.parse(String(raw || "")) } catch (e) {}
     if (exitCode !== 0 || !parsed || parsed.ok !== true) {
-      bannerText = refreshError.trim() || "Catalog refresh failed."
-      if (parsed && parsed.error) bannerText = String(parsed.error)
-      bannerUrgent = true
-      refreshFailureDismissTimer.message = bannerText
-      if (snapshotActionable) refreshFailureDismissTimer.restart()
-    } else if (!parsed.changed && !parsed.pending) {
-      bannerText = ""
-      bannerUrgent = false
+      var failure = refreshError.trim() || "Catalog refresh failed."
+      if (parsed && parsed.error) failure = String(parsed.error)
+      console.warn("Okomart: " + failure)
     }
     loadCachedSnapshot(false, !!(parsed && parsed.coldPublished === true))
 
@@ -558,11 +541,7 @@ Item {
   }
 
   function refresh(force) {
-    if (!sourceDir || !helperPath) {
-      bannerText = "Okomart could not determine its source directory."
-      bannerUrgent = true
-      return
-    }
+    if (!sourceDir || !helperPath) return
     if (refreshing) {
       if (force === true) {
         refreshQueued = true
@@ -573,10 +552,6 @@ Item {
     refreshing = true
     refreshOutput = ""
     refreshError = ""
-    refreshFailureDismissTimer.stop()
-    refreshFailureDismissTimer.message = ""
-    bannerText = ""
-    bannerUrgent = false
     refreshProcess.command = force === true
       ? [helperPath, "refresh", sourceDir, "--force", "--progress"]
       : [helperPath, "refresh", sourceDir, "--progress"]
@@ -677,8 +652,6 @@ Item {
     }
     if (parsed.running === true) {
       actionInProgress = true
-      bannerText = String(parsed.message || "Plugin operation in progress…")
-      bannerUrgent = false
       actionPoll.restart()
       return
     }
@@ -697,11 +670,6 @@ Item {
     if (reconciledSnapshot && Array.isArray(reconciledSnapshot.plugins))
       setSnapshotData(reconciledSnapshot)
     acknowledgeAction(String(parsed.actionId || ""))
-    bannerText = failedResults.length > 0
-      ? "Plugin operation completed with " + failedResults.length + " failure"
-        + (failedResults.length === 1 ? "." : "s.")
-      : String(parsed.message || "Plugin operation completed.")
-    bannerUrgent = failedResults.length > 0 || parsed.ok === false
     loadCachedSnapshot(false, true)
     if (failedResults.length > 0)
       dialog.openFor("results", null, failedResults)
@@ -713,23 +681,7 @@ Item {
   }
 
   function openActionDialog(mode, plugin, updates) {
-    if (actionInProgress) {
-      bannerText = "Wait for the current plugin operation to finish."
-      bannerUrgent = true
-      return
-    }
-    if (statusChecking) {
-      bannerText = "Checking for an existing plugin operation…"
-      bannerUrgent = false
-      return
-    }
-    if (!snapshotActionable) {
-      bannerText = snapshot && snapshot.error
-        ? String(snapshot.error)
-        : "Refresh the catalog before changing plugins."
-      bannerUrgent = true
-      return
-    }
+    if (actionInProgress || statusChecking || !snapshotActionable) return
     dialog.openFor(mode, plugin, updates)
   }
 
@@ -767,8 +719,6 @@ Item {
         ? String(parsed.error || parsed.message)
         : (actionError.trim() || "Could not start plugin operation.")
       dialog.errorText = startError
-      bannerText = startError
-      bannerUrgent = true
       return
     }
     var replaceOkomart = actionReplacesOkomart
@@ -782,8 +732,6 @@ Item {
       requestClose()
       return
     }
-    bannerText = "Plugin operation started…"
-    bannerUrgent = false
     actionPoll.restart()
   }
 
@@ -909,20 +857,6 @@ Item {
     interval: 800
     repeat: false
     onTriggered: root.loadActionStatus()
-  }
-
-  Timer {
-    id: refreshFailureDismissTimer
-    property string message: ""
-    interval: 6000
-    repeat: false
-    onTriggered: {
-      if (root.snapshotActionable && root.bannerText === message) {
-        root.bannerText = ""
-        root.bannerUrgent = false
-      }
-      message = ""
-    }
   }
 
   Timer {
@@ -1344,33 +1278,6 @@ Item {
         onSearchRequested: searchField.forceActiveFocus()
         onScreenshotRequested: function(index) { root.openScreenshotLightbox(index) }
         onScreenshotFailed: function(index) { root.omitFailedScreenshot(index) }
-      }
-
-      BorderSurface {
-        id: statusBanner
-        visible: root.bannerText !== ""
-        z: 50
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: Style.space(32)
-        width: Math.min(parent.width - Style.space(40), statusText.implicitWidth + Style.space(28))
-        height: statusText.implicitHeight + Style.space(14)
-        color: Util.alpha(Color.background, 0.94)
-        borderSpec: Border.flat(root.bannerUrgent ? Color.urgent : Color.accent, Math.max(1, Style.normalBorderWidth))
-        radius: Style.cornerRadius
-
-        Text {
-          id: statusText
-          anchors.centerIn: parent
-          width: Math.min(implicitWidth, statusBanner.width - Style.space(20))
-          text: root.bannerText
-          textFormat: Text.PlainText
-          color: root.bannerUrgent ? Color.urgent : Color.foreground
-          font.family: Style.font.family
-          font.pixelSize: Style.font.bodySmall
-          horizontalAlignment: Text.AlignHCenter
-          wrapMode: Text.WordWrap
-        }
       }
 
       ScreenshotLightbox {
