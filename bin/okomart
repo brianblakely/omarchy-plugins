@@ -60,6 +60,7 @@ init_paths() {
   local state_base="${XDG_STATE_HOME:-$home/.local/state}"
   CACHE_ROOT="$(realpath -m -- "$cache_base/okomart")"
   STATE_ROOT="$(realpath -m -- "$state_base/okomart")"
+  SHELL_CONFIG="$(realpath -m -- "$home/.config/omarchy/shell.json")"
   PLUGINS_DIR="$(realpath -m -- "$home/.config/omarchy/plugins")"
   CATALOG_FILE="$CACHE_ROOT/catalog.json"
   LEGACY_CATALOG_DIR="$CACHE_ROOT/catalog"
@@ -71,7 +72,6 @@ init_paths() {
   ACTION_STATE="$STATE_ROOT/action.json"
   ACTION_LOCK="$STATE_ROOT/action.lock"
   ACTION_LOG="$STATE_ROOT/action.log"
-  WINDOW_MODE_STATE="$STATE_ROOT/window-mode.json"
   local runtime_base
   if [[ -n ${XDG_RUNTIME_DIR:-} ]]; then
     runtime_base="$(realpath -m -- "$XDG_RUNTIME_DIR")"
@@ -125,34 +125,22 @@ atomic_write() {
 
 read_window_mode() {
   local mode=""
-  if [[ -f $WINDOW_MODE_STATE && ! -L $WINDOW_MODE_STATE ]]; then
-    mode="$(jq -er '
-      select(type == "object" and .schemaVersion == 1)
-      | select(.mode == "floating" or .mode == "tiled")
-      | .mode
-    ' "$WINDOW_MODE_STATE" 2>/dev/null || true)"
+  if [[ -f $SHELL_CONFIG ]]; then
+    mode="$(jq -er --arg id "$OKOMART_ID" '
+      select(type == "object" and .version == 1)
+      | (.plugins // [])
+      | select(type == "array")
+      | [.[] | select(type == "object" and (.id // "") == $id)][0]
+      | select(type == "object")
+      | .windowMode
+      | select(. == "floating" or . == "tiled")
+    ' "$SHELL_CONFIG" 2>/dev/null || true)"
   fi
   if [[ $mode == floating || $mode == tiled ]]; then
     printf '%s\n' "$mode"
   else
     printf 'floating\n'
   fi
-}
-
-remember_window_mode_command() {
-  local mode="${1:-}" payload
-  (( $# == 1 )) && [[ $mode == floating || $mode == tiled ]] || {
-    json_error "Usage: okomart remember-window-mode <floating|tiled>"
-    return 2
-  }
-
-  payload="$(jq -cn --arg mode "$mode" \
-    '{schemaVersion:1,mode:$mode}')"
-  if ! atomic_write "$WINDOW_MODE_STATE" "$payload"; then
-    json_error "Could not remember Okomart's window mode"
-    return 1
-  fi
-  jq -cn --arg mode "$mode" '{ok:true,mode:$mode}'
 }
 
 safe_remove_legacy_path() {
@@ -3427,22 +3415,18 @@ action_command() {
 usage_json() {
   jq -cn '{
     ok:false,
-    error:"Usage: okomart prepare-window <bar-position> <bar-size> | remember-window-mode <floating|tiled> | snapshot <source-dir> | refresh <source-dir> [--force] [--progress] | enrich <generation> | promote <generation> | check-updates <source-dir> | screenshots <descriptor-json> <session-id> | cleanup-media <session-id|--all> | action <source-dir> <install|remove|enable|disable|update|update-all> <id-or-empty> <generation> <selected-update-ids-json-for-update-all> | status | ack <action-id>"
+    error:"Usage: okomart prepare-window <bar-position> <bar-size> | snapshot <source-dir> | refresh <source-dir> [--force] [--progress] | enrich <generation> | promote <generation> | check-updates <source-dir> | screenshots <descriptor-json> <session-id> | cleanup-media <session-id|--all> | action <source-dir> <install|remove|enable|disable|update|update-all> <id-or-empty> <generation> <selected-update-ids-json-for-update-all> | status | ack <action-id>"
   }'
 }
 
 main() {
   local command="${1:-}"
-  if [[ $command == prepare-window || $command == remember-window-mode ]]; then
+  if [[ $command == prepare-window ]]; then
     require_tool jq
     require_tool realpath
     init_paths
     shift
-    if [[ $command == prepare-window ]]; then
-      prepare_window_command "$@"
-    else
-      remember_window_mode_command "$@"
-    fi
+    prepare_window_command "$@"
     return
   fi
 

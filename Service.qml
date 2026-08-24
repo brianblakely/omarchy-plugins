@@ -6,8 +6,11 @@ import Quickshell.Io
 Item {
   id: root
 
+  property var shell: null
   property var manifest: null
 
+  readonly property string pluginId: manifest && manifest.id
+    ? String(manifest.id) : "b.okomart"
   readonly property string homeDir: Quickshell.env("HOME")
   readonly property string dataHome: Quickshell.env("XDG_DATA_HOME") || homeDir + "/.local/share"
   readonly property string desktopPath: dataHome + "/applications/b.okomart.desktop"
@@ -26,7 +29,6 @@ Item {
   // The service outlives the summoned panel, so it can capture mode changes
   // before Hyprland closes the panel window and the panel loader unloads it.
   property string okomartWindowAddress: ""
-  property string pendingWindowMode: ""
 
   function localPath(url) {
     var value = String(url || "")
@@ -75,22 +77,37 @@ Item {
       && String(title || "") === "Okomart"
   }
 
-  function flushWindowMode() {
-    if (!helperPath || windowModeWriter.running || pendingWindowMode === "") return
-    windowModeWriter.mode = pendingWindowMode
-    pendingWindowMode = ""
-    windowModeWriter.command = [
-      helperPath,
-      "remember-window-mode",
-      windowModeWriter.mode
-    ]
-    windowModeWriter.running = true
+  function pluginSettings() {
+    var settings = ({})
+    var config = shell && shell.shellConfig ? shell.shellConfig : null
+    var plugins = config && Array.isArray(config.plugins) ? config.plugins : []
+    for (var i = 0; i < plugins.length; i++) {
+      var entry = plugins[i]
+      if (!entry || String(entry.id || "") !== pluginId) continue
+      for (var key in entry) if (key !== "id") settings[key] = entry[key]
+      break
+    }
+    return settings
   }
 
   function rememberWindowMode(mode) {
     if (mode !== "floating" && mode !== "tiled") return
-    pendingWindowMode = mode
-    flushWindowMode()
+    if (!shell || typeof shell.updateEntryInline !== "function") {
+      console.warn("Okomart: shell cannot persist window mode:", mode)
+      return
+    }
+
+    var settings = pluginSettings()
+    if (settings.windowMode === mode) return
+    settings.windowMode = mode
+    if (!shell.updateEntryInline(pluginId, settings))
+      console.warn("Okomart: shell.json has no Okomart plugin entry")
+  }
+
+  function ensureWindowModeSetting() {
+    var mode = pluginSettings().windowMode
+    if (mode === "floating" || mode === "tiled") return
+    rememberWindowMode("floating")
   }
 
   function trackActiveOkomartWindow() {
@@ -107,8 +124,10 @@ Item {
     var name = String(event && event.name ? event.name : "")
     if (name === "openwindow") {
       var opened = eventParts(event, 4)
-      if (isOkomartWindow(opened[2], opened[3]))
+      if (isOkomartWindow(opened[2], opened[3])) {
         okomartWindowAddress = normalizedWindowAddress(opened[0])
+        ensureWindowModeSetting()
+      }
     } else if (name === "changefloatingmode") {
       var changed = eventParts(event, 2)
       if (normalizedWindowAddress(changed[0]) !== okomartWindowAddress) return
@@ -136,17 +155,6 @@ Item {
     }
   }
 
-  Process {
-    id: windowModeWriter
-    property string mode: ""
-
-    onExited: function(exitCode) {
-      if (exitCode !== 0)
-        console.warn("Okomart: could not remember window mode:", mode)
-      root.flushWindowMode()
-    }
-  }
-
   Connections {
     target: Hyprland
     function onRawEvent(event) { root.handleHyprlandEvent(event) }
@@ -155,10 +163,7 @@ Item {
     }
   }
 
-  onHelperPathChanged: {
-    recoverSelfUpdate()
-    flushWindowMode()
-  }
+  onHelperPathChanged: recoverSelfUpdate()
 
   Component.onCompleted: {
     installLauncher()

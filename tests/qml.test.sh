@@ -158,10 +158,15 @@ grep -Fq 'import Quickshell.Hyprland' "$ROOT_DIR/Service.qml" \
   || fail "Okomart cannot observe Hyprland window-mode changes"
 grep -Fq 'name === "changefloatingmode"' "$ROOT_DIR/Service.qml" \
   || fail "Okomart does not detect floating/tiling changes"
-grep -Fq '"remember-window-mode",' "$ROOT_DIR/Service.qml" \
-  || fail "Okomart does not persist the observed window mode"
-grep -Fq 'if (!helperPath || windowModeWriter.running' "$ROOT_DIR/Service.qml" \
-  || fail "window-mode writes are not serialized"
+grep -Fq 'shell.updateEntryInline(pluginId, settings)' "$ROOT_DIR/Service.qml" \
+  || fail "Okomart does not persist window mode through shell.json"
+grep -Fq 'settings.windowMode = mode' "$ROOT_DIR/Service.qml" \
+  || fail "Okomart does not store window mode as an inline plugin setting"
+grep -Fq 'ensureWindowModeSetting()' "$ROOT_DIR/Service.qml" \
+  || fail "Okomart does not persist the effective mode on first open"
+if grep -Fq 'remember-window-mode' "$ROOT_DIR/Service.qml"; then
+  fail "Okomart still launches a separate window-mode persistence helper"
+fi
 grep -Fq 'function onRawEvent(event)' "$ROOT_DIR/Service.qml" \
   || fail "the Okomart service does not subscribe to Hyprland events"
 grep -Fq 'import QtQuick.Shapes' "$ROOT_DIR/StorefrontFrame.qml" \

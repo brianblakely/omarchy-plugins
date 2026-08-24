@@ -15,16 +15,19 @@ scratch data use the private runtime directory and are removed after use.
 
 The enabled Okomart service observes Hyprland's `openwindow`,
 `changefloatingmode`, and `closewindow` events for the Quickshell window titled
-`Okomart`. Mode writes are serialized so rapid toggles cannot finish out of
-order. The last observed value is atomically stored as a small versioned JSON
-document at `$XDG_STATE_HOME/okomart/window-mode.json`, falling back to
-`~/.local/state/okomart/window-mode.json`.
+`Okomart`. The last observed value is stored as the inline `windowMode` setting
+on Okomart's top-level plugin entry in `~/.config/omarchy/shell.json`, for
+example `{ "id": "b.okomart", "windowMode": "tiled" }`. Okomart uses the
+shell's canonical atomic writer and preserves any other inline settings on the
+entry.
 
-Before each map, the helper reads that document and registers the named
-Okomart rule as either floating or tiled. A missing, malformed, or symlinked
-state file falls back to floating mode. Floating mode keeps the focused-screen
-square sizing and centering behavior; tiled mode omits those floating-only
-rule properties so Hyprland's active layout owns placement.
+Before each map, the helper reads that setting and registers the named Okomart
+rule as either floating or tiled. A missing, malformed, or unsupported setting
+falls back to floating mode. On the first open, the service writes that
+effective default back through the same inline shell setting, so the initial
+mode is durable even if the user never toggles it. Floating mode keeps the
+focused-screen square sizing and centering behavior; tiled mode omits those
+floating-only rule properties so Hyprland's active layout owns placement.
 
 ## Open, Refresh, And Activation
 

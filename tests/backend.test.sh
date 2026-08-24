@@ -223,6 +223,12 @@ MOCK_CURL
 chmod 755 "$TMP/mock-bin/curl"
 export PATH="$TMP/mock-bin:$PATH"
 
+SHELL_CONFIG="$HOME/.config/omarchy/shell.json"
+mkdir -p -- "$(dirname -- "$SHELL_CONFIG")"
+printf '%s\n' \
+  '{"version":1,"plugins":[{"id":"b.okomart","otherSetting":"preserved"}]}' \
+  >"$SHELL_CONFIG"
+
 "$OKOMART" prepare-window top 26 >"$TMP/window.json"
 assert_jq "$TMP/window.json" '.ok and .prepared and .mode == "floating"
   and .width == 1044
@@ -233,15 +239,13 @@ grep -Fq 'float = true' "$MOCK_LOG" \
 grep -Fq 'center = true' "$MOCK_LOG" \
   || fail 'floating window preparation did not center Okomart'
 
-"$OKOMART" remember-window-mode tiled >"$TMP/remember-tiled.json"
-assert_jq "$TMP/remember-tiled.json" '.ok and .mode == "tiled"' \
-  'window mode accepts a tiled preference'
-assert_jq "$XDG_STATE_HOME/okomart/window-mode.json" \
-  '.schemaVersion == 1 and .mode == "tiled"' \
-  'window mode persists under Okomart state'
-[[ $(stat -c '%a' "$XDG_STATE_HOME/okomart/window-mode.json") == 600 ]] \
-  || fail 'remembered window mode is not private'
-pass 'remembered window mode is private'
+jq '(.plugins[] | select(.id == "b.okomart")).windowMode = "tiled"' \
+  "$SHELL_CONFIG" >"$TMP/shell-tiled.json"
+mv -fT -- "$TMP/shell-tiled.json" "$SHELL_CONFIG"
+assert_jq "$SHELL_CONFIG" '
+  .plugins[0].windowMode == "tiled"
+  and .plugins[0].otherSetting == "preserved"' \
+  'window mode is stored inline with other Okomart settings'
 
 : >"$MOCK_LOG"
 "$OKOMART" prepare-window top 26 >"$TMP/tiled-window.json"
@@ -255,42 +259,34 @@ if grep -Fq 'center = true' "$MOCK_LOG" || grep -Fq 'size = {' "$MOCK_LOG"; then
 fi
 pass 'tiled window preparation omits floating-only placement rules'
 
-if "$OKOMART" remember-window-mode maximized >"$TMP/invalid-window-mode.json"; then
-  fail 'unsupported window mode was remembered'
-fi
-assert_jq "$TMP/invalid-window-mode.json" '.ok == false' \
-  'unsupported window mode is rejected'
-assert_jq "$XDG_STATE_HOME/okomart/window-mode.json" '.mode == "tiled"' \
-  'invalid input leaves the remembered window mode unchanged'
-
-printf '%s\n' '{"schemaVersion":1,"mode":"maximized"}' \
-  >"$XDG_STATE_HOME/okomart/window-mode.json"
+jq '(.plugins[] | select(.id == "b.okomart")).windowMode = "maximized"' \
+  "$SHELL_CONFIG" >"$TMP/shell-invalid-mode.json"
+mv -fT -- "$TMP/shell-invalid-mode.json" "$SHELL_CONFIG"
 : >"$MOCK_LOG"
 "$OKOMART" prepare-window top 26 >"$TMP/invalid-state-window.json"
 assert_jq "$TMP/invalid-state-window.json" '.ok and .mode == "floating"' \
-  'invalid persisted state falls back to floating'
+  'unsupported inline window mode falls back to floating'
 grep -Fq 'float = true' "$MOCK_LOG" \
-  || fail 'invalid persisted state did not register the floating fallback'
+  || fail 'unsupported inline mode did not register the floating fallback'
 
-mkdir -p -- "$TMP/outside-window-state"
-printf '%s\n' '{"schemaVersion":1,"mode":"tiled"}' \
-  >"$TMP/outside-window-state/window-mode.json"
-rm -f -- "$XDG_STATE_HOME/okomart/window-mode.json"
-ln -s -- "$TMP/outside-window-state/window-mode.json" \
-  "$XDG_STATE_HOME/okomart/window-mode.json"
+printf '%s\n' '{"version":1,"plugins":[{"id":"someone.else","windowMode":"tiled"}]}' \
+  >"$SHELL_CONFIG"
 : >"$MOCK_LOG"
-"$OKOMART" prepare-window top 26 >"$TMP/symlink-state-window.json"
-assert_jq "$TMP/symlink-state-window.json" '.ok and .mode == "floating"' \
-  'symlinked persisted state falls back to floating'
+"$OKOMART" prepare-window top 26 >"$TMP/missing-setting-window.json"
+assert_jq "$TMP/missing-setting-window.json" '.ok and .mode == "floating"' \
+  'another plugin window mode is ignored'
 
-"$OKOMART" remember-window-mode floating >"$TMP/remember-floating.json"
-assert_jq "$TMP/remember-floating.json" '.ok and .mode == "floating"' \
-  'window mode can return to floating'
-[[ -f $XDG_STATE_HOME/okomart/window-mode.json \
-  && ! -L $XDG_STATE_HOME/okomart/window-mode.json ]] \
-  || fail 'window-mode write did not replace the state symlink itself'
-assert_jq "$TMP/outside-window-state/window-mode.json" '.mode == "tiled"' \
-  'window-mode writes never follow a state symlink'
+printf '%s\n' \
+  '{"version":1,"plugins":{"id":"b.okomart","windowMode":"tiled"}}' \
+  >"$SHELL_CONFIG"
+: >"$MOCK_LOG"
+"$OKOMART" prepare-window top 26 >"$TMP/malformed-plugins-window.json"
+assert_jq "$TMP/malformed-plugins-window.json" '.ok and .mode == "floating"' \
+  'malformed shell plugin settings fall back to floating'
+
+printf '%s\n' \
+  '{"version":1,"plugins":[{"id":"b.okomart","windowMode":"floating"}]}' \
+  >"$SHELL_CONFIG"
 : >"$MOCK_LOG"
 
 SOURCE="$TMP/source"

@@ -56,9 +56,7 @@ ShellRoot {
       return false
     }
 
-    // Keep the test local: without an injected manifest the service queues the
-    // observed mode but cannot launch its persistence helper.
-    serviceEntry.manifest = null
+    var writesBefore = mockShell.windowModeWrites
     serviceEntry.handleHyprlandEvent({
       name: "openwindow",
       data: "0xABC,1,org.quickshell,Okomart"
@@ -67,20 +65,39 @@ ShellRoot {
       console.error("OKOMART_WINDOW_MODE_ERROR open event did not track Okomart")
       return false
     }
+    var firstEntry = mockShell.shellConfig.plugins[0]
+    if (firstEntry.windowMode !== "floating"
+        || firstEntry.otherSetting !== "preserved"
+        || mockShell.windowModeWrites !== writesBefore + 1) {
+      console.error("OKOMART_WINDOW_MODE_ERROR first open did not persist the default mode")
+      return false
+    }
     serviceEntry.handleHyprlandEvent({
       name: "changefloatingmode",
       data: "abc,0"
     })
-    if (serviceEntry.pendingWindowMode !== "tiled") {
-      console.error("OKOMART_WINDOW_MODE_ERROR tiled event was not queued")
+    var tiledEntry = mockShell.shellConfig.plugins[0]
+    if (tiledEntry.windowMode !== "tiled"
+        || tiledEntry.otherSetting !== "preserved"
+        || mockShell.windowModeWrites !== writesBefore + 2) {
+      console.error("OKOMART_WINDOW_MODE_ERROR tiled mode was not persisted inline")
       return false
     }
     serviceEntry.handleHyprlandEvent({
       name: "changefloatingmode",
       data: "0xABC,1"
     })
-    if (serviceEntry.pendingWindowMode !== "floating") {
-      console.error("OKOMART_WINDOW_MODE_ERROR latest event did not win")
+    if (mockShell.shellConfig.plugins[0].windowMode !== "floating"
+        || mockShell.windowModeWrites !== writesBefore + 3) {
+      console.error("OKOMART_WINDOW_MODE_ERROR latest mode did not win")
+      return false
+    }
+    serviceEntry.handleHyprlandEvent({
+      name: "changefloatingmode",
+      data: "abc,1"
+    })
+    if (mockShell.windowModeWrites !== writesBefore + 3) {
+      console.error("OKOMART_WINDOW_MODE_ERROR unchanged mode was written again")
       return false
     }
     serviceEntry.handleHyprlandEvent({ name: "closewindow", data: "abc" })
@@ -88,6 +105,17 @@ ShellRoot {
       console.error("OKOMART_WINDOW_MODE_ERROR close event retained the window")
       return false
     }
+    serviceEntry.handleHyprlandEvent({
+      name: "openwindow",
+      data: "0xDEF,1,org.quickshell,Okomart"
+    })
+    if (serviceEntry.okomartWindowAddress !== "def"
+        || mockShell.shellConfig.plugins[0].windowMode !== "floating"
+        || mockShell.windowModeWrites !== writesBefore + 3) {
+      console.error("OKOMART_WINDOW_MODE_ERROR reopen changed the persisted mode")
+      return false
+    }
+    serviceEntry.handleHyprlandEvent({ name: "closewindow", data: "def" })
     console.log("OKOMART_WINDOW_MODE_OK")
     return true
   }
@@ -333,6 +361,21 @@ ShellRoot {
 
   QtObject {
     id: mockShell
+
+    property var shellConfig: ({
+      version: 1,
+      plugins: [{ id: "b.okomart", otherSetting: "preserved" }]
+    })
+    property int windowModeWrites: 0
+
+    function updateEntryInline(moduleName, settings) {
+      if (moduleName !== "b.okomart") return false
+      var next = { id: moduleName }
+      for (var key in settings) if (key !== "id") next[key] = settings[key]
+      shellConfig = { version: 1, plugins: [next] }
+      windowModeWrites += 1
+      return true
+    }
 
     function hide(pluginId) {
       return true
