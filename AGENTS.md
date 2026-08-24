@@ -4,7 +4,6 @@ reference.
 
 Target Omarchy reference:
 
-- Plugin system source commit: <https://github.com/basecamp/omarchy/commit/248659de5a4ce1364703601a70b56624e9817c46>
 - Omarchy shell reference: <https://github.com/basecamp/omarchy/tree/quattro/shell>
 
 ## First Rules
