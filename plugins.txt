@@ -14,3 +14,4 @@ https://github.com/yuters/omarchy-flight-radar.git
 https://github.com/brianblakely/omarchy-codex-notifications.git
 https://github.com/keithnyc/omanetwatch.git
 https://github.com/kristofferR/omarchy-expose.git
+https://github.com/Ahmed-Sinkeat/keysmith.git
