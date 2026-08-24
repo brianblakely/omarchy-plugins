@@ -94,6 +94,7 @@ against
 | [Omanote](<https://github.com/brianblakely/omanote.git>) | Brian Blakely | Omarchy-native secure scratch note for the bar |
 | [Omashot](<https://github.com/brianblakely/omasnap.git>) | Brian Blakely | Screenshot and screen-recording overlay for Omarchy |
 | [Omastonk](<https://github.com/brianblakely/omastonk.git>) | Brian Blakely | Omarchy bar widget for a selected market symbol |
+| [Omaudit Status](<https://github.com/godhiraj-code/omarchy-omaudit-status.git>) | Dhiraj Das | Summarizes Omaudit plugin risk and capability drift. |
 | [Peek](<https://github.com/brianblakely/peek.git>) | Brian Blakely | Fades floating Hyprland windows to minimal opacity so you can see and interact with the content underneath |
 | [World Time](<https://github.com/mwikala/omarchy-world-time.git>) | Mwikala Kangwa | Compare a selected time across time zones. |
 <!-- END GENERATED PLUGIN CATALOG -->
