@@ -16,3 +16,4 @@ https://github.com/keithnyc/omanetwatch.git
 https://github.com/kristofferR/omarchy-expose.git
 https://github.com/Ahmed-Sinkeat/keysmith.git
 https://github.com/Cause-of-a-Kind/omaloom.git
+https://github.com/ivankuznetsov/hive-omarchy.git
