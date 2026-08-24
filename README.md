@@ -82,6 +82,7 @@ against
 | [Codex Notifications](<https://github.com/brianblakely/omarchy-codex-notifications.git>) | Brian Blakely | Clickable lifecycle notifications that return to the originating Codex context. |
 | [Exposé](<https://github.com/kristofferR/omarchy-expose.git>) | Kristoffer Risanger (@kristofferR) | macOS-style Exposé for Omarchy: one key or a hot corner shows every open window as a live preview. Type to search, press Space to Quick Look, press Enter to launch. |
 | [Flight Radar](<https://github.com/yuters/omarchy-flight-radar.git>) | yuters | Live aircraft overhead with short-horizon flyby forecasts, an overhead badge, and notifications. Works without an account. |
+| [Hive Status](<https://github.com/ivankuznetsov/hive-omarchy.git>) | Ivan Kuznetsov | Monitor Hive instances and active tasks from the Omarchy bar. |
 | [Keysmith](<https://github.com/Ahmed-Sinkeat/keysmith.git>) | Ahmed-Sinkeat | Add, change, and remove Omarchy shortcuts without editing config files |
 | [Omacal](<https://github.com/brianblakely/omacal.git>) | Brian Blakely | Omarchy-native day/time label with a mini calendar popup |
 | [Omadoro](<https://github.com/brianblakely/omadoro.git>) | Brian Blakely | A Pomodoro timer for the Omarchy bar. |
