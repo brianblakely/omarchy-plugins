@@ -87,6 +87,7 @@ against
 | [Omacal](<https://github.com/brianblakely/omacal.git>) | Brian Blakely | Omarchy-native day/time label with a mini calendar popup |
 | [Omadoro](<https://github.com/brianblakely/omadoro.git>) | Brian Blakely | A Pomodoro timer for the Omarchy bar. |
 | [OmaHUD](<https://github.com/brianblakely/omahud.git>) | Brian Blakely | Flashes a discreet Hyprland workspace indicator when you switch workspaces. It's designed for people who hide their Omarchy bar most of the time, and would like help navigating their workspaces. |
+| [Omakeyd](<https://github.com/olivoil/omakeyd.git>) | Olivier Melcher | Search, create, and switch effective keyboard layouts on one explicit keyboard at a time. |
 | [OmaLED](<https://github.com/brianblakely/omaled.git>) | Brian Blakely | Dim the Omarchy bar when not in use |
 | [Omaloom](<https://github.com/Cause-of-a-Kind/omaloom.git>) | Cause of a Kind | Local-first screen recording controls for Omarchy Quattro. |
 | [OmaNetWatch](<https://github.com/keithnyc/omanetwatch.git>) | Keith | Monitor HTTP and TCP endpoints from the Omarchy bar |
