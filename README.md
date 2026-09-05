@@ -97,4 +97,5 @@ against
 | [Omaudit Status](<https://github.com/godhiraj-code/omarchy-omaudit-status.git>) | Dhiraj Das | Summarizes Omaudit plugin risk and capability drift. |
 | [Peek](<https://github.com/brianblakely/peek.git>) | Brian Blakely | Fades floating Hyprland windows to minimal opacity so you can see and interact with the content underneath |
 | [World Time](<https://github.com/mwikala/omarchy-world-time.git>) | Mwikala Kangwa | Compare a selected time across time zones. |
+| [YubiKey TOTP](<https://github.com/jellespijker/omarchy-yubikey-totp.git>) | Jelle Spijker | Native YubiKey OATH / TOTP two-factor authentication manager with quick clipboard copy, touch prompts, and live countdown |
 <!-- END GENERATED PLUGIN CATALOG -->
