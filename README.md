@@ -77,6 +77,7 @@ against
 
 | Plugin | Author | Description |
 | --- | --- | --- |
+| [Azure VPN](<https://github.com/jellespijker/omarchy-azure-vpn.git>) | Jelle Spijker | Headless Microsoft Azure Point-to-Site VPN controller with Entra ID SSO |
 | [Blink](<https://github.com/brianblakely/blink.git>) | Brian Blakely | Blink briefly flashes a border over the active Hyprland window. It runs automatically when the active window changes and can also be triggered on demand. |
 | [Bluetooth codec](<https://github.com/nightdevil00/bt.codecs.git>) | mihai | Shift Bluetooth audio fidelity: pick the A2DP codec or headset profile for each connected Bluetooth audio device. |
 | [Codex Notifications](<https://github.com/brianblakely/omarchy-codex-notifications.git>) | Brian Blakely | Clickable lifecycle notifications that return to the originating Codex context. |
