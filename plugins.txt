@@ -18,3 +18,4 @@ https://github.com/Ahmed-Sinkeat/keysmith.git
 https://github.com/Cause-of-a-Kind/omaloom.git
 https://github.com/ivankuznetsov/hive-omarchy.git
 https://github.com/godhiraj-code/omarchy-omaudit-status.git
+https://github.com/aesko/omarchy-ichi.git
