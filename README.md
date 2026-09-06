@@ -81,6 +81,7 @@ against
 | [Bluetooth codec](<https://github.com/nightdevil00/bt.codecs.git>) | mihai | Shift Bluetooth audio fidelity: pick the A2DP codec or headset profile for each connected Bluetooth audio device. |
 | [Codex Notifications](<https://github.com/brianblakely/omarchy-codex-notifications.git>) | Brian Blakely | Clickable lifecycle notifications that return to the originating Codex context. |
 | [Exposé](<https://github.com/kristofferR/omarchy-expose.git>) | Kristoffer Risanger (@kristofferR) | macOS-style Exposé for Omarchy: one key or a hot corner shows every open window as a live preview. Type to search, press Space to Quick Look, press Enter to launch. |
+| [Fleet Security](<https://github.com/jellespijker/omarchy-fleet.git>) | Jelle Spijker | Real-time FleetDM vulnerability scanner, CISA KEV alerts, and host security triage monitor |
 | [Flight Radar](<https://github.com/yuters/omarchy-flight-radar.git>) | yuters | Live aircraft overhead with short-horizon flyby forecasts, an overhead badge, and notifications. Works without an account. |
 | [Hive Status](<https://github.com/ivankuznetsov/hive-omarchy.git>) | Ivan Kuznetsov | Monitor Hive instances and active tasks from the Omarchy bar. |
 | [Keysmith](<https://github.com/Ahmed-Sinkeat/keysmith.git>) | Ahmed-Sinkeat | Add, change, and remove Omarchy shortcuts without editing config files |
