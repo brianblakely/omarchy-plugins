@@ -16,8 +16,10 @@ Item {
   readonly property string desktopPath: dataHome + "/applications/b.okomart.desktop"
   readonly property string shellConfigPath: homeDir + "/.config/omarchy/shell.json"
   readonly property string desktopSourcePath: localPath(Qt.resolvedUrl("assets/b.okomart.desktop"))
-  readonly property string sourceDir: manifest && manifest.__sourceDir
-    ? String(manifest.__sourceDir) : ""
+  // Third-party manifests do not expose the host's private source directory
+  // (Omarchy 4.0.3 sanitizes it); this file sits at the plugin root, so the
+  // directory resolves from here.
+  readonly property string sourceDir: localPath(Qt.resolvedUrl(".")).replace(/\/$/, "")
   readonly property string helperPath: sourceDir ? sourceDir + "/bin/okomart" : ""
 
   // Keep each launcher mutation in one guarded shell so validation and atomic
