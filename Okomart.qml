@@ -15,8 +15,19 @@ Item {
   property var manifest: null
 
   readonly property string pluginId: manifest && manifest.id ? String(manifest.id) : "b.okomart"
-  readonly property string sourceDir: manifest && manifest.__sourceDir
-    ? String(manifest.__sourceDir) : ""
+  function localPath(url) {
+    var value = String(url || "")
+    if (value.indexOf("file://") === 0) value = value.slice(7)
+    try {
+      return decodeURIComponent(value)
+    } catch (error) {
+      return value
+    }
+  }
+
+  // Third-party manifests do not expose the host's private source directory
+  // (Omarchy 4.0.3 sanitizes it); this file sits at the plugin root.
+  readonly property string sourceDir: localPath(Qt.resolvedUrl(".")).replace(/\/$/, "")
   readonly property string helperPath: sourceDir ? sourceDir + "/bin/okomart" : ""
 
   property bool closingFromHost: false
