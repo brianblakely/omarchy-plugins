@@ -96,5 +96,6 @@ against
 | [Omastonk](<https://github.com/brianblakely/omastonk.git>) | Brian Blakely | Omarchy bar widget for a selected market symbol |
 | [Omaudit Status](<https://github.com/godhiraj-code/omarchy-omaudit-status.git>) | Dhiraj Das | Summarizes Omaudit plugin risk and capability drift. |
 | [Peek](<https://github.com/brianblakely/peek.git>) | Brian Blakely | Fades floating Hyprland windows to minimal opacity so you can see and interact with the content underneath |
+| [Super+K Alternative](<https://github.com/infinitegithub/omarchy-nav-guide.git>) | Es Sadik Sanhaji | An enhanced Super+K window that teaches you Omarchy keybindings by suggesting shortcuts based on what you have open. |
 | [World Time](<https://github.com/mwikala/omarchy-world-time.git>) | Mwikala Kangwa | Compare a selected time across time zones. |
 <!-- END GENERATED PLUGIN CATALOG -->
