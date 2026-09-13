@@ -83,18 +83,20 @@ against
 | [Exposé](<https://github.com/kristofferR/omarchy-expose.git>) | Kristoffer Risanger (@kristofferR) | macOS-style Exposé for Omarchy: one key or a hot corner shows every open window as a live preview. Type to search, press Space to Quick Look, press Enter to launch. |
 | [Flight Radar](<https://github.com/yuters/omarchy-flight-radar.git>) | yuters | Live aircraft overhead with short-horizon flyby forecasts, an overhead badge, and notifications. Works without an account. |
 | [Hive Status](<https://github.com/ivankuznetsov/hive-omarchy.git>) | Ivan Kuznetsov | Monitor Hive instances and active tasks from the Omarchy bar. |
+| [Hotbar](<https://github.com/GreyforgeLabs/omarchy-hotbar.git>) | Greyforge Labs | Fixed app slots, filesystem Places, and one bounded drawer for everything else. Your bar stays put. |
 | [Keysmith](<https://github.com/Ahmed-Sinkeat/keysmith.git>) | Ahmed-Sinkeat | Add, change, and remove Omarchy shortcuts without editing config files |
 | [Omacal](<https://github.com/brianblakely/omacal.git>) | Brian Blakely | Omarchy-native day/time label with a mini calendar popup |
 | [Omadoro](<https://github.com/brianblakely/omadoro.git>) | Brian Blakely | A Pomodoro timer for the Omarchy bar. |
 | [OmaHUD](<https://github.com/brianblakely/omahud.git>) | Brian Blakely | Flashes a discreet Hyprland workspace indicator when you switch workspaces. It's designed for people who hide their Omarchy bar most of the time, and would like help navigating their workspaces. |
 | [OmaLED](<https://github.com/brianblakely/omaled.git>) | Brian Blakely | Dim the Omarchy bar when not in use |
 | [Omaloom](<https://github.com/Cause-of-a-Kind/omaloom.git>) | Cause of a Kind | Local-first screen recording controls for Omarchy Quattro. |
-| [OmaNetWatch](<https://github.com/keithnyc/omanetwatch.git>) | Keith | Monitor HTTP and TCP endpoints from the Omarchy bar |
+| [OmaNetWatch](<https://github.com/keithnyc/omanetwatch.git>) | Keith | Monitor endpoints, provider health, and incident feeds from the Omarchy bar |
 | [Omanews](<https://github.com/brianblakely/omanews.git>) | Brian Blakely | Omarchy-native headline ticker for the bar |
 | [Omanote](<https://github.com/brianblakely/omanote.git>) | Brian Blakely | Omarchy-native secure scratch note for the bar |
 | [Omashot](<https://github.com/brianblakely/omasnap.git>) | Brian Blakely | Screenshot and screen-recording overlay for Omarchy |
 | [Omastonk](<https://github.com/brianblakely/omastonk.git>) | Brian Blakely | Omarchy bar widget for a selected market symbol |
 | [Omaudit Status](<https://github.com/godhiraj-code/omarchy-omaudit-status.git>) | Dhiraj Das | Summarizes Omaudit plugin risk and capability drift. |
 | [Peek](<https://github.com/brianblakely/peek.git>) | Brian Blakely | Fades floating Hyprland windows to minimal opacity so you can see and interact with the content underneath |
+| [Reprieve](<https://github.com/GreyforgeLabs/reprieve.git>) | Greyforge Labs | A safety net for Super+W on Omarchy: the window is hidden, not terminated, and one keystroke returns it exactly as it was. Survives shell restarts. |
 | [World Time](<https://github.com/mwikala/omarchy-world-time.git>) | Mwikala Kangwa | Compare a selected time across time zones. |
 <!-- END GENERATED PLUGIN CATALOG -->
