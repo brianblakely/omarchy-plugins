@@ -28,6 +28,78 @@ REFRESH_DEADLINE_SECONDS="${OKOMART_REFRESH_DEADLINE_SECONDS:-90}"
 [[ $REFRESH_DEADLINE_SECONDS =~ ^[1-9][0-9]*$ ]] || REFRESH_DEADLINE_SECONDS=90
 GITHUB_RAW_BASE="${OKOMART_GITHUB_RAW_BASE:-https://raw.githubusercontent.com}"
 GITHUB_API_BASE="${OKOMART_GITHUB_API_BASE:-https://api.github.com}"
+
+# GitHub API auth for the two authenticated call sites below.
+# Unauthenticated API calls are capped at 60 req/hour/IP; a token raises the
+# ceiling to 5,000/hour. The token is passed via `curl --config -` on stdin,
+# never via `--header` on the command line, since /proc/<pid>/cmdline is
+# world-readable. Resolved once per process tree and exported so re-exec
+# refresh workers inherit it instead of each shelling out to `gh`.
+resolve_github_token() {
+  if [[ -n ${OKOMART_GITHUB_TOKEN_RESOLVED:-} ]]; then
+    [[ $OKOMART_GITHUB_TOKEN_RESOLVED =~ ^[A-Za-z0-9_.-]{10,}$ ]] \
+      && { printf '%s' "$OKOMART_GITHUB_TOKEN_RESOLVED"; return 0; } || return 1
+  fi
+  local candidate=""
+  for candidate in "${OKOMART_GITHUB_TOKEN:-}" "${GITHUB_TOKEN:-}" "${GH_TOKEN:-}"; do
+    candidate="$(printf '%s' "$candidate" | tr -d '[:space:]')"
+    if [[ $candidate =~ ^[A-Za-z0-9_.-]{10,}$ ]]; then
+      export OKOMART_GITHUB_TOKEN_RESOLVED="$candidate"
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+  local home="${HOME:-}" token_file="${OKOMART_GITHUB_TOKEN_FILE:-}"
+  if [[ -z $token_file && -n $home ]]; then
+    token_file="${XDG_CONFIG_HOME:-$home/.config}/okomart/github-token"
+  fi
+  if [[ -n $token_file && -f $token_file && ! -L $token_file ]]; then
+    candidate="$(tr -d '[:space:]' <"$token_file" 2>/dev/null || true)"
+    if [[ $candidate =~ ^[A-Za-z0-9_.-]{10,}$ ]]; then
+      export OKOMART_GITHUB_TOKEN_RESOLVED="$candidate"
+      printf '%s' "$candidate"
+      return 0
+    fi
+  fi
+  if command -v gh >/dev/null 2>&1; then
+    candidate="$(gh auth token 2>/dev/null | tr -d '[:space:]' || true)"
+    if [[ $candidate =~ ^[A-Za-z0-9_.-]{10,}$ ]]; then
+      export OKOMART_GITHUB_TOKEN_RESOLVED="$candidate"
+      printf '%s' "$candidate"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+# Print a one-line curl config with the Authorization header, or fail when
+# no usable token is available (caller falls back to unauthenticated).
+github_auth_config() {
+  local token
+  token="$(resolve_github_token 2>/dev/null || true)"
+  [[ -n $token ]] || return 1
+  printf 'header = "Authorization: Bearer %s"\n' "$token"
+}
+
+# Authenticated-or-anonymous GET for api.github.com JSON endpoints.
+# Args: <output-file> <endpoint-url> <user-agent> <max-bytes> <max-seconds>
+github_api_get() {
+  local output="$1" endpoint="$2" agent="$3" max_bytes="$4" max_seconds="$5"
+  local config
+  if config="$(github_auth_config 2>/dev/null)" && [[ -n $config ]]; then
+    printf '%s' "$config" | curl --fail --silent --show-error --location \
+      --proto '=https' --proto-redir '=https' --connect-timeout 8 --max-time "$max_seconds" \
+      --max-filesize "$max_bytes" --user-agent "$agent" \
+      --config - --header 'Accept: application/vnd.github+json' \
+      --output "$output" "$endpoint" >/dev/null 2>&1
+  else
+    curl --fail --silent --show-error --location \
+      --proto '=https' --proto-redir '=https' --connect-timeout 8 --max-time "$max_seconds" \
+      --max-filesize "$max_bytes" --user-agent "$agent" \
+      --header 'Accept: application/vnd.github+json' \
+      --output "$output" "$endpoint" >/dev/null 2>&1
+  fi
+}
 SCRIPT_PATH="$(realpath -m -- "${BASH_SOURCE[0]}")"
 
 json_error() {
@@ -1356,11 +1428,9 @@ fetch_github_timestamp_record() {
   mapfile -t parts < <(github_repository_parts "$url")
   (( ${#parts[@]} == 2 )) || return 1
   local endpoint="$GITHUB_API_BASE/repos/${parts[0]}/${parts[1]}/commits?path=manifest.json&per_page=1"
-  if curl --fail --silent --show-error --location \
-      --proto '=https' --proto-redir '=https' --connect-timeout 8 --max-time 20 \
-      --max-filesize "$MANIFEST_MAXIMUM_BYTES" --user-agent 'Okomart timestamp enricher' \
-      --header 'Accept: application/vnd.github+json' --output "$body" "$endpoint" \
-      >/dev/null 2>&1 && jq -e 'type == "array" and length > 0' "$body" >/dev/null 2>&1; then
+  if github_api_get "$body" "$endpoint" 'Okomart timestamp enricher' \
+      "$MANIFEST_MAXIMUM_BYTES" 20 \
+      && jq -e 'type == "array" and length > 0' "$body" >/dev/null 2>&1; then
     if jq -c --arg sourceUrl "$url" '
       .[0] | (.commit.committer.date // .commit.author.date) as $date
       | {ok:true,sourceUrl:$sourceUrl,revision:.sha,updatedAt:($date | fromdateiso8601)}
@@ -1424,6 +1494,9 @@ enrich_command() {
         '{sourceUrl:$sourceUrl,error:$error,phase:"timestamp"}' >>"$errors"
     fi
   done < <(jq -r '.timestampSources[]?' <<<"$pending")
+  # Resolve once so pool workers inherit the exported token instead of
+  # each shelling out to `gh auth token`.
+  resolve_github_token >/dev/null 2>&1 || true
   run_timestamp_pool "$tasks" "$work" "$GITHUB_TIMESTAMP_WORKERS"
   local result
   for (( index = 0; index < $(wc -l <"$tasks"); index++ )); do
@@ -1600,11 +1673,9 @@ github_screenshots_json() {
   ensure_work_root || return 1
   body="$(mktemp "$WORK_ROOT/github-tree.XXXXXX")" || return 1
   local endpoint="$GITHUB_API_BASE/repos/${parts[0]}/${parts[1]}/git/trees/$revision?recursive=1"
-  if ! curl --fail --silent --show-error --location \
-      --proto '=https' --proto-redir '=https' --connect-timeout 8 --max-time 25 \
-      --max-filesize $((4 * 1024 * 1024)) --user-agent 'Okomart screenshot discovery' \
-      --header 'Accept: application/vnd.github+json' --output "$body" "$endpoint" \
-      >/dev/null 2>&1 || ! jq -e '.tree | type == "array"' "$body" >/dev/null 2>&1; then
+  if ! github_api_get "$body" "$endpoint" 'Okomart screenshot discovery' \
+      $((4 * 1024 * 1024)) 25 \
+      || ! jq -e '.tree | type == "array"' "$body" >/dev/null 2>&1; then
     rm -f -- "$body"
     return 1
   fi
