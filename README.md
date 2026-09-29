@@ -92,6 +92,7 @@ against
 | [OmaNetWatch](<https://github.com/keithnyc/omanetwatch.git>) | Keith | Monitor HTTP and TCP endpoints from the Omarchy bar |
 | [Omanews](<https://github.com/brianblakely/omanews.git>) | Brian Blakely | Omarchy-native headline ticker for the bar |
 | [Omanote](<https://github.com/brianblakely/omanote.git>) | Brian Blakely | Omarchy-native secure scratch note for the bar |
+| [Omarchy Alt-Tab](<https://github.com/jburchel/omarchy-alt-tab.git>) | Jim Burchel | Windows/macOS-style Alt+Tab for Omarchy. Hold Alt and tap Tab through live previews of your windows, in most-recently-used order, then let go to jump to that window on its own workspace. Show all workspaces, only the current workspace, or only the current monitor. |
 | [Omashot](<https://github.com/brianblakely/omasnap.git>) | Brian Blakely | Screenshot and screen-recording overlay for Omarchy |
 | [Omastonk](<https://github.com/brianblakely/omastonk.git>) | Brian Blakely | Omarchy bar widget for a selected market symbol |
 | [Omaudit Status](<https://github.com/godhiraj-code/omarchy-omaudit-status.git>) | Dhiraj Das | Summarizes Omaudit plugin risk and capability drift. |
