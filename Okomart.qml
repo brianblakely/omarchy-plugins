@@ -5,6 +5,7 @@ import QtQuick.Window
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "OkomartModel.js" as OkomartModel
 
@@ -99,7 +100,7 @@ Item {
   readonly property bool hasConfirmedUpdates:
     updatesConfirmed && updateRows.length > 0
   property color storefrontColor:
-    focusScope.Window.active ? Color.accent : inactiveBorderColor
+    focusScope.Window.active ? Commons.Color.accent : inactiveBorderColor
 
   Behavior on storefrontColor {
     ColorAnimation {
@@ -876,7 +877,7 @@ Item {
   FloatingWindow {
     id: window
     title: "Okomart"
-    color: Color.background
+    color: Commons.Color.background
     implicitWidth: root.windowSide
     implicitHeight: root.windowSide
     minimumSize: Qt.size(root.minimumWindowSide, root.minimumWindowSide)
@@ -964,7 +965,7 @@ Item {
           source: signText
           autoPaddingEnabled: true
           colorization: 1.0
-          colorizationColor: Color.accent
+          colorizationColor: Commons.Color.accent
           blurEnabled: true
           blur: 0.58
           blurMax: 32
@@ -978,7 +979,7 @@ Item {
           source: signText
           autoPaddingEnabled: true
           colorization: 1.0
-          colorizationColor: Color.accent
+          colorizationColor: Commons.Color.accent
           blurEnabled: true
           blur: 0.30
           blurMax: 12

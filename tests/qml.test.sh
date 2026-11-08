@@ -192,7 +192,7 @@ grep -Fq '"general:col.inactive_border"' "$ROOT_DIR/Okomart.qml" \
   || fail "storefront does not query the OS inactive-border color"
 grep -Fq 'import QtQuick.Window' "$ROOT_DIR/Okomart.qml" \
   || fail "storefront cannot use the backing window's attached activity state"
-grep -Fq 'focusScope.Window.active ? Color.accent : inactiveBorderColor' \
+grep -Fq 'focusScope.Window.active ? Commons.Color.accent : inactiveBorderColor' \
   "$ROOT_DIR/Okomart.qml" \
   || fail "storefront color does not follow window activity"
 grep -Fq 'Behavior on storefrontColor' "$ROOT_DIR/Okomart.qml" \
@@ -992,8 +992,12 @@ grep -Fq 'id: signOuterGlow' "$ROOT_DIR/Okomart.qml" \
   || fail "storefront sign is missing its diffuse outer glow"
 [[ $(grep -Fc 'source: signText' "$ROOT_DIR/Okomart.qml") -ge 2 ]] \
   || fail "storefront sign glow layers are not shaped by the lettering"
-grep -Fq 'colorizationColor: Color.accent' "$ROOT_DIR/Okomart.qml" \
+grep -Fq 'colorizationColor: Commons.Color.accent' "$ROOT_DIR/Okomart.qml" \
   || fail "storefront sign glow does not use the accent color"
+# Bare Color resolves to undefined in this file, which leaves the window white.
+if grep -Eq '(^|[^.[:alnum:]_])Color\.' "$ROOT_DIR/Okomart.qml"; then
+  fail "Okomart.qml must read theme colors through Commons.Color"
+fi
 grep -Fq 'blurEnabled: true' "$ROOT_DIR/Okomart.qml" \
   || fail "storefront sign lettering does not emit a blurred glow"
 if grep -Fq 'glowPulse' "$ROOT_DIR/Okomart.qml"; then
