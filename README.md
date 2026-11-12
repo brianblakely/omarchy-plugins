@@ -96,5 +96,6 @@ against
 | [Omastonk](<https://github.com/brianblakely/omastonk.git>) | Brian Blakely | Omarchy bar widget for a selected market symbol |
 | [Omaudit Status](<https://github.com/godhiraj-code/omarchy-omaudit-status.git>) | Dhiraj Das | Summarizes Omaudit plugin risk and capability drift. |
 | [Peek](<https://github.com/brianblakely/peek.git>) | Brian Blakely | Fades floating Hyprland windows to minimal opacity so you can see and interact with the content underneath |
+| [WireGuard](<https://github.com/vyacheslav-voloshyn/omarchy-wireguard.git>) | vyacheslav-voloshyn | WireGuard (NetworkManager) connection indicator and toggle |
 | [World Time](<https://github.com/mwikala/omarchy-world-time.git>) | Mwikala Kangwa | Compare a selected time across time zones. |
 <!-- END GENERATED PLUGIN CATALOG -->
